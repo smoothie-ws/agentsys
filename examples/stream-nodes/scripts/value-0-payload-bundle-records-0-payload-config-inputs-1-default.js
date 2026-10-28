@@ -1,0 +1,1 @@
+const e=await node.state.update(node.input.key??"count",n=>(n??0)+(node.input.amount??1));node.output.result=e.value;await node.emit("out");

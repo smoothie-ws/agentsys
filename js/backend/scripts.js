@@ -1,5 +1,5 @@
 // Custom node execution: a run (a plan, see compilePlan) is carried out by executePlan in one Web Worker; the code of its nodes can
-// call the site's API (including LLM requests) and show text or an image on its node with display().
+// call the site's API and show text or an image on its node with display().
 'use strict';
 
 // ----- Pieces the Web Worker and the in-process runner (headless.js, for tests) share: displayText, and executePlan (model/executor.js) -----
@@ -49,6 +49,8 @@ const pending = new Map();
 const gate = {paused: false, waiters: []};
 let sequence = 0;
 const call = (node, method, path, body, query, invocation) => new Promise((resolve, reject) => { const id = ++sequence; pending.set(id, {resolve, reject}); send({type: 'call', id, node, invocation, args: [method, path, body, query]}); });
+const authorize = (node, version, invocation) => new Promise((resolve, reject) => { const id = ++sequence; pending.set(id, {resolve, reject}); send({type: 'authorize', id, node, version, invocation}); });
+const checkpoint = value => new Promise((resolve, reject) => { const id = ++sequence; pending.set(id, {resolve, reject}); send({type: 'checkpoint', id, value}); });
 // A script that fails after its node is done must not stop the run.
 self.onerror = () => true;
 self.addEventListener?.('unhandledrejection', event => event.preventDefault());
@@ -57,6 +59,8 @@ for (const name of ['agentsys', 'context'])
 for (const name of ['display', 'emit', 'read', 'output', 'widgets'])
   Object.defineProperty(self, name, {configurable: true, get() { throw new Error(name + ' is not a variable of the node code: it is part of node (node.' + (name === 'read' ? 'input.<name> or node.reread(name)' : name === 'output' ? 'output.<name>' : name) + ').'); }});
 const receive = async ({data}) => {
+  if (data.type === 'patch') return void gate.patch(data.patch);
+  if (data.type === 'cancel_wave') return void gate.cancelWave(data.path);
   if (data.type === 'pause') return void (gate.paused = true);
   if (data.type === 'resume') {
     gate.paused = false;
@@ -67,7 +71,8 @@ const receive = async ({data}) => {
     return data.error ? entry.reject(Object.assign(new Error(data.error),{code:data.code})) : entry.resolve(data.result);
   }
   try {
-    const result = await executePlan(data.plan, {AsyncFunction, displayText, call, limits: data.plan.limits, gate, emit: event => send({type: 'event', event})});
+    gate.paused = data.plan.start_paused === true;
+    const result = await executePlan(data.plan, {AsyncFunction, displayText, call, authorize, checkpoint, limits: data.plan.limits, gate, emit: event => send({type: 'event', event})});
     send({type: 'finished', result});
   } catch (error) {
     send({type: 'crash', error: String(error && error.message || error).slice(0, 2000)});
@@ -99,16 +104,23 @@ const liveBridgeFor = context => ({
       else body.workflow_id ??= context.workflow_id;
     }
     await assertScriptPermission(context, method, path, body);
-    if (method !== 'GET') {
+    const dataRoute = /^workflows\/[^/]+\/(state|queues)(\/|$)/.test(path);
+    if (method !== 'GET' && !dataRoute) {
       body = quarantineWrite(body);
-      if (path === 'resources' && body.kind === 'custom_node')
-        body.payload = {...body.payload, origin: 'ai', grants: ['graph.read']};
-      if (body.config) body.config = {...body.config, origin: 'ai', grants: ['graph.read']};
-      if (path.startsWith('resources/') && body.payload)
-        body.payload = {...body.payload, origin: 'ai', grants: ['graph.read']};
+      if (path === 'resources') body.payload = {...body.payload, grants: ['graph.read']};
+      if (body.config) body.config = {...body.config, grants: ['graph.read']};
+      if (path.startsWith('resources/') && body.payload) body.payload = {...body.payload, grants: ['graph.read']};
     }
-    const result = await Backend.request(method, path, {body, query, scriptContext: context});
-    return stripSecrets(result);
+    const reservation = await reserveBridge(context, method, path);
+    let result;
+    try {
+      result = await Backend.request(method, path, {body, query, scriptContext: context});
+    } catch (error) {
+      await settleBridge(reservation, null, error);
+      throw error;
+    }
+    await settleBridge(reservation, result, null);
+    return dataRoute ? clone(result) : stripSecrets(result);
   },
 });
 const bridgeFor = context => ({
@@ -172,15 +184,20 @@ const WATCHDOG_GRACE = 2000;
  */
 async function runPlan(plan, onEvent, signal = null, control = null) {
   await preparePlanPermissions(plan);
-  await pinPlanVersions(plan);
+  await versionPlan(plan);
+  plan = clone(plan);
+  plan.capture_boundaries = RUNS.byId.has(plan.context.run_id) && !plan.replay;
+  plan.start_paused = control?.paused === true;
+  const host = planHost(plan, onEvent, control);
   if (signal?.aborted) return Promise.reject(new Error('Run cancelled'));
   // Nothing in the plan has code to run (no Script: value nodes, Reroutes, event nodes, roots with a problem): no Worker is needed.
-  if (!plan.nodes.some(n => n.op === 'script'))
+  if (!control && !plan.nodes.some(n => n.op === 'script'))
     return executePlan(plan, {
       AsyncFunction: Object.getPrototypeOf(async function () {}).constructor,
       displayText,
       call: () => {},
-      emit: onEvent,
+      emit: host.emit,
+      authorize: host.authorize,
       limits: plan.limits,
     });
   return new Promise((resolve, reject) => {
@@ -202,26 +219,29 @@ async function runPlan(plan, onEvent, signal = null, control = null) {
     const watch = () => {
       clearTimeout(watchdog);
       if (!started.size) return;
-      const [id, at] = [...started].reduce((a, b) => (b[1] < a[1] ? b : a));
+      const [, {id, at, prefix}] = [...started].reduce((a, b) => (b[1].at < a[1].at ? b : a));
       watchdog = setTimeout(
         () => {
           const node = plan.nodes.find(n => n.id === id);
-          finish(reject, new Error(`${node?.prefix || 'Script'} execution timed out`));
+          finish(reject, new Error(`${prefix || node?.prefix || 'Script'} execution timed out`));
         },
         Math.max(0, at + plan.limits.timeout + (plan.limits.grace ?? WATCHDOG_GRACE) - Date.now())
       );
     };
     worker.onmessage = async ({data}) => {
       if (over) return;
-      if (data.type === 'call') {
+      if (data.type === 'call' || data.type === 'authorize' || data.type === 'checkpoint') {
         let reply;
         try {
           reply = {
             type: 'reply',
             id: data.id,
-            result: await bridgeFor({...plan.context, node_id: data.node, plan, invocation: data.invocation}).request(
-              data.args
-            ),
+            result:
+              data.type === 'checkpoint'
+                ? await host.checkpoint(data.value)
+                : data.type === 'authorize'
+                  ? await host.authorize(data.node, data.version, data.invocation)
+                  : await host.call(data.node, ...data.args, data.invocation),
           };
         } catch (error) {
           reply = {type: 'reply', id: data.id, error: error.message || String(error), code: error.code};
@@ -230,15 +250,17 @@ async function runPlan(plan, onEvent, signal = null, control = null) {
       } else if (data.type === 'event') {
         const {event} = data;
         // A node that waits in emit() is not running its code: its time starts again when it goes on.
-        if (event.ev === 'start' || event.ev === 'resume') started.set(event.id, Date.now());
-        else if (event.ev !== 'root') started.delete(event.id);
+        if (event.ev === 'start' || event.ev === 'resume')
+          started.set(event.invocation ?? event.id, {id: event.id, at: Date.now(), prefix: event.prefix});
+        else if (['done', 'fail', 'skip', 'pause', 'waiting'].includes(event.ev))
+          started.delete(event.invocation ?? event.id);
         if (event.ev !== 'root') watch();
-        onEvent(event);
+        host.emit(event);
       } else if (data.type === 'finished') finish(resolve, data.result);
       else finish(reject, new Error(data.error || 'The run failed'));
     };
     worker.onerror = event => finish(reject, new Error(event.message || 'The script stopped without an answer'));
     worker.postMessage({type: 'plan', plan});
-    control?.attach(message => !over && worker.postMessage(message));
+    host.attach(message => !over && worker.postMessage(message));
   });
 }

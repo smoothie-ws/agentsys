@@ -9,7 +9,6 @@
     }
   },
   "inputs": {},
-  "mocks": [],
   "expected": {
     "displays": [
       "loop finished"

@@ -1,0 +1,1 @@
+node.output.result=await node.queue(node.input.queue??"jobs").push(node.input.item);await node.emit("out");

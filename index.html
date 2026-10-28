@@ -17,13 +17,9 @@
   <link rel="stylesheet" href="css/inspector.css">
   <link rel="stylesheet" href="css/theme-components.css">
   <link rel="stylesheet" href="css/mobile.css">
-  <script defer src="js/vendor/js-yaml.min.js"></script>
   <script defer src="js/storage/db.js"></script>
-  <script defer src="js/storage/skills.js"></script>
   <script defer src="js/storage/format.js"></script>
   <script defer src="js/model/schema.js"></script>
-  <script defer src="js/model/initiative.js"></script>
-  <script defer src="js/model/lint.js"></script>
   <script defer src="js/model/types.js"></script>
   <script defer src="js/model/snapshot.js"></script>
   <script defer src="js/model/documents.js"></script>
@@ -32,7 +28,6 @@
   <script defer src="js/model/executor.js"></script>
   <script defer src="js/backend/settings.js"></script>
   <script defer src="js/backend/resources.js"></script>
-  <script defer src="js/backend/llm.js"></script>
   <script defer src="js/backend/permissions.js"></script>
   <script defer src="js/backend/scripts.js"></script>
   <script defer src="js/backend/runtime.js"></script>
@@ -42,16 +37,19 @@
   <script defer src="js/backend/routes-library.js"></script>
   <script defer src="js/backend/routes-runs.js"></script>
   <script defer src="js/backend/routes-state.js"></script>
-  <script defer src="js/backend/routes-initiatives.js"></script>
-  <script defer src="js/backend/routes-approvals.js"></script>
+  <script defer src="js/backend/queues.js"></script>
+  <script defer src="js/backend/workflows.js"></script>
+  <script defer src="js/backend/accounting.js"></script>
   <script defer src="js/backend/routes-permissions.js"></script>
   <script defer src="js/backend/routes-exchange.js"></script>
   <script defer src="js/backend/versions.js"></script>
+  <script defer src="js/backend/live-plan.js"></script>
   <script defer src="js/backend/replay.js"></script>
-  <script defer src="js/backend/routes-lint.js"></script>
+  <script defer src="js/backend/routes-intervention.js"></script>
   <script defer src="js/app/helpers.js"></script>
   <script defer src="js/app/markdown.js"></script>
   <script defer src="js/app/dialogs.js"></script>
+  <script defer src="js/app/intervention.js"></script>
   <script defer src="js/app/code-editor.js"></script>
   <script defer src="js/app/popup.js"></script>
   <script defer src="js/app/color-picker.js"></script>
@@ -68,8 +66,9 @@
   <script defer src="js/pages/theme-editor.js"></script>
   <script defer src="js/pages/settings.js"></script>
   <script defer src="js/pages/library.js"></script>
-  <script defer src="js/pages/api-docs.js"></script>
-  <script defer src="js/pages/controller.js"></script>
+  <script defer src="js/pages/api.js"></script>
+  <script defer src="js/pages/runs.js"></script>
+  <script defer src="js/pages/home.js"></script>
   <script defer src="js/canvas/page.js"></script>
   <script defer src="js/canvas/data.js"></script>
   <script defer src="js/canvas/render.js"></script>
@@ -163,16 +162,14 @@
     <symbol id="i-exit" viewBox="0 0 24 24"><path d="M9 21H5a2 2 0 0 1-2-2V5a2 2 0 0 1 2-2h4M16 17l5-5-5-5M21 12H9"/></symbol>
   </svg>
   <aside id="sidebar">
-    <a class="brand" href="/" id="brand" title="AgentSys home" aria-label="AgentSys home"><span class="brand-mark"></span><span>AgentSys</span></a>
+    <a class="brand" href="#/" data-link data-section="home" id="brand" title="Dashboard" aria-label="AgentSys home"><span class="brand-mark"></span><span>AgentSys</span></a>
     <nav class="sidebar-top" aria-label="Sections">
       <a href="#/resources" data-link data-section="library" title="Library"><svg><use href="#i-library"/></svg><span>Library</span></a>
       <hr>
-      <a href="#/" data-link data-section="projects" title="Projects"><svg><use href="#i-folder"/></svg><span>Projects</span></a>
-      <a href="#/controller" data-link data-section="controller" title="Controller"><svg><use href="#i-activity"/></svg><span>Controller</span></a>
+      <a href="#/projects" data-link data-section="projects" title="Projects"><svg><use href="#i-folder"/></svg><span>Projects</span></a>
     </nav>
     <nav class="sidebar-footer" aria-label="Application">
       <a href="#/settings" data-link data-section="settings" title="Settings"><svg><use href="#i-settings"/></svg><span>Settings</span></a>
-      <a href="#/api-docs" data-link data-section="api" title="API"><svg><use href="#i-code"/></svg><span>API</span></a>
     </nav>
   </aside>
   <aside id="subnav" aria-label="Section navigation" hidden>

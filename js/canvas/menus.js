@@ -7,9 +7,10 @@ function spawnPoint() {
 }
 
 /** Everything that can be added to the canvas, as popup items. */
-function addItems() {
+function addItems({all = false} = {}) {
   const at = spawnPoint();
-  const customNodes = (app.resources || []).filter(r => r.kind === 'custom_node' && r.id !== W.library && nodeOn(r));
+  const available = new Set(W.snapshot?.library_nodes ?? []);
+  const customNodes = (app.resources || []).filter(r => r.id !== W.library && (all || available.has(r.id)));
   const place = item => async () => {
     const result = await api(`projects/${W.project}/custom-nodes/${item.id}`, {
       method: 'POST',
@@ -56,7 +57,7 @@ function addItems() {
   return [primitive('Script', 'script', 'code'), primitive('Event', 'event', 'bolt'), ...(library.length ? [null, ...library] : [])];
 }
 function addMenu(x, y) {
-  popup(x, y, addItems(), {search: true});
+  popup(x, y, addItems(), {search: true, searchItems: addItems({all: true})});
 }
 
 /** What to select after pasting: the new top-level groups, plus any pasted nodes that are not inside one. */

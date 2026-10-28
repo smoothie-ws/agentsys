@@ -12,7 +12,7 @@ async def main():
         page = await browser.new_page(viewport={'width': 1600, 'height': 900})
         errors = []
         page.on('pageerror', lambda e: errors.append(str(e)))
-        await page.goto(f'http://127.0.0.1:{sys.argv[1]}/index.html#/resources/skill')
+        await page.goto(f'http://127.0.0.1:{sys.argv[1]}/index.html#/settings')
         await page.wait_for_selector('#subnav .subnav-row.active')
         await page.evaluate("""() => {
           applyStyle({...THEMES.Dark, animations:false});
@@ -100,12 +100,32 @@ async def main():
           window.originalDraw = draw; window.lateDraws = 0;
           draw = () => { lateDraws++; originalDraw(); };
           scheduleReload(150);
-          await go('/resources/skill');
+          await go('/settings');
         }""")
         await page.wait_for_timeout(400)
         assert await page.evaluate('lateDraws') == 0
         await page.evaluate('() => { draw = originalDraw; }')
         print('PASS leaving a workflow cancels its scheduled redraw')
+        # A paused run shows its running nodes as paused (with the pause icon), and as running again after Resume.
+        await page.evaluate("""async () => {
+          const project = await api('projects', {method: 'POST', body: {name: 'Paused status'}});
+          await go(`/p/${project.id}/w/${project.id}`);
+        }""")
+        await page.wait_for_selector('#canvas')
+        await page.evaluate("""async () => {
+          const node = await api(`projects/${W.project}/primitives`, {method: 'POST', body: {workflow_id: W.workflow, primitive: 'script', point: {x: 0, y: 0}}});
+          await reload();
+          W.nodes.get(node.id).status = 'running';
+          W.runPaused = true;
+          window.pausedNode = node.id;
+          draw();
+        }""")
+        assert await page.evaluate("document.querySelector(`[data-id=\"${pausedNode}\"] .run-state.paused svg`) !== null")
+        assert await page.evaluate("document.querySelector(`[data-id=\"${pausedNode}\"]`).classList.contains('s-paused')")
+        await page.evaluate("() => { W.runPaused = false; draw(); }")
+        assert await page.evaluate("document.querySelector(`[data-id=\"${pausedNode}\"] .run-state.running`) !== null")
+        await page.evaluate("() => { W.nodes.get(pausedNode).status = 'ready'; }")
+        print('PASS a paused run shows its running nodes as paused')
         assert not errors, errors
         await browser.close()
 

@@ -25,7 +25,6 @@ function draw() {
   W.usedPorts = new Set();
   W.issues = new Map();
   for (const d of W.snapshot.diagnostics || []) W.issues.set(d.node_id, [...(W.issues.get(d.node_id) || []), d]);
-  for (const d of lintGraph(W.snapshot).warnings) W.issues.set(d.node_id, [...(W.issues.get(d.node_id) || []), d]);
   for (const edge of visibleEdges()) {
     W.usedPorts.add(`${edge.source}|out|${edge.source_port}`);
     W.usedPorts.add(`${edge.target}|in|${edge.target_port}`);
@@ -45,6 +44,7 @@ function draw() {
     const signature = JSON.stringify([
       node,
       W.results.get(node.id) || null,
+      shownStatus(node),
       innerNodesOf(node).map(n => W.results.get(n.id) || null),
       widgetsSignature(node),
       W.issues.get(node.id) || [],
@@ -194,12 +194,17 @@ function layoutFoldedPorts(element) {
   }
 }
 
+/** The state a node shows: while the run is paused, a node that was running shows paused (it finishes, nothing new starts). */
+function shownStatus(node) {
+  return node.status === 'running' && W.runPaused ? 'paused' : node.status;
+}
+
 function nodeHTML(node) {
   const issues = W.issues.get(node.id) || [];
   const classes = [
     'node',
     'k-' + node.kind,
-    's-' + (node.status || 'ready'),
+    's-' + (shownStatus(node) || 'ready'),
     node.node_type ? 't-' + node.node_type.replace('.', '-') : '',
     issues.length ? 'invalid' : '',
   ];
@@ -224,19 +229,19 @@ function nodeHTML(node) {
         'Waiting' +
           (waitSpec?.event
             ? ' for ' + waitSpec.event
-            : waitSpec?.approval
-              ? ' for approval'
-              : node.wait?.due
-                ? ' until ' + new Date(node.wait.due).toLocaleString()
-                : ''),
+            : node.wait?.due
+              ? ' until ' + new Date(node.wait.due).toLocaleString()
+              : ''),
       ],
       running: ['', 'Running'],
+      paused: [icon('pause'), 'Paused: the run is paused, this node is still working'],
       completed: [icon('check'), 'Completed'],
       failed: [icon('x'), 'Failed'],
+      blocked: [icon('lock'), 'Blocked: permission denied'],
       skipped: [icon('skip'), 'Skipped: its flow was cancelled'],
-    }[node.status],
+    }[shownStatus(node)],
     stateHTML = stateMark
-      ? `<span class="run-state ${node.status}" role="img" aria-label="${stateMark[1]}" title="${stateMark[1]}">${stateMark[0]}</span>`
+      ? `<span class="run-state ${shownStatus(node)}" role="img" aria-label="${stateMark[1]}" title="${stateMark[1]}">${stateMark[0]}</span>`
       : '';
   if (node.folded) {
     const sockets = used

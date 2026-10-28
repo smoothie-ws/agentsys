@@ -1,4 +1,4 @@
-// The right-hand panel with three sections: the Workflow (its types and problems), the Properties of the selected node or group (with connections), and the Activity of the last run.
+// The right-hand panel: Workflow, available Library nodes, selection Properties and the Activity of the last run.
 'use strict';
 
 const SWATCHES = [null, '#3b6ea8', '#3f8f6b', '#a8873b', '#a8513b', '#7c4ea8', '#5b6575'];
@@ -153,6 +153,7 @@ const Inspector = {
     root.dataset.collapsed = String(sideHidden());
     root.innerHTML = `<nav class="side-tabs" aria-label="Canvas panel sections">${[
       ['workflow', 'Workflow', 'settings'],
+      ['nodes', 'Available nodes', 'library'],
       ['properties', 'Properties', 'node'],
       ['activity', 'Activity', 'activity'],
     ]
@@ -264,6 +265,7 @@ const Inspector = {
   refresh() {
     if (this.root.dataset.collapsed === 'true') return;
     if (this.tab === 'workflow') return this.workflow();
+    if (this.tab === 'nodes') return this.availableNodes();
     if (this.editing?.isConnected) {
       if (
         !this.editing.contains(document.activeElement) &&
@@ -299,13 +301,15 @@ const Inspector = {
     if (!soft) await pending?.();
     this.editing = null;
     this.body().onclick = null;
+    this.body().onchange = null;
     const footer = $('#side-actions', this.root);
     footer.replaceChildren();
     footer.hidden = true;
-    $('#side-heading').textContent = {workflow: 'Workflow', properties: 'Properties', activity: 'Activity'}[this.tab];
+    $('#side-heading').textContent = {workflow: 'Workflow', nodes: 'Available nodes', properties: 'Properties', activity: 'Activity'}[this.tab];
     $('#side-workflow').hidden = this.tab !== 'workflow';
     $('#side-selection').hidden = this.tab === 'workflow';
     if (this.tab === 'workflow') return this.workflow();
+    if (this.tab === 'nodes') return this.availableNodes();
     if (this.tab === 'activity') return this.activity();
     const nodes = selectedNodes(),
       frames = selectedFrames();
@@ -341,6 +345,51 @@ const Inspector = {
   /** Nothing is selected. */
   nothing() {
     this.body().innerHTML = '<p class="muted small">Select a node or a group to edit its properties here.</p>';
+  },
+
+  /** Each workflow keeps its own opt-in set. Group checkboxes toggle all current descendants. */
+  availableNodes() {
+    const body = this.body(),
+      previous = new Map($$('[data-library-folder]', body).map(el => [el.dataset.libraryFolder, el.open])),
+      items = (app.resources || []).filter(r => r.id !== W.library),
+      available = new Set(W.snapshot.library_nodes ?? []),
+      tree = {nodes: [], groups: new Map()};
+    const levelAt = path => {
+      let level = tree, parent = '';
+      for (const part of path.split('/').filter(Boolean)) {
+        parent = parent ? parent + '/' + part : part;
+        if (!level.groups.has(part)) level.groups.set(part, {nodes: [], groups: new Map(), path: parent});
+        level = level.groups.get(part);
+      }
+      return level;
+    };
+    for (const path of app.nodeFolders || []) levelAt(path);
+    for (const item of items) levelAt(String(item.payload.folder || '')).nodes.push(item);
+    const descendants = level => [...level.nodes, ...[...level.groups.values()].flatMap(descendants)];
+    const render = level =>
+      level.nodes.map(item => `<label class="available-node check"><input type="checkbox" data-library-node="${esc(item.id)}" aria-label="Include node: ${esc(item.name)}" ${available.has(item.id) ? 'checked' : ''}>${icon(resourceIcon(item))}<span>${esc(item.name)}</span></label>`).join('') +
+      [...level.groups].map(([name, sub]) => {
+        const nodes = descendants(sub), count = nodes.filter(item => available.has(item.id)).length;
+        return `<details class="available-group" data-library-folder="${esc(sub.path)}" ${previous.get(sub.path) !== false ? 'open' : ''}><summary><label class="check"><input type="checkbox" data-library-group="${esc(sub.path)}" aria-label="Include group: ${esc(sub.path)}" ${nodes.length && count === nodes.length ? 'checked' : ''} ${count && count < nodes.length ? 'data-partial' : ''} ${nodes.length ? '' : 'disabled'}>${icon((app.nodeFolderIcons || {})[sub.path] || 'folder')}<span>${esc(name)}</span></label><small class="muted">${count}/${nodes.length}</small></summary><div class="available-group-items">${render(sub)}</div></details>`;
+      }).join('');
+    body.innerHTML = `<p class="muted small">Choose which Library nodes appear in this workflow’s Add menu. Search in Add finds all Library nodes; placing one includes it here automatically.</p><div class="available-nodes">${render(tree) || '<p class="muted small">No Library nodes yet.</p>'}</div>`;
+    for (const box of $$('[data-partial]', body)) box.indeterminate = true;
+    body.onchange = async event => {
+      const box = event.target.closest('[data-library-node], [data-library-group]');
+      if (!box) return;
+      const project = W.project, workflow = W.workflow;
+      const target = box.hasAttribute('data-library-node') ? {resource_id: box.dataset.libraryNode} : {folder: box.dataset.libraryGroup};
+      for (const input of $$('input', body)) input.disabled = true;
+      try {
+        await api(`projects/${project}/available-nodes`, {
+          method: 'PUT', body: {workflow_id: workflow, ...target, enabled: box.checked}, edit: editToken(),
+        });
+        if (W.project === project && W.workflow === workflow) await reload();
+      } catch (error) {
+        if (W.project === project && W.workflow === workflow && this.tab === 'nodes') this.availableNodes();
+        fail(error);
+      }
+    };
   },
 
   /** The Workflow section: its name, its types and problems. */
@@ -409,7 +458,7 @@ const Inspector = {
       );
       $('[data-type-source]', li)?.addEventListener('click', () => {
         // The Custom Node that defines the type is where it is changed.
-        const home = resourcesOf('custom_node').find(r => r.payload.bundle?.types?.some(t => t.id === type.id));
+        const home = app.resources.find(r => r.payload.bundle?.types?.some(t => t.id === type.id));
         if (home) editInLibrary(home.id).catch(fail);
         else toast('No Custom Node of the Library defines this type any more.', true);
       });

@@ -18,7 +18,7 @@ async function project(app) {
     /** A node of examples/flow-nodes.json, placed: answers the ID of its Library node. */
     put: async name => {
       const entry = entries.find(e => e.name === name);
-      const item = await app.api('POST', 'resources', {kind: 'custom_node', name, payload: {...entry.payload, folder: ''}});
+      const item = await app.api('POST', 'resources', {name, payload: {...entry.payload, folder: ''}});
       const placed = await app.api('POST', `projects/${id}/custom-nodes/${item.id}`, {...q, point: {x: 0, y: 0}});
       return 'complex:' + placed.roots[0];
     },

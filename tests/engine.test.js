@@ -1,7 +1,7 @@
 'use strict';
 // The graph engine itself: compilePlan and runPlanned/evaluateGraph (js/model/evaluate.js), executePlan (js/model/executor.js) and how a
 // run is started (js/backend/scripts.js). Signals and data, pure nodes, fan-out, emit and loops, errors, cycles, the chain limit, time
-// and size limits, values that are copies, runs staying apart. The model is in docs/signal-engine.md. Run with:  node --test
+// and size limits, values that are copies, runs staying apart. The model is in docs/engine.md. Run with:  node --test
 const test = require('node:test');
 const assert = require('node:assert/strict');
 const {createApp} = require('./harness');

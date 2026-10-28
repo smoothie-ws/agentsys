@@ -27,13 +27,9 @@ const TEST_PERMISSIONS = [
   'graph.write',
   'library.read',
   'library.write',
-  'initiative.read',
-  'initiative.write:*',
-  'llm.call:*',
   'net.fetch:*',
   'run.read',
   'run.start',
-  'approval.request',
 ];
 
 /** A fresh, empty application (new in-memory database) with a Backend and a way to run the code of Scripts in Node. */
@@ -85,7 +81,6 @@ const nodes = {
   script: code => ({
     capabilities: TEST_PERMISSIONS,
     grants: TEST_PERMISSIONS,
-    origin: 'human',
     title: 'Script',
     op: 'script',
     inputs: [signal('in', 'In'), {id: 'script', name: 'script', type: ref('code'), default: code}],
@@ -206,12 +201,11 @@ async function place(
   app,
   project,
   workflow,
-  {name, bundle, capabilities = TEST_PERMISSIONS, grants = capabilities, origin = 'human'}
+  {name, bundle, capabilities = TEST_PERMISSIONS, grants = capabilities}
 ) {
   const item = await app.api('POST', 'resources', {
-    kind: 'custom_node',
     name,
-    payload: {bundle, capabilities, grants, origin, description: '', frame: {dx: 0, dy: 0, width: 300, height: 200}},
+    payload: {bundle, capabilities, grants, description: '', frame: {dx: 0, dy: 0, width: 300, height: 200}},
   });
   const placed = await app.api('POST', `projects/${project}/custom-nodes/${item.id}`, {
     ...workflow,
@@ -257,7 +251,6 @@ async function fn(
     widgets = {},
     capabilities = TEST_PERMISSIONS,
     grants = capabilities,
-    origin = 'human',
     name = 'Fn' + ++counter + Math.random().toString(36).slice(2, 6),
   } = {}
 ) {
@@ -270,7 +263,7 @@ async function fn(
       outputs: [...outputs.map(slot), ...signals.map(n => ({id: n, name: n, type: 'signal', node: false}))],
     }
   );
-  const placed = await place(app, project, workflow, {...def, capabilities, grants, origin});
+  const placed = await place(app, project, workflow, {...def, capabilities, grants});
   const snapshot = await app.api('GET', `projects/${project}/workflow`, {}, workflow),
     inside = snapshot.complex.find(c => c.id === placed.group).members;
   const script = snapshot.nodes.find(n => inside.includes(n.id) && n.config?.title === 'Script');

@@ -1,6 +1,6 @@
 // Storage for the whole application: a key-value store with an in-memory cache. With the AgentSys server
-// (node server.js) keys use JSON files and skills use SKILL.md documents; without it data stays in IndexedDB.
-// Also defines the small helpers every layer uses: ApiError, bad(), missing(), uid(), clone(), isObject(), finite().
+// (node server.js) keys use JSON files; without it data stays in IndexedDB.
+// Also defines the small helpers every layer uses: ApiError, bad(), missing(), uid(), clone(), isObject(), finite(), hashText().
 'use strict';
 
 class ApiError extends Error {
@@ -21,6 +21,10 @@ const uid = () => {
 const clone = value => (value === undefined ? undefined : JSON.parse(JSON.stringify(value)));
 const isObject = value => value !== null && typeof value === 'object' && !Array.isArray(value);
 const finite = value => typeof value === 'number' && Number.isFinite(value);
+const hashText = async text =>
+  [...new Uint8Array(await crypto.subtle.digest('SHA-256', new TextEncoder().encode(text)))]
+    .map(b => b.toString(16).padStart(2, '0'))
+    .join('');
 
 const DB = (() => {
   const STORE = 'kv',
@@ -136,7 +140,7 @@ const DB = (() => {
         await transaction('readwrite', store => {
           for (const key of keys) changes[key] === undefined ? store.delete(key) : store.put(changes[key], key);
         });
-      for (const key of keys) cache.set(key, changes[key]);
+      for (const key of keys) changes[key] === undefined ? cache.delete(key) : cache.set(key, changes[key]);
       if (!files) channel?.postMessage({keys});
     },
     /** Tells this store that keys were changed from outside (another process wrote the files): cached copies are dropped. */

@@ -1,5 +1,5 @@
 'use strict';
-// Runs, triggers, project state, export/import and conditional edits (see js/backend/routes-runs.js, routes-state.js,
+// Runs, triggers, workflow state, export/import and conditional edits (see js/backend/routes-runs.js, routes-state.js,
 // routes-exchange.js). Run with:  node --test
 const test = require('node:test');
 const assert = require('node:assert/strict');
@@ -15,7 +15,12 @@ async function greeting(app, name = 'Runs') {
   const node = (node_type, config = {}) =>
     app.api('POST', `projects/${id}/typed-nodes`, {...workflow, node_type, config, position: {x: 0, y: 0}});
   const text = await node('custom', nodes.value('text', 'hi')),
-    script = await fn(app, id, workflow, {code: 'node.output.result = v + "!"; await node.emit("Out")', inputs: ['v'], outputs: ['result'], signals: ['Out']}),
+    script = await fn(app, id, workflow, {
+      code: 'node.output.result = v + "!"; await node.emit("Out")',
+      inputs: ['v'],
+      outputs: ['result'],
+      signals: ['Out'],
+    }),
     preview = await fn(app, id, workflow, {code: 'node.display(input)', inputs: ['input']});
   const connect = (a, ap, b, bp) =>
     app.api('POST', `projects/${id}/port-connections`, {
@@ -29,7 +34,11 @@ async function greeting(app, name = 'Runs') {
   await connect(script.wrapper, 'Out', preview.wrapper, 'in');
   /** Gives the Script of `script` another code. */
   const recode = (target, code) =>
-    app.api('PUT', `projects/${id}/typed-nodes/${target.id}`, {...workflow, node_type: 'custom', config: {...nodes.script(code), title: 'Script'}});
+    app.api('PUT', `projects/${id}/typed-nodes/${target.id}`, {
+      ...workflow,
+      node_type: 'custom',
+      config: {...nodes.script(code), title: 'Script'},
+    });
   return {id, workflow, node, connect, text, script, preview, start, recode};
 }
 const waitUntil = async (check, ms = 5000) => {
@@ -86,10 +95,22 @@ test('a workflow with nothing to run, and unknown nodes, are refused', async () 
   const app = createApp(),
     {id} = await app.api('POST', 'projects', {name: 'Empty'});
   await rejects(app.api('POST', `projects/${id}/runs`, {workflow_id: id}), /Nothing to run/);
-  await app.api('POST', `projects/${id}/typed-nodes`, {workflow_id: id, node_type: 'custom', config: nodes.script('node.display(1)'), position: {x: 0, y: 0}});
-  await rejects(app.api('POST', `projects/${id}/runs`, {workflow_id: id}), /on_run/, 'a Script is not a start: only on_run is');
+  await app.api('POST', `projects/${id}/typed-nodes`, {
+    workflow_id: id,
+    node_type: 'custom',
+    config: nodes.script('node.display(1)'),
+    position: {x: 0, y: 0},
+  });
+  await rejects(
+    app.api('POST', `projects/${id}/runs`, {workflow_id: id}),
+    /on_run/,
+    'a Script is not a start: only on_run is'
+  );
   const p = await greeting(app);
-  await rejects(app.api('POST', `projects/${p.id}/runs`, {...p.workflow, node_ids: ['nope']}), /Not a node of this workflow: nope/);
+  await rejects(
+    app.api('POST', `projects/${p.id}/runs`, {...p.workflow, node_ids: ['nope']}),
+    /Not a node of this workflow: nope/
+  );
   await rejects(app.api('POST', `projects/lib-x/runs`, {}), /Custom Node/);
   await rejects(app.api('GET', 'runs/unknown'), /not found/i);
 });
@@ -109,11 +130,18 @@ test('a paused run starts no node until it is resumed; Stop ends it', async () =
   const app = createApp({scripts: 'worker'});
   const {id} = await app.api('POST', 'projects', {name: 'Pause'}),
     workflow = {workflow_id: id};
-  const node = (node_type, config) => app.api('POST', `projects/${id}/typed-nodes`, {...workflow, node_type, config, position: {x: 0, y: 0}});
+  const node = (node_type, config) =>
+    app.api('POST', `projects/${id}/typed-nodes`, {...workflow, node_type, config, position: {x: 0, y: 0}});
   const connect = (a, ap, b) =>
-    app.api('POST', `projects/${id}/port-connections`, {...workflow, add: [{source: a, source_port: ap, target: b, target_port: 'in'}]});
+    app.api('POST', `projects/${id}/port-connections`, {
+      ...workflow,
+      add: [{source: a, source_port: ap, target: b, target_port: 'in'}],
+    });
   const start = await node('custom', nodes.run()),
-    slow = await fn(app, id, workflow, {code: 'await new Promise(r => setTimeout(r, 300)); await node.emit("Out")', signals: ['Out']}),
+    slow = await fn(app, id, workflow, {
+      code: 'await new Promise(r => setTimeout(r, 300)); await node.emit("Out")',
+      signals: ['Out'],
+    }),
     after = await fn(app, id, workflow, {code: 'node.display("after")'});
   await connect(start.id, 'out', slow.wrapper);
   await connect(slow.wrapper, 'Out', after.wrapper);
@@ -123,7 +151,10 @@ test('a paused run starts no node until it is resumed; Stop ends it', async () =
   await new Promise(r => setTimeout(r, 600));
   let run = await app.api('GET', `runs/${started.id}`);
   assert.equal(run.status, 'running');
-  assert.deepEqual(run.nodes.filter(n => n.node_id === after.id), []);
+  assert.deepEqual(
+    run.nodes.filter(n => n.node_id === after.id),
+    []
+  );
   assert.equal((await app.api('POST', `runs/${started.id}/resume`, {})).paused, false);
   run = await waitUntil(async () => {
     const r = await app.api('GET', `runs/${started.id}`);
@@ -142,12 +173,21 @@ test('a Reroute point can be put on a signal wire; the other wires of the signal
   const app = createApp(),
     {id} = await app.api('POST', 'projects', {name: 'Signal reroute'}),
     workflow = {workflow_id: id};
-  const node = (config) => app.api('POST', `projects/${id}/typed-nodes`, {...workflow, node_type: 'custom', config, position: {x: 0, y: 0}});
-  const first = await node(nodes.run()), second = await node(nodes.run()), script = await fn(app, id, workflow, {code: ''});
+  const node = config =>
+    app.api('POST', `projects/${id}/typed-nodes`, {...workflow, node_type: 'custom', config, position: {x: 0, y: 0}});
+  const first = await node(nodes.run()),
+    second = await node(nodes.run()),
+    script = await fn(app, id, workflow, {code: ''});
   for (const from of [first, second])
-    await app.api('POST', `projects/${id}/port-connections`, {...workflow, add: [{source: from.id, source_port: 'out', target: script.wrapper, target_port: 'in'}]});
+    await app.api('POST', `projects/${id}/port-connections`, {
+      ...workflow,
+      add: [{source: from.id, source_port: 'out', target: script.wrapper, target_port: 'in'}],
+    });
   const before = await app.api('GET', `projects/${id}/workflow`, {}, workflow);
-  await app.api('POST', `projects/${id}/split-connections`, {...workflow, splits: [{edge_id: before.edges[0].id, position: {x: 5, y: 5}}]});
+  await app.api('POST', `projects/${id}/split-connections`, {
+    ...workflow,
+    splits: [{edge_id: before.edges[0].id, position: {x: 5, y: 5}}],
+  });
   const after = await app.api('GET', `projects/${id}/workflow`, {}, workflow);
   assert.equal(after.edges.length, 3);
   assert.equal(after.nodes.find(n => n.node_type === 'reroute').inputs[0].type, 'signal');
@@ -192,7 +232,10 @@ test('a running script is stopped by cancel (worker threads)', async () => {
 test('Scripts in worker threads run, can call the API, and a script that never ends hits the limit', async () => {
   const app = createApp({scripts: 'worker'}),
     p = await greeting(app);
-  await p.recode(p.script, 'const projects = await agentsys("GET", "projects"); node.output.result = node.input.v + ":" + projects.length + ":" + context.run_id.length; await node.emit("Out")');
+  await p.recode(
+    p.script,
+    'const projects = await agentsys("GET", "projects"); node.output.result = node.input.v + ":" + projects.length + ":" + context.run_id.length; await node.emit("Out")'
+  );
   const run = await app.api('POST', `projects/${p.id}/runs`, {...p.workflow, wait: 10});
   assert.equal(run.status, 'completed');
   assert.equal(run.displays[p.preview.id], 'hi:1:32');
@@ -212,50 +255,50 @@ test('the history keeps the last runs of a workflow and goes away with it', asyn
   assert.equal((await app.api('GET', `projects/${p.id}/runs`, {}, {...p.workflow, status: 'failed'})).length, 0);
   await app.api('DELETE', `projects/${p.id}`);
   assert.equal(app.eval('RUNS.byId.size') >= 0, true);
-  assert.deepEqual(await app.eval("DB.get('run_index')").then(v=>JSON.parse(JSON.stringify(v))),[]);
+  assert.deepEqual(await app.eval("DB.get('run_index')").then(v => JSON.parse(JSON.stringify(v))), []);
 });
 
-test('project state: values, revisions, compare-and-set, prefixes and limits', async () => {
+test('workflow state: values, versions, compare-and-set, prefixes and limits', async () => {
   const app = createApp(),
     {id} = await app.api('POST', 'projects', {name: 'State'});
-  const put = (key, value, query) => app.api('PUT', `projects/${id}/state/${key}`, {value}, query);
-  assert.deepEqual(await app.api('GET', `projects/${id}/state`), []);
+  const put = (key, value, query) => app.api('PUT', `workflows/${id}/state/${key}`, {value}, query);
+  assert.deepEqual(await app.api('GET', `workflows/${id}/state`), []);
   const first = await put('plan:main', {steps: [1, 2]});
-  assert.equal(first.revision, 1);
-  assert.equal((await put('plan:main', {steps: [1, 2, 3]})).revision, 2);
-  await rejects(put('plan:main', 'stale', {if_revision: '1'}), /revision of "plan:main" is 2/);
-  assert.equal((await put('plan:main', 'ok', {if_revision: '2'})).revision, 3);
-  assert.equal((await app.api('PUT', `projects/${id}/state/lock`, {value: true, if_revision: 0})).revision, 1);
-  await rejects(app.api('PUT', `projects/${id}/state/lock`, {value: true, if_revision: 0}), /revision/);
-  assert.equal((await app.api('GET', `projects/${id}/state/plan:main`)).value, 'ok');
+  assert.equal(first.version, 1);
+  assert.equal((await put('plan:main', {steps: [1, 2, 3]})).version, 2);
+  await rejects(put('plan:main', 'stale', {version: '1'}), /version/);
+  assert.equal((await put('plan:main', 'ok', {version: '2'})).version, 3);
+  assert.equal((await app.api('PUT', `workflows/${id}/state/lock`, {value: true, version: 0})).version, 1);
+  await rejects(app.api('PUT', `workflows/${id}/state/lock`, {value: true, version: 0}), /version/);
+  assert.equal((await app.api('GET', `workflows/${id}/state/plan:main`)).value, 'ok');
   assert.deepEqual(
-    (await app.api('GET', `projects/${id}/state`, {}, {prefix: 'plan:'})).map(e => e.key),
+    (await app.api('GET', `workflows/${id}/state`, {}, {prefix: 'plan:'})).map(e => e.key),
     ['plan:main']
   );
-  assert.equal((await app.api('GET', `projects/${id}/state`, {}, {values: 'true'}))[0].value, true);
+  assert.equal((await app.api('GET', `workflows/${id}/state`, {}, {values: 'true'}))[0].value, true);
   await rejects(put('bad key', 1), /state key/);
-  await rejects(app.api('PUT', `projects/${id}/state/big`, {value: 'x'.repeat(300000)}), /at most 256000/);
-  await rejects(app.api('PUT', `projects/${id}/state/none`, {}), /value/);
-  assert.deepEqual(await app.api('DELETE', `projects/${id}/state/lock`), {deleted: 'lock'});
-  await rejects(app.api('GET', `projects/${id}/state/lock`), /No such state key/);
-  await rejects(app.api('GET', `projects/lib-x/state`), /projects/);
+  await rejects(app.api('PUT', `workflows/${id}/state/big`, {value: 'x'.repeat(1000001)}), /state_value_bytes/);
+  await rejects(app.api('PUT', `workflows/${id}/state/none`, {}), /value/);
+  assert.deepEqual(await app.api('DELETE', `workflows/${id}/state/lock`), {deleted: 'lock'});
+  await rejects(app.api('GET', `workflows/${id}/state/lock`), /No such state key/);
+  await rejects(app.api('GET', `workflows/lib-x/state`), /Workflow not found/);
 });
 
-test('a script can keep memory between runs in the project state', async () => {
+test('a script can keep memory between runs in the workflow state', async () => {
   const app = createApp(),
     p = await greeting(app);
   await p.recode(
     p.script,
     `let n = 0, rev = 0;
-try { const e = await agentsys('GET', 'projects/' + context.project_id + '/state/count'); n = e.value; rev = e.revision } catch {}
-await agentsys('PUT', 'projects/' + context.project_id + '/state/count', {value: n + 1, if_revision: rev});
+try { const e = await agentsys('GET', 'workflows/' + context.workflow_id + '/state/count'); n = e.value; rev = e.version } catch {}
+await agentsys('PUT', 'workflows/' + context.workflow_id + '/state/count', {value: n + 1, version: rev});
 node.output.result = n + 1; await node.emit("Out")`
   );
   for (let i = 1; i <= 3; i++) {
     const run = await app.api('POST', `projects/${p.id}/runs`, {...p.workflow, wait: 5});
     assert.equal(run.displays[p.preview.id], String(i));
   }
-  assert.equal((await app.api('GET', `projects/${p.id}/state/count`)).value, 3);
+  assert.equal((await app.api('GET', `workflows/${p.id}/state/count`)).value, 3);
 });
 
 test('a workflow exports as one document and imports with the same behaviour', async () => {
@@ -265,7 +308,11 @@ test('a workflow exports as one document and imports with the same behaviour', a
   assert.equal(exported.kind, 'workflow');
   assert.equal(exported.document.nodes.length, 6);
   assert.ok(!('cursor' in exported.document));
-  const imported = await app.api('POST', `projects/${p.id}/workflows/import`, TextGraph.encode({...exported, name: 'Copy'}));
+  const imported = await app.api(
+    'POST',
+    `projects/${p.id}/workflows/import`,
+    TextGraph.encode({...exported, name: 'Copy'})
+  );
   assert.deepEqual(imported.diagnostics, []);
   const run = await app.api('POST', `projects/${p.id}/runs`, {workflow_id: imported.id, wait: 5});
   assert.equal(run.status, 'completed');
@@ -275,10 +322,24 @@ test('a workflow exports as one document and imports with the same behaviour', a
     (await app.api('POST', `projects/${p.id}/workflows/import`, TextGraph.encode({...exported, name: 'Copy'}))).name,
     'Copy 2'
   );
-  await rejects(app.api('POST', `projects/${p.id}/workflows/import`, TextGraph.encode({document: {nodes: 'x'}})), /wrong shape/);
+  await rejects(
+    app.api('POST', `projects/${p.id}/workflows/import`, TextGraph.encode({document: {nodes: 'x'}})),
+    /wrong shape/
+  );
   await rejects(app.api('POST', `projects/${p.id}/workflows/import`, {name: 'x'}), /agentsys.text/);
   await rejects(
-    app.api('POST', `projects/${p.id}/workflows/import`, TextGraph.encode({document: {nodes: [{id: 'a', kind: 'function', node_type: 'custom'}, {id: 'a', kind: 'function', node_type: 'custom'}]}})),
+    app.api(
+      'POST',
+      `projects/${p.id}/workflows/import`,
+      TextGraph.encode({
+        document: {
+          nodes: [
+            {id: 'a', kind: 'function', node_type: 'custom'},
+            {id: 'a', kind: 'function', node_type: 'custom'},
+          ],
+        },
+      })
+    ),
     /unique/
   );
 });
@@ -324,7 +385,10 @@ test('an edit with if_cursor applies only to the workflow state that was read', 
 test('triggers: interval ticks, no overlap, manual fire and webhooks with a payload', async () => {
   const app = createApp(),
     p = await greeting(app);
-  await p.recode(p.script, 'node.output.result = JSON.stringify(context.payload) + context.trigger; await node.emit("Out")');
+  await p.recode(
+    p.script,
+    'node.output.result = JSON.stringify(context.payload) + context.trigger; await node.emit("Out")'
+  );
   await rejects(
     app.api('POST', 'triggers', {name: 'x', type: 'interval', project_id: p.id, every_seconds: 1}),
     /10 to 2592000/
@@ -382,12 +446,11 @@ test('the API description lists the new routes', async () => {
     '/api/runs/{run_id}',
     '/api/projects/{project_id}/runs',
     '/api/triggers',
-    '/api/projects/{project_id}/state/{key}',
+    '/api/workflows/{workflow_id}/state/{key}',
     '/api/projects/import',
   ])
     assert.ok(paths.includes(expected), expected);
 });
-
 
 test('workflow and project imports fire on_placed of the Library nodes in them, with the imported project and workflow ids', async () => {
   const app = createApp();
@@ -397,7 +460,9 @@ test('workflow and project imports fire on_placed of the Library nodes in them, 
     {
       Body: {inputs: [], outputs: []},
       E: nodes.event('on_placed'),
-      S: nodes.script('await agentsys("PUT", "projects/" + context.project_id + "/state/" + context.workflow_id, {value: context.node_id})'),
+      S: nodes.script(
+        'await agentsys("PUT", "workflows/" + context.workflow_id + "/state/" + context.workflow_id, {value: context.node_id})'
+      ),
     },
     {wires: [['E', 'out', 'S', 'in']]}
   );
@@ -411,6 +476,9 @@ test('workflow and project imports fire on_placed of the Library nodes in them, 
   const project = await app.api('POST', 'projects/import', projectFile);
   await app.Backend.hooksIdle();
   const nodeId = TextGraph.decode(workflowFile).document.nodes.find(n => n.config?.op === 'script').id;
-  assert.equal((await app.api('GET', `projects/${destination.id}/state/${workflow.id}`)).value, nodeId);
-  assert.equal((await app.api('GET', `projects/${project.id}/state/${project.workflows[0].id}`)).value, nodeId);
+  assert.equal((await app.api('GET', `workflows/${workflow.id}/state/${workflow.id}`)).value, nodeId);
+  assert.equal(
+    (await app.api('GET', `workflows/${project.workflows[0].id}/state/${project.workflows[0].id}`)).value,
+    nodeId
+  );
 });

@@ -172,13 +172,14 @@ body.nav-joined #mobile-secondary > .nav-pill {
   left: var(--x, 0px);
 }
 /* Rows sit above the pill and keep no fill of their own while open. */
+.nav-joined .brand,
 .nav-joined .sidebar-top a,
 .nav-joined .sidebar-footer a,
 .nav-joined .subnav-row {
   position: relative;
   z-index: 1;
 }
-.nav-joined :is(.sidebar-top a.active, .sidebar-footer a.active, .subnav-row.active, .subnav-row.active:hover) {
+.nav-joined :is(.brand.active, .sidebar-top a.active, .sidebar-footer a.active, .subnav-row.active, .subnav-row.active:hover) {
   background: transparent;
 }
 .nav-joined .subnav-row.active {

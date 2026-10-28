@@ -1,11 +1,18 @@
-# Script permissions
+# Permissions
 
-A Script uses only the capabilities declared by its Library node's payload and explicitly granted by a person. Raw Scripts declare these in `config`. Both contain `capabilities:[]`, `grants:[]`, `origin:"human"|"ai"`. Missing fields mean no permissions. The workspace `GET/PUT projects/{id}/policy {allow:[...]}` limits what can be granted; an optional `initiatives/{id}/policy` adds another allow-list intersection. Effective rights are the intersection of declaration, policy and grant. A capability ending in `:*` grants that family; hostnames otherwise match exactly, including the port.
+A Script has only the capabilities that (1) its Library node's payload (or its own `config`) **declares** in `capabilities`, (2) a person **grants** in `grants`, and (3) the workspace policy **allows** (`GET/PUT projects/{id}/policy {allow: [...]}`). Effective rights are the intersection; missing fields mean none. `x:*` grants a family; hostnames match exactly, port included.
 
-Supported names: `graph.read`, `graph.write`, `library.read`, `library.write`, `initiative.read`, `initiative.write:<id>`, `llm.call:<Provider/model>`, `net.fetch:<host>`, `run.read`, `run.start`, `approval.request`, `secrets.use:<name>`. Every registered route exposes method-specific `needs` in OpenAPI's `x-needs`. Unknown/admin routes are denied to scripts. All checks happen in the host bridge, including calls initiated by hooks. The host UI/API is the user's authority and can edit policies.
+Names: `graph.read`, `graph.write`, `library.read`, `library.write`, `net.fetch:<host>`, `run.read`, `run.start`, `secrets.use:<name>`.
 
-Scripts created through the bridge are marked `origin:"ai"` and quarantined. Elevated grants require a review whose code hash matches the current declaration and code. A person requests review with `POST projects/{id}/permission-approvals {resource_id}` and answers it from Controller. The review includes source, previous reviewed source and declared capabilities. Editing code invalidates the approval. Policy still applies after approval.
+- Every route has method-specific `needs` (OpenAPI `x-needs`). Admin and unknown routes are denied to scripts.
+- Rights are checked **at node start** against the current policy and the version's grants; a denied version is `blocked` with a reason and runs no code. Every bridge call checks again, hook calls included.
+- **Quarantine:** what a Script writes through the bridge (a node, a Library node, a change of code) comes out with `grants: ["graph.read"]`. A Script cannot give itself or another more than it holds; changed code loses its grants until a person grants them again in the inspector. Code arriving through a wire instead of typed in the node gets only the read grants.
+- The host UI/API is the user's authority and can edit policies.
 
-Network access uses `agentsys('POST','net',{url,method?,headers?,body?,timeout?})`. Redirects are refused so each new host requires a separately checked call. Put credentials in `PUT secrets/{name} {value}`; GET returns only metadata. Requests use placeholders such as `Authorization: "Bearer {{secret:service}}"`, requiring `secrets.use:service` in addition to the host capability. The host substitutes the secret and redacts reflected values before returning data. Scripts cannot read secret storage or provider credentials.
+## Network and secrets
 
-Workers hide direct networking, imports, worker creation, host messaging and Node globals. On Node, user code runs in a separate VM realm inside the Worker; host callbacks are captured in closures and messages cross as JSON. Browser CSP restricts imported code to application/blob sources. `agentsys` is a per-invocation closure. Denied and sensitive actions are audited in the run log. The inline test runner intentionally has no isolation; use `scripts:'worker'` for security assertions.
+`agentsys('POST', 'net', {url, method?, headers?, body?, timeout?})`. Redirects are refused, so each new host needs its own checked call. Credentials go in `PUT secrets/{name} {value}`; `GET` returns metadata only. Use placeholders: `Authorization: "Bearer {{secret:service}}"` (needs `secrets.use:service` as well as the host capability). The host substitutes and redacts reflected values before returning data.
+
+## Isolation
+
+Workers hide networking, imports, worker creation, host messaging and Node globals. On Node, user code runs in a separate VM realm inside the Worker; host callbacks are closures and messages cross as JSON. The browser's CSP restricts imported code to application/blob sources. Denied and sensitive actions are audited in the run log. The inline test runner has **no isolation** — use `scripts: 'worker'` for security tests.

@@ -1,7 +1,0 @@
-# Replay
-
-`POST runs/{id}/replay {wait?:seconds}` creates a separate run from pinned code and recorded responses. It performs no live model calls, network requests or API mutations. Every bridge request is addressed by segment, invocation path and call index; its canonical request must match the trace. Parallel responses are released in recorded completion order. Missing, repeated, changed or unused calls fail with a location and `replay_diverged`.
-
-Scripts receive recorded `Date.now()`, `new Date()` and `Math.random()` through local standard-library bindings. Each suspension segment records resolutions and nondeterministic values, allowing replay across durable waits. `Date` with explicit arguments remains ordinary date parsing. For reproducibility, use the supplied Date/Math bindings; Workers hide alternate global clocks and random sources; use the provided bindings and bridge. Use the bridge for all external inputs.
-
-Controller's Replay button starts this mode and Trace displays the original events. Source run data and trace must still be retained. Text blobs have independent retention; replay consumes recorded bridge results, so deleting prompt blobs does not contact the provider or prevent replay. Provider resources do not need to exist during replay. `trace_retention_ms` defaults to one week after completion; expiring a trace disables Replay while retaining the append-only event history.

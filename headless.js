@@ -7,7 +7,7 @@ const path = require('node:path');
 const vm = require('node:vm');
 const {Worker} = require('node:worker_threads');
 
-const LAYERS = /^js\/(storage|model|backend|vendor)\//;
+const LAYERS = /^js\/(storage|model|backend)\//;
 
 // A worker thread that looks like the browser's Web Worker to the Script runner (backend/scripts.js).
 const WORKER_PRELUDE = `const {parentPort} = require('node:worker_threads');
@@ -69,19 +69,28 @@ class NodeWorker {
 
 // A run as plain async code in this process: fast and simple, for tests. No time limit, no isolation (the nodes of a run share
 // one realm, as they do in a Worker).
-const INLINE_RUN_PLAN = `runPlan = async (plan, onEvent, signal) => {
+const INLINE_RUN_PLAN = `runPlan = async (plan, onEvent, signal, control) => {
   await preparePlanPermissions(plan);
-  await pinPlanVersions(plan);
+  await versionPlan(plan);
+  plan = clone(plan);
+  plan.capture_boundaries = RUNS.byId.has(plan.context.run_id) && !plan.replay;
+  const host = planHost(plan, onEvent, control);
   if (signal?.aborted) throw new Error('Run cancelled');
   let over = false;
+  const gate = {paused:control?.paused===true,waiters:[]};
+  const receive = message => {if(message.type==='patch')return gate.patch(message.patch);if(message.type==='cancel_wave')return gate.cancelWave(message.path);gate.paused=message.type==='pause';if(!gate.paused)gate.waiters.splice(0).forEach(wake=>wake());};
   const stop = new Promise((_, reject) => signal?.addEventListener('abort', () => { over = true; reject(new Error('Run cancelled')); }, {once: true}));
   const run = executePlan(plan, {
     AsyncFunction: Object.getPrototypeOf(async function () {}).constructor,
     displayText,
-    call: (node, method, path, body, query, invocation) => bridgeFor({...plan.context, node_id: node, plan, invocation}).request([method, path, body, query]),
+    call: host.call,
+    authorize: host.authorize,
+    checkpoint: value => !over && host.checkpoint(value),
     limits: plan.limits,
-    emit: event => { if (!over) onEvent(event); },
+    gate,
+    emit: event => { if (!over) host.emit(event); },
   });
+  host.attach(receive);
   return await Promise.race([run, stop]);
 };`;
 

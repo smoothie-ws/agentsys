@@ -1,5 +1,5 @@
 // Tabs of the open graph editors (workflows and Custom Nodes), like files in a code editor; persisted in this browser.
-// Every other page (Projects, a project, Library, Settings, API) is reached through the sidebar and the second panel;
+// Every other page (Dashboard, Projects, a project, Library, Runs, Settings) is reached through the sidebar and the second panel;
 // it has no tab, but remembers where it was left (`Tabs.pages`): Settings reopens on its section, a project page where it was scrolled.
 'use strict';
 
@@ -16,15 +16,16 @@ const Tabs = {
     return (
       {
         home: 'home',
+        projects: 'projects',
         project: 'p:' + route.project,
         'project-settings': 'ps:' + route.project,
         settings: 'settings',
         // (no "/" in a key: an editor's key is project/workflow)
-        resources: ['res', route.kind, route.id || (route.folder ? 'in:' + encodeURIComponent(route.folder) : '')]
+        resources: ['res', route.section, route.id || (route.folder ? 'in:' + encodeURIComponent(route.folder) : '')]
           .filter(Boolean)
           .join(':'),
-        'api-docs': 'api',
-        controller: 'controller',
+        runs: 'runs',
+        api: 'api',
       }[route.page] || 'home'
     );
   },

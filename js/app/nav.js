@@ -1,5 +1,5 @@
 // Navigation: the sidebar sections and the second panel. Every section is a tree of rows shown in the second panel
-// (projects → workflows, Library kinds → items, API folders → calls) and the page beside it shows the open row's children as cards.
+// (projects → workflows, Library groups → nodes) and the page beside it shows the open row's children as cards.
 // Also the sliding highlight of "connected navigation" (css/nav-joined.css).
 'use strict';
 
@@ -13,23 +13,21 @@ const applyNavJoined = (on, layoutKey = '') => {
   requestAnimationFrame(() => placePills(true, true));
 };
 
-/** Which of the four sections of the sidebar a route belongs to. */
+/** Which section of the sidebar a route belongs to (the home page, the dashboard, belongs to none). */
 function sectionOf(route) {
   if (route.project?.startsWith('lib-')) return 'library'; // a Custom Node is edited as a workflow
-  return (
-    {resources: 'library', settings: 'settings', 'api-docs': 'api', controller: 'controller'}[route.page] || 'projects'
-  );
+  if (route.project || route.page === 'projects') return 'projects';
+  return {resources: 'library', settings: 'settings'}[route.page] || 'home';
 }
 const SECTION_TITLES = {
+  home: 'Dashboard',
   projects: 'Projects',
   library: 'Library',
   settings: 'Settings',
-  api: 'API',
-  controller: 'Controller',
 };
 
 // ----- the second panel -----
-/** The second panel's content: a section fills it from its tree (below), Settings and API from their pages (`mount`). */
+/** The second panel's content: a section fills it from its tree (below), Settings from its page (`mount`). */
 const Subnav = {
   custom: false,
   changed: false,
@@ -59,7 +57,7 @@ const Subnav = {
     area.scrollTop = changed ? 0 : scroll;
     if (typeof syncMobileNavigation === 'function') syncMobileNavigation();
   },
-  /** A page that owns its sub-sections (Settings, API) fills the panel while it opens. */
+  /** A page that owns its sub-sections (Settings, Runs) fills the panel while it opens. */
   mount(parts) {
     this.set(sectionOf(app.route || {}), parts, true);
   },
@@ -78,6 +76,50 @@ function selectNavTab(list, current) {
   if (typeof syncMobileNavigation === 'function') syncMobileNavigation();
 }
 
+/** The rows of a page that has sections of its own (Dashboard, Runs, API) in the second panel: `[key, label, glyph]` anchors to `#prefix-key`
+ *  and `[key, label, glyph, path]` links to another page. The first section starts active. */
+function sectionRows(prefix, items) {
+  return (
+    '<nav class="subnav-tree">' +
+    items
+      .map(([key, label, glyph, path], i) =>
+        path
+          ? `<a class="subnav-row" href="${esc(path)}" data-link>${icon(glyph)}<span>${esc(label)}</span></a>`
+          : `<a class="subnav-row ${i === 0 ? 'active' : ''}" href="#${prefix}-${key}" data-section-row="${key}">${icon(glyph)}<span>${esc(label)}</span></a>`
+      )
+      .join('') +
+    '</nav>'
+  );
+}
+/** Makes the rows of `sectionRows` work: a click scrolls to the section, and the section in view is the active row. */
+function followSections(view, prefix) {
+  const rows = $$('#subnav [data-section-row]');
+  const show = key => {
+    rows.forEach(row => row.classList.toggle('active', row.dataset.sectionRow === key));
+    placePills();
+  };
+  for (const row of rows)
+    row.onclick = event => {
+      event.preventDefault();
+      show(row.dataset.sectionRow);
+      $(`#${prefix}-${row.dataset.sectionRow}`, view)?.scrollIntoView({behavior: 'smooth'});
+    };
+  let frame = 0;
+  view.addEventListener('scroll', () => {
+    if (frame) return;
+    frame = requestAnimationFrame(() => {
+      frame = 0;
+      const top = view.getBoundingClientRect().top + 80;
+      let current = rows[0]?.dataset.sectionRow;
+      for (const row of rows) {
+        const section = $(`#${prefix}-${row.dataset.sectionRow}`, view);
+        if (section && section.getBoundingClientRect().top <= top) current = row.dataset.sectionRow;
+      }
+      if (current && !$(`#subnav [data-section-row="${current}"].active`)) show(current);
+    });
+  });
+}
+
 // ----- the rows -----
 /** The unfolded groups of the trees. Every tree starts folded on each visit; a group opens only when you open it. */
 const navOpen = new Set();
@@ -91,7 +133,7 @@ function navRow(n, active) {
   const group = n.children !== undefined,
     open = group && navOpen.has(n.key),
     here = n.key === active;
-  const row = `<div class="subnav-row ${here ? 'active' : ''}" data-key="${esc(n.key)}"${n.drop !== undefined ? ` data-drop-folder="${esc(n.drop)}" data-drop-kind="${esc(n.dropKind || 'custom_node')}"` : ''}${n.drag ? ` draggable="true" data-drag="${esc(n.drag)}"` : ''}>${
+  const row = `<div class="subnav-row ${here ? 'active' : ''}" data-key="${esc(n.key)}"${n.drop !== undefined ? ` data-drop-folder="${esc(n.drop)}"` : ''}${n.drag ? ` draggable="true" data-drag="${esc(n.drag)}"` : ''}>${
     group
       ? `<button type="button" class="subnav-toggle" aria-label="Show or hide" aria-expanded="${open}">${icon('chevron')}</button>`
       : '<span class="subnav-pad"></span>'
@@ -131,31 +173,29 @@ async function loadProjectWorkflows(id, force = false) {
   renderSidebar();
 }
 /** The groups of Custom Nodes below `parent` with the nodes inside them. */
-function folderRows(parent, kind = 'custom_node') {
-  const items = resourcesOf(kind);
+function folderRows(parent) {
   return [
-    ...foldersOf(kind)
+    ...app.nodeFolders
       .filter(f => parentPath(f) === parent)
       .map(path => ({
-        key: folderKey(path, kind),
+        key: folderKey(path),
         label: baseName(path),
-        icon: folderIconsOf(kind)[path] || 'folder',
-        href: folderHref(path, kind),
-        menu: folderSpec(path, kind),
-        drop: canManageKind(kind) ? path : undefined,
-        dropKind: kind,
-        children: folderRows(path, kind),
+        icon: (app.nodeFolderIcons || {})[path] || 'folder',
+        href: folderHref(path),
+        menu: 'folder:' + path,
+        drop: developerMode() ? path : undefined,
+        children: folderRows(path),
       })),
-    ...items.filter(r => (r.payload.folder || '') === parent).map(resourceRow),
+    ...app.resources.filter(r => (r.payload.folder || '') === parent).map(resourceRow),
   ];
 }
 const resourceRow = r => ({
   key: 'r:' + r.id,
   label: r.name,
   icon: resourceIcon(r),
-  href: r.kind === 'custom_node' && !developerMode() ? null : resourceHref(r),
+  href: developerMode() ? resourceHref(r) : null,
   menu: 'resource:' + r.id,
-  drag: groupedKind(r.kind) && canManageKind(r.kind) ? r.id : undefined,
+  drag: developerMode() ? r.id : undefined,
 });
 /** What each section shows: the open row (`active`), the groups to unfold to reach it, and the rows. */
 const NAV_TREES = {
@@ -163,7 +203,6 @@ const NAV_TREES = {
     title: SECTION_TITLES.projects,
     actions: `<button class="icon" id="import-project-panel" title="Import project" aria-label="Import project">${icon('download')}</button><button class="icon" id="new-project" title="New project" aria-label="New project">${icon('plus')}</button>`,
     active: route.workflow ? 'w:' + route.workflow : route.project ? 'p:' + route.project : '',
-    ancestors: route.project ? ['p:' + route.project] : [],
     empty: 'No projects yet.',
     rows: () =>
       (app.projects || []).map(p => {
@@ -187,37 +226,16 @@ const NAV_TREES = {
       }),
   }),
   library: route => {
-    // A Custom Node open in its editor is shown as the item it is.
-    const id = route.project?.startsWith('lib-') ? route.project.slice(4) : route.id,
-      item = app.resources.find(r => r.id === id),
-      kind = route.kind || item?.kind,
-      folder = route.folder ?? item?.payload.folder ?? '',
-      chain = groupedKind(kind)
-        ? folder
-            .split('/')
-            .filter(Boolean)
-            .map((_, i, all) => folderKey(all.slice(0, i + 1).join('/'), kind))
-        : [];
+    // A Custom Node open in its editor is shown as the node it is.
+    const id = route.project?.startsWith('lib-') ? route.project.slice(4) : route.id;
     return {
       title: SECTION_TITLES.library,
       actions: `<button class="icon" id="library-add" title="New or import" aria-label="New or import">${icon('plus')}</button>`,
-      active: id ? 'r:' + id : route.folder ? folderKey(route.folder, kind) : kind ? 'k:' + kind : '',
-      ancestors: kind ? ['k:' + kind, ...chain] : [],
+      active: id ? 'r:' + id : route.folder ? folderKey(route.folder) : route.section ? 's:nodes' : '',
       empty: '',
-      rows: () =>
-        Object.entries(KINDS).map(([k, label]) => {
-          const items = resourcesOf(k);
-          return {
-            key: 'k:' + k,
-            label,
-            icon: KIND_ICONS[k],
-            href: `/resources/${k}`,
-            menu: 'kind:' + k,
-            drop: groupedKind(k) && canManageKind(k) ? '' : undefined,
-            dropKind: k,
-            children: groupedKind(k) ? folderRows('', k) : items.map(resourceRow),
-          };
-        }),
+      rows: () => [
+        {key: 's:nodes', label: 'Nodes', icon: 'library', href: NODES_PATH, menu: 'library:', drop: developerMode() ? '' : undefined, children: folderRows('')},
+      ],
     };
   },
 };
@@ -226,7 +244,10 @@ function renderSubnav(route) {
   const section = sectionOf(route),
     tree = NAV_TREES[section]?.(route);
   $('#subnav').hidden = false;
-  if (section !== shownSection) navOpen.clear(); // arriving in a section: its tree starts folded
+  if (section !== shownSection) {
+    navOpen.clear(); // arriving in a section: its tree starts folded (the Library's one section, Nodes, is open)
+    if (section === 'library') navOpen.add('s:nodes');
+  }
   shownSection = section;
   if (Subnav.custom) return;
   if (!tree) return Subnav.set(section, {title: SECTION_TITLES[section]});
@@ -421,15 +442,13 @@ async function menuItems(spec, owner) {
         (await api(`projects/${projectId}`)).workflows.find(w => w.id === workflowId);
     return workflow && workflowActions(projectId, workflow, title);
   }
-  if (type === 'library') return libraryAddItems();
-  if (type === 'kind') return kindActions(arg);
+  if (type === 'library') return libraryActions();
   if (type === 'resource')
     return resourceActions(
       app.resources.find(r => r.id === arg),
       title
     );
-  if (type === 'folder' || type === 'skill-folder')
-    return folderActions(arg, type === 'skill-folder' ? 'skill' : 'custom_node', title);
+  if (type === 'folder') return folderActions(arg, title);
 }
 document.addEventListener('click', event => {
   const button = event.target.closest('[data-menu]');
@@ -524,7 +543,7 @@ $('#subnav').addEventListener('click', event => {
   const add = event.target.closest('#library-add');
   if (add) {
     const rect = add.getBoundingClientRect();
-    return popup(rect.right - 250, rect.bottom + 4, libraryAddItems());
+    return popup(rect.right - 250, rect.bottom + 4, libraryActions());
   }
   const toggle = event.target.closest('.subnav-toggle, [data-toggle]');
   if (!toggle) return;

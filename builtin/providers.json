@@ -1,7 +1,0 @@
-{
-  "format": "agentsys.text/1",
-  "files": {
-    "graph.json": "{\n  \"format\": \"agentsys.text/1\",\n  \"value\": [\n    {\n      \"kind\": \"provider\",\n      \"name\": \"Local model (LM Studio)\",\n      \"payload\": {\n        \"api_key\": \"\",\n        \"chat_path\": \"chat/completions\",\n        \"default_model\": \"\",\n        \"endpoint\": \"http://127.0.0.1:1234/v1\",\n        \"generation\": {},\n        \"headers\": {},\n        \"models_path\": \"models\"\n      }\n    }\n  ]\n}\n",
-    "layout.json": "{}\n"
-  }
-}

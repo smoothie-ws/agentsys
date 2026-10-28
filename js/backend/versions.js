@@ -1,5 +1,24 @@
 'use strict';
 
+const nodeContentVersion = step =>
+  hashText(
+    TextGraph.canonical({
+      op: step.op,
+      kind: step.kind,
+      label: step.label,
+      running: step.running,
+      scope: step.scope,
+      inputs: step.inputs,
+      outputs: step.outputs,
+      preset: step.preset,
+      targets: step.targets,
+      scope_signals: step.scope_signals,
+      declared: step.declared,
+      manifest: step.manifest,
+      widgets: step.context?.widgets,
+    })
+  );
+
 async function versionedCommit(changes) {
   const add = async (kind, id, value) => {
     const hash = await hashText(TextGraph.canonical(kind === 'node' ? {...value, updated: 0} : value));
@@ -14,40 +33,13 @@ async function versionedCommit(changes) {
   for (const [key, value] of Object.entries({...changes})) {
     if (value === undefined) continue;
     if (key.startsWith('wf:')) await add('workflow', key.slice(3), value);
-    if (key === 'resources') for (const r of value) if (r.kind === 'custom_node') await add('node', r.id, r);
+    if (key === 'resources') for (const r of value) await add('node', r.id, r);
   }
-  return DB.commit(changes);
+  await DB.commit(changes);
+  await publishGraphChanges(changes);
 }
-async function pinPlanVersions(plan, locked = false) {
-  if (plan.version_refs) return;
-  const pin = async () => {
-    const changes = {},
-      wf = plan.context.workflow_id;
-    if (wf && !(await DB.get('versions/workflow/' + wf))) {
-      const doc = await DB.get('wf:' + wf);
-      if (doc) changes['wf:' + wf] = doc;
-    }
-    const resources = (await DB.get('resources')) ?? [];
-    for (const n of plan.nodes)
-      if (
-        n.context?.resource_id &&
-        resources.some(r => r.id === n.context.resource_id) &&
-        !(await DB.get('versions/node/' + n.context.resource_id))
-      )
-        changes.resources = resources;
-    if (Object.keys(changes).length) await versionedCommit(changes);
-    plan.version_refs = {};
-    if (wf)
-      plan.version_refs.workflow =
-        (await DB.get('versions/workflow/' + wf))?.current ?? (await hashText(TextGraph.canonical(plan.nodes)));
-    for (const n of plan.nodes)
-      if (n.context?.resource_id && !plan.version_refs[n.context.resource_id])
-        plan.version_refs[n.context.resource_id] =
-          (await DB.get('versions/node/' + n.context.resource_id))?.current ??
-          n.manifest?.code_hash ??
-          (await hashText(TextGraph.canonical(n)));
-  };
-  return locked ? pin() : exclusive(pin);
+async function versionPlan(plan) {
+  for (const step of plan.nodes) step.content_hash ??= await nodeContentVersion(step);
 }
 route('GET', 'versions/{kind}/{id}', 'List immutable versions and the current pointer', async (c, {kind, id}) => {
   if (!['node', 'workflow'].includes(kind)) throw bad('Unknown version kind');

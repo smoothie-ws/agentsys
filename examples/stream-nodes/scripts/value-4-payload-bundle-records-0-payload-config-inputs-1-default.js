@@ -1,0 +1,1 @@
+const size=node.input.size??10;if(!Number.isInteger(size)||size<1||size>1000)throw Error("size must be from 1 to 1000");let batch=null;await node.state.update(node.input.key??"batch",items=>{batch=null;items=[...(items??[]),node.input.item];if(items.length>=size){batch=items;return [];}return items;});if(batch){node.output.result=batch;await node.emit("out");}

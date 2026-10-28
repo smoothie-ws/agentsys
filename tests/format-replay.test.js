@@ -28,7 +28,7 @@ test('canonical text round trips byte for byte and separates code and position d
     /Invalid text file/
   );
 });
-test('history restores old code while a suspended run retains its pinned plan', async () => {
+test('history restores old code; replacing a Library copy removes its waiting invocation', async () => {
   const app = createApp(),
     p = await app.api('POST', 'projects', {name: 'Versions'});
   const n = await fn(app, p.id, {}, {code: 'if(!node.resumed)await node.wait({event:"go"});node.display("original");'});
@@ -42,27 +42,27 @@ test('history restores old code while a suspended run retains its pinned plan', 
   assert.notEqual((await app.api('GET', `versions/node/${n.resource}`)).current, original);
   await app.api('POST', 'events/go', {});
   await app.eval(`RUNS.byId.get('${run.id}').done`);
-  assert.equal((await app.api('GET', 'runs/' + run.id)).displays[n.id], 'original');
+  assert.equal((await app.api('GET', 'runs/' + run.id)).status, 'completed');
+  assert.ok(
+    (await app.api('GET', `runs/${run.id}/events`)).events.some(
+      e => e.type === 'node_skipped' && e.node_id === n.id && e.reason === 'node_removed'
+    )
+  );
   await app.api('POST', `versions/node/${n.resource}/${original}/restore`);
   assert.equal((await app.api('GET', `versions/node/${n.resource}`)).current, original);
   const restored = await app.api('GET', 'resources/' + n.resource);
   assert.match(JSON.stringify(restored.payload.bundle), /original/);
 });
-test('offline replay reproduces model calls, parallel completion, time and randomness and reports divergence', async () => {
+test('offline replay reproduces outside calls, parallel completion, time and randomness and reports divergence', async () => {
   const app = createApp(),
     p = await app.api('POST', 'projects', {name: 'Replay'});
-  await app.api('POST', 'resources', {
-    kind: 'provider',
-    name: 'Fake',
-    payload: {endpoint: 'http://fake.test/v1', default_model: 'test'},
-  });
-  app.context.fetch = async () => ({ok: true, json: async () => ({choices: [{message: {content: 'recorded'}}]})});
+  app.context.fetch = async () => ({status: 200, text: async () => 'recorded'});
   const n = await fn(
     app,
     p.id,
     {},
     {
-      code: 'const time=Date.now(),random=Math.random();const r=await agentsys("POST","llm",{prompt:"hello"});node.output.result={time,random,text:r.text};',
+      code: 'const time=Date.now(),random=Math.random();const r=await agentsys("POST","net",{url:"https://fake.test"});node.output.result={time,random,text:r.text};',
       outputs: ['result'],
     }
   );
@@ -73,25 +73,11 @@ test('offline replay reproduces model calls, parallel completion, time and rando
   const replay = await app.api('POST', `runs/${original.id}/replay`, {wait: 2});
   assert.equal(replay.status, 'completed');
   assert.deepEqual(replay.outputs, original.outputs);
-  await app.eval(`RUNS.byId.get('${original.id}').trace[0].request='different'`);
+  await app.eval(`RUNS.byId.get('${original.id}').trace[0].request_hash='different'`);
   const bad = await app.api('POST', `runs/${original.id}/replay`, {wait: 2});
   assert.equal(bad.status, 'failed');
   assert.match(JSON.stringify(bad), /diverged/);
 });
-test('graph linter emits warnings without rejecting the graph', async () => {
-  const app = createApp(),
-    p = await app.api('POST', 'projects', {name: 'Lint'});
-  await app.api('POST', `projects/${p.id}/typed-nodes`, {
-    node_type: 'custom',
-    config: {...nodes.script('while(true) {}\n' + '\n'.repeat(81)), capabilities: [], grants: []},
-  });
-  const lint = await app.api('GET', `projects/${p.id}/lint`);
-  assert.deepEqual(
-    lint.warnings.map(w => w.code),
-    ['long_script', 'no_capabilities', 'unbounded_loop']
-  );
-});
-
 test('a completed executor snapshot restores without rerunning code and returns the same outputs', async () => {
   const app = createApp(),
     p = await app.api('POST', 'projects', {name: 'Snapshot'});

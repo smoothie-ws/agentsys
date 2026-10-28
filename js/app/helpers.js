@@ -53,20 +53,7 @@ const app = {
 
 // ----- API -----
 /** All data lives in this browser; see backend.js. Same call shape as the former HTTP API. */
-/** What the page may still send about its own workflow while that runs: starting and watching runs, the last run's result, widget values. */
-const RUN_ALLOWED = /^projects\/[^/]+\/(runs|last-run|evaluate-node|widget-values)(\/|$)/;
 async function api(path, {method = 'GET', body, query, edit} = {}) {
-  // A graph does not change while it runs: whatever the page just showed of such an edit is taken back.
-  if (
-    method !== 'GET' &&
-    typeof W !== 'undefined' &&
-    W.running &&
-    path.startsWith(`projects/${W.project}/`) &&
-    !RUN_ALLOWED.test(path)
-  ) {
-    scheduleReload(50);
-    return Promise.reject(new Error('The graph cannot be changed while it runs. Stop the run first.'));
-  }
   const [bare, search = ''] = path.split('?');
   // Under the Node server, the server owns runs. Closing a browser tab leaves them alive.
   await DB.get('prefs');

@@ -68,7 +68,7 @@ PAGES.workflow = async (view, route) => {
   W.library = route.project.startsWith('lib-') ? route.project.slice(4) : null;
   if (W.library && !developerMode()) {
     Tabs.dropProject(route.project);
-    return go('/resources/custom_node', true);
+    return go('/resources', true);
   }
   Tabs.open({
     project: route.project,
@@ -150,9 +150,10 @@ PAGES.workflow = async (view, route) => {
             if (W.project !== route.project || W.workflow !== route.workflow) return;
             W.waitingRun = detail.status === 'waiting' ? detail : null;
             W.observedRun = detail.status === 'running' ? detail : null;
+            W.runPaused = detail.status === 'running' && !!detail.paused; // paused from the Runs page or elsewhere
             if (terminalRun(detail.status)) W.followedRunId = null;
             for (const n of detail.nodes) {
-              if (['waiting', 'running', 'failed'].includes(n.status)) W.runStatus.set(n.node_id, n.status);
+              if (['waiting', 'running', 'blocked', 'failed'].includes(n.status)) W.runStatus.set(n.node_id, n.status);
               else W.runStatus.delete(n.node_id);
             }
             for (const [node, text] of Object.entries(detail.displays ?? {})) W.results.set(node, {text});

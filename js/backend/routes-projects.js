@@ -78,9 +78,9 @@ route(
         await c.ctx.remove('wf:' + wf.id);
         await c.ctx.remove('run:' + wf.id);
         await dropWorkflowRuns(c, wf.id);
+        await dropWorkflowState(c, wf.id);
         histories.delete(wf.id);
       }
-      await c.ctx.remove('state:' + project_id);
       await dropTriggers(c, t => t.project_id === project_id);
       c.ctx.set(
         'projects',
@@ -151,6 +151,7 @@ route(
       await c.ctx.remove('wf:' + workflow_id);
       await c.ctx.remove('run:' + workflow_id);
       await dropWorkflowRuns(c, workflow_id);
+      await dropWorkflowState(c, workflow_id);
       await dropTriggers(c, t => t.workflow_id === workflow_id);
       histories.delete(workflow_id);
       return {deleted: workflow_id};

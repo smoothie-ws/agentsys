@@ -18,7 +18,7 @@ async def main():
           const project = await api('projects',{method:'POST',body:{name:'Appearance'}});
           await go(`/p/${project.id}/w/${project.id}`);
           const node = await api(`projects/${W.project}/typed-nodes`,{method:'POST',body:{
-            node_type:'custom',config:{title:'Script',inputs:[],outputs:[],init:'node.OnStarted = () => null;'},position:{x:60,y:100}
+            node_type:'custom',config:{title:'Script',inputs:[],outputs:[]},position:{x:60,y:100}
           }});
           window.appearanceNode = node.id;
           await reload();

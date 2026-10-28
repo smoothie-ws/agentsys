@@ -16,6 +16,8 @@ function route(methods, pattern, summary, handler, options = {}) {
   });
 }
 const EDITS = new Set([
+  'batch',
+  'available-nodes',
   'custom-nodes',
   'typed-nodes',
   'widgets',
@@ -80,7 +82,7 @@ function runHooks(events) {
     HOOKS.queue = HOOKS.queue.then(async () => {
       const started = Date.now();
       try {
-        await runHook(event.plan, runPlan);
+        await runRecordedHook(event.plan);
         DB.announce(['wf:' + event.workflow_id]); // the code may have edited the workflow: open editors reload it
       } catch (error) {
         Object.assign(entry, {ok: false, error: error.message || String(error)});
@@ -116,7 +118,7 @@ class Call {
     // A Library node being edited is a private workflow of its own, not a project of the user.
     if (String(id).startsWith('lib-')) {
       if (manage) throw bad('A Custom Node is managed in the Library, not as a project');
-      const item = (await this.ctx.get('resources', [])).find(r => r.id === id.slice(4) && r.kind === 'custom_node');
+      const item = (await this.ctx.get('resources', [])).find(r => r.id === id.slice(4));
       return {
         id,
         name: item?.name ?? 'New Custom Node',
@@ -169,7 +171,7 @@ class Call {
     for (const project of await this.projects())
       for (const wf of project.workflows) if (mentions(await this.ctx.get('wf:' + wf.id, emptyDoc()))) return true;
     for (const r of await this.ctx.get('resources', []))
-      if (r.kind === 'custom_node' && mentions(await this.ctx.get('wf:lib-' + r.id, null))) return true;
+      if (mentions(await this.ctx.get('wf:lib-' + r.id, null))) return true;
     return false;
   }
   /**
@@ -184,7 +186,7 @@ class Call {
   async reconcileLibraryTypes() {
     const resources = await this.ctx.get('resources', []),
       nodes = resources
-        .filter(r => r.kind === 'custom_node' && Array.isArray(r.payload.bundle?.types))
+        .filter(r => Array.isArray(r.payload.bundle?.types))
         .sort((a, b) => Number(this.editedNodes.has(b.id)) - Number(this.editedNodes.has(a.id))),
       stored = await this.ctx.get('library_types', []),
       lib = clone(stored);
@@ -266,14 +268,24 @@ class Call {
     };
     for (const id of ids) {
       const stored = doc.complex.find(c => c.id === id),
-        item = stored && resources.find(r => r.id === stored.source.resource_id && r.kind === 'custom_node');
+        item = stored && resources.find(r => r.id === stored.source.resource_id);
       if (!item || item.updated === stored.source.stamp || nested(id)) continue;
       const backup = clone(doc);
       try {
+        delete stored.refresh_error;
         editor.refreshInstance(id, clone(item.payload.bundle), {resource_id: item.id, stamp: item.updated});
         this.refreshed = true; // the copy is new (its nodes have new IDs): it is stored by whatever request found it out of date, even a read
-      } catch {
+      } catch (error) {
         Object.assign(doc, backup);
+        // A broken definition has no executable last-valid fallback. Keep the wrapper and its external
+        // interface for diagnosis, remove the obsolete implementation, and retry on the next definition.
+        const snapshot = editor.snapshot(),
+          cx = snapshot.complex.find(c => c.id === id);
+        editor.deleteNodes(cx.members.filter(member => !member.startsWith('complex:')));
+        const current = doc.complex.find(c => c.id === id);
+        current.source.stamp = item.updated;
+        current.refresh_error = 'Library update failed: ' + String(error.message).slice(0, 1000);
+        this.refreshed = true;
       }
     }
   }
@@ -288,7 +300,7 @@ class Call {
   /** The Custom Node being edited is saved to the Library after every change, like a workflow. */
   async syncLibraryNode(id, doc) {
     const resources = await this.ctx.get('resources', []),
-      item = resources.find(r => r.id === id.slice(4) && r.kind === 'custom_node');
+      item = resources.find(r => r.id === id.slice(4));
     if (!item) return;
     try {
       const project = await this.project(id),
@@ -300,15 +312,14 @@ class Call {
           String(root.name || item.name)
             .trim()
             .slice(0, 100) || item.name;
-      validateResource('custom_node', {...item.payload, bundle});
-      const taken = resources.some(r => r.kind === 'custom_node' && r.id !== item.id && r.name === name);
+      validateResource({...item.payload, bundle});
+      const taken = resources.some(r => r.id !== item.id && r.name === name);
       Object.assign(item, {
         name: taken ? item.name : name,
         payload: {...item.payload, bundle},
         updated: Date.now() / 1000,
       });
       if (this.scriptContext) {
-        item.payload.origin = 'ai';
         item.payload.grants = ['graph.read'];
       }
       // The size of the main group's frame is remembered, relative to the nodes inside it.
@@ -441,6 +452,8 @@ const Backend = {
     });
     // The code of on_placed / on_deleted / on_wired / on_widget runs after the change is saved and the request lock is free, so it can call the API.
     runHooks(call.hookEvents);
+    if (call.queueFreed) queueMicroWake(call.queueFreed);
+    if (call.workflowMode) applyWorkflowMode(call.workflowMode);
     return result;
   },
   /** Called with a log entry whenever hook code (on_placed, on_deleted, on_wired, on_widget) fails. Returns the function that stops listening. */

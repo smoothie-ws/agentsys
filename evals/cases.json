@@ -1,4 +1,0 @@
-[
-  {"name":"concise-summary","prompt":"Summarize in one sentence: the project has two tasks, one finished and one blocked by review.","contains":["task","review"],"max_chars":400},
-  {"name":"structured-plan","prompt":"Return a JSON array of three task titles for reviewing a small JavaScript change.","json_array_length":3}
-]

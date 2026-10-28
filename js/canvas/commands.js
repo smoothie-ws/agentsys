@@ -234,7 +234,7 @@ async function ungroupSelection() {
   const gone = new Set(selectedGroupIds());
   if (!gone.size) return;
   if ([...gone].some(id => W.complex.get(id)?.locked))
-    return toast('A Complex Node is an ordinary node here. Edit it in the [Library](/resources/custom_node).', true);
+    return toast('A Complex Node is an ordinary node here. Edit it in the [Library](/resources).', true);
   const parentOf = g => {
     let p = g.parent;
     while (p && gone.has(p)) p = W.groups.get(p)?.parent ?? null;
@@ -288,7 +288,7 @@ async function editInLibrary(resourceId) {
 
 async function setCollapsed(groupId, collapsed) {
   if (W.complex.get(groupId)?.locked)
-    return toast('A Complex Node is an ordinary node here. Edit it in the [Library](/resources/custom_node).', true);
+    return toast('A Complex Node is an ordinary node here. Edit it in the [Library](/resources).', true);
   const edit = editToken();
   if (collapsed) {
     const frame = W.pos.get('frame:' + groupId);

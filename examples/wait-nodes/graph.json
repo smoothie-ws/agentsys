@@ -2,7 +2,6 @@
   "format": "agentsys.text/1",
   "value": [
     {
-      "kind": "custom_node",
       "name": "Wait for event",
       "payload": {
         "bundle": {
@@ -91,7 +90,6 @@
                     }
                   ],
                   "op": "script",
-                  "origin": "human",
                   "outputs": [],
                   "title": "Script"
                 },
@@ -131,12 +129,10 @@
         },
         "capabilities": [],
         "description": "Wait for event",
-        "grants": [],
-        "origin": "human"
+        "grants": []
       }
     },
     {
-      "kind": "custom_node",
       "name": "Delay",
       "payload": {
         "bundle": {
@@ -221,7 +217,6 @@
                     }
                   ],
                   "op": "script",
-                  "origin": "human",
                   "outputs": [],
                   "title": "Script"
                 },
@@ -261,12 +256,10 @@
         },
         "capabilities": [],
         "description": "Delay",
-        "grants": [],
-        "origin": "human"
+        "grants": []
       }
     },
     {
-      "kind": "custom_node",
       "name": "Wait until",
       "payload": {
         "bundle": {
@@ -351,7 +344,6 @@
                     }
                   ],
                   "op": "script",
-                  "origin": "human",
                   "outputs": [],
                   "title": "Script"
                 },
@@ -391,8 +383,7 @@
         },
         "capabilities": [],
         "description": "Wait until",
-        "grants": [],
-        "origin": "human"
+        "grants": []
       }
     }
   ]

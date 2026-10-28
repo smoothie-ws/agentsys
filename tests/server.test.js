@@ -9,33 +9,6 @@ const path = require('node:path');
 const http = require('node:http');
 const {createServer} = require('../server');
 const {nodes, TYPES} = require('./harness');
-const SkillFile = require('../js/storage/skills');
-
-test('skills are stored as SKILL.md files, with names matching directories and no JSON body copy',async()=>{
-  await withServer({},async({url,dataDir})=>{
-    const made=await call(url,'POST','resources',{kind:'skill',name:'review-code',payload:{description:'Review source code.',instruction:'# Review\n\nFind defects.'}});
-    assert.equal(made.status,200);
-    const file=path.join(dataDir,'library','skills','review-code','SKILL.md');
-    const markdown=fs.readFileSync(file,'utf8');
-    assert.equal(SkillFile.read(markdown).instruction,'# Review\n\nFind defects.');
-    const index=JSON.parse(fs.readFileSync(path.join(dataDir,'library','resources.json'),'utf8')).value;
-    assert.deepEqual(index[0].payload,{folder:''});
-    const browser=await fetch(`${url}/__data/resources`).then(r=>r.json());
-    assert.equal(browser[0].payload.markdown,markdown);
-    // Editing the standard file on disk invalidates the shared API/browser resource cache.
-    fs.writeFileSync(file,SkillFile.write({name:'review-code',description:'Changed on disk.'},'# Updated instruction'));
-    await new Promise(resolve=>setTimeout(resolve,5200));
-    assert.equal(SkillFile.read((await call(url,'GET',`resources/${made.body.id}`)).body.payload.markdown).instruction,'# Updated instruction');
-    fs.mkdirSync(path.join(path.dirname(file),'references'));
-    fs.writeFileSync(path.join(path.dirname(file),'references','notes.md'),'Notes');
-    const renamed=await call(url,'PUT',`resources/${made.body.id}`,{name:'review-security',payload:{description:'Review security.',instruction:'Review code.'}});
-    assert.equal(renamed.status,200);
-    assert.ok(!fs.existsSync(file));
-    assert.equal(fs.readFileSync(path.join(dataDir,'library','skills','review-security','references','notes.md'),'utf8'),'Notes');
-    await call(url,'DELETE',`resources/${made.body.id}`);
-    assert.ok(!fs.existsSync(path.join(dataDir,'library','skills','review-security','SKILL.md')));
-  });
-});
 
 async function withServer(options, work) {
   const dataDir = fs.mkdtempSync(path.join(os.tmpdir(), 'agentsys-'));
@@ -68,14 +41,27 @@ const call = async (url, method, route, body, headers = {}) => {
   return {status: response.status, body: text ? JSON.parse(text) : undefined, headers: response.headers};
 };
 /** Gives a workflow the types that the nodes of the harness use. */
-const typed = (url, id, headers = {}) => call(url, 'PUT', `projects/${id}/types`, {workflow_id: id, types: Object.values(TYPES)}, headers);
+const typed = (url, id, headers = {}) =>
+  call(url, 'PUT', `projects/${id}/types`, {workflow_id: id, types: Object.values(TYPES)}, headers);
 /** An on_run node wired to `ids` (each: [node id, input port, output port] or just the id), one after another; answers its ID. */
 async function startOf(url, id, w, ids, headers = {}) {
-  const make = await call(url, 'POST', `projects/${id}/typed-nodes`, {...w, node_type: 'custom', config: nodes.run(), position: {x: 0, y: 0}}, headers);
+  const make = await call(
+    url,
+    'POST',
+    `projects/${id}/typed-nodes`,
+    {...w, node_type: 'custom', config: nodes.run(), position: {x: 0, y: 0}},
+    headers
+  );
   let from = [make.body.id, 'out'];
   for (const step of ids) {
     const [to, input = 'in', output = 'out'] = Array.isArray(step) ? step : [step];
-    await call(url, 'POST', `projects/${id}/port-connections`, {...w, add: [{source: from[0], source_port: from[1], target: to, target_port: input}]}, headers);
+    await call(
+      url,
+      'POST',
+      `projects/${id}/port-connections`,
+      {...w, add: [{source: from[0], source_port: from[1], target: to, target_port: input}]},
+      headers
+    );
     from = [to, output];
   }
   return make.body.id;
@@ -98,6 +84,7 @@ test('the API creates, runs and persists: projects become files in the data fold
     assert.equal(created.status, 200);
     const id = created.body.id,
       w = {workflow_id: id};
+    await call(url, 'PUT', `projects/${id}/policy`, {allow: nodes.script('').capabilities});
     await typed(url, id);
     const node = (node_type, config) =>
       call(url, 'POST', `projects/${id}/typed-nodes`, {...w, node_type, config, position: {x: 0, y: 0}}).then(
@@ -113,7 +100,7 @@ test('the API creates, runs and persists: projects become files in the data fold
     // The data is plain JSON files, including the run history.
     assert.ok(fs.existsSync(path.join(dataDir, 'projects.json')));
     assert.ok(fs.existsSync(path.join(dataDir, 'workflows', `${id}.json`)));
-    assert.ok(fs.existsSync(path.join(dataDir,'runs',run.body.id+'.json')));
+    assert.ok(fs.existsSync(path.join(dataDir, 'runs', run.body.id + '.json')));
     const history = await call(url, 'GET', `projects/${id}/runs?workflow_id=${id}`);
     assert.equal(history.body.length, 1);
     assert.equal((await call(url, 'GET', 'openapi.json')).body.info.title, 'AgentSys browser API');
@@ -128,13 +115,20 @@ test('a request writes only what it changed: a default that was only read is not
     await call(url, 'POST', 'library/node-editor', {});
     const files = [];
     const walk = dir => {
-      for (const e of fs.readdirSync(dir, {withFileTypes: true})) e.isDirectory() ? walk(path.join(dir, e.name)) : files.push(path.relative(dataDir, path.join(dir, e.name)).split(path.sep).join('/'));
+      for (const e of fs.readdirSync(dir, {withFileTypes: true}))
+        e.isDirectory()
+          ? walk(path.join(dir, e.name))
+          : files.push(path.relative(dataDir, path.join(dir, e.name)).split(path.sep).join('/'));
     };
     walk(dataDir);
     for (const junk of ['other/triggers.json', 'other/node_disabled_folders.json', 'other/node_folder_icons.json'])
       assert.ok(!files.includes(junk), `${junk} holds only a default and is not written`);
     for (const file of files.filter(f => f.endsWith('.json')))
-      assert.notEqual(fs.readFileSync(path.join(dataDir, file), 'utf8').trim(), 'null', `${file} is not an empty "null" file`);
+      assert.notEqual(
+        fs.readFileSync(path.join(dataDir, file), 'utf8').trim(),
+        'null',
+        `${file} is not an empty "null" file`
+      );
   });
 });
 
@@ -247,7 +241,18 @@ test('webhooks start runs with the body as payload, with no other credential', a
       w = {workflow_id: id};
     await typed(url, id, auth);
     const hook = (
-      await call(url, 'POST', `projects/${id}/typed-nodes`, {...w, node_type: 'custom', config: nodes.script('node.display(context.payload.event)'), position: {x: 0, y: 0}}, auth)
+      await call(
+        url,
+        'POST',
+        `projects/${id}/typed-nodes`,
+        {
+          ...w,
+          node_type: 'custom',
+          config: nodes.script('node.display(context.payload.event)'),
+          position: {x: 0, y: 0},
+        },
+        auth
+      )
     ).body;
     await startOf(url, id, w, [hook.id], auth);
     const trigger = (await call(url, 'POST', 'triggers', {name: 'Push', type: 'webhook', project_id: id}, auth)).body;
@@ -302,7 +307,12 @@ test('the interval scheduler runs inside the server', async () => {
       id = project.id;
     await typed(url, id);
     const one = (
-      await call(url, 'POST', `projects/${id}/typed-nodes`, {workflow_id: id, node_type: 'custom', config: nodes.script('node.display(1)'), position: {x: 0, y: 0}})
+      await call(url, 'POST', `projects/${id}/typed-nodes`, {
+        workflow_id: id,
+        node_type: 'custom',
+        config: nodes.script('node.display(1)'),
+        position: {x: 0, y: 0},
+      })
     ).body;
     await startOf(url, id, {workflow_id: id}, [one.id]);
     const trigger = (
@@ -327,7 +337,7 @@ test('the interval scheduler runs inside the server', async () => {
 
 test('the site itself is still served, without the data folder or dotfiles', async () => {
   await withServer({}, async ({url}) => {
-    const index = await fetch(url + '/');
+    const index = await fetch(url + '/editor/');
     assert.equal(index.status, 200);
     assert.match(await index.text(), /AgentSys/);
     assert.equal((await fetch(url + '/.gitignore')).status, 404);
@@ -335,11 +345,11 @@ test('the site itself is still served, without the data folder or dotfiles', asy
   });
 });
 
-test('the site is at /, the editor and everything it loads is under /editor/', async () => {
+test('the app is at /editor/ (/ goes there) and everything it loads is under /editor/', async () => {
   await withServer({}, async ({url}) => {
-    const front = await (await fetch(url + '/')).text();
-    assert.match(front, /Open the editor/);
-    assert.doesNotMatch(front, /id="brand"/, 'the front page is not the editor');
+    const front = await fetch(url + '/', {redirect: 'manual'});
+    assert.equal(front.status, 301);
+    assert.equal(front.headers.get('location'), '/editor/');
     const redirect = await fetch(url + '/editor', {redirect: 'manual'});
     assert.equal(redirect.status, 301);
     assert.equal(redirect.headers.get('location'), '/editor/');
@@ -347,7 +357,6 @@ test('the site is at /, the editor and everything it loads is under /editor/', a
     assert.equal(editor.status, 200);
     assert.match(await editor.text(), /id="brand"/);
     assert.equal((await fetch(url + '/editor/js/app/router.js')).status, 200);
-    assert.equal((await fetch(url + '/editor/builtin/providers.json')).status, 200);
     assert.equal((await fetch(url + '/editor/__data')).status, 200);
     assert.equal((await fetch(url + '/editor/api/projects')).status, 200);
     assert.equal((await fetch(url + '/editor/.gitignore')).status, 404);

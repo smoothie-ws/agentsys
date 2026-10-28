@@ -97,7 +97,7 @@ test('Complex Nodes are built in the Library editor and behave as plain nodes in
   const saved = (await app.api('GET', 'resources', {})).find(r => r.id === opened.resource_id);
   assert.equal(saved?.name, 'Wrap', 'renaming the main group renames the node');
   assert.ok(
-    saved && saved.kind === 'custom_node' && !('version' in saved),
+    saved && !('kind' in saved) && !('version' in saved),
     'the node is saved automatically, without versions'
   );
   assert.equal(saved.payload.bundle.complex[0].interface.inputs.length, 2);
@@ -147,7 +147,7 @@ test('Custom Node groups form a tree: create, nest, move, rename, delete with co
     positions: {},
     styles: {},
   };
-  const node = await app.api('POST', 'resources', {kind: 'custom_node', name: 'If', payload: {bundle}});
+  const node = await app.api('POST', 'resources', {name: 'If', payload: {bundle}});
   const folders = body => app.api('POST', 'library/node-folders', body);
   await folders({action: 'create', path: '', name: 'Logic'});
   assert.deepEqual(await folders({action: 'create', path: 'Logic', name: 'Boolean'}), ['Logic', 'Logic/Boolean']);
@@ -262,12 +262,6 @@ test('a new connection replaces the one on an occupied input; the last run is ke
   assert.equal(saved.results[0][0], 'n');
 });
 
-test('llm is an API route: validates input and needs a provider', async () => {
-  const app = await createApp();
-  await rejects(app.api('POST', 'llm', {}), /prompt/);
-  await rejects(app.api('POST', 'llm', {prompt: 'hi'}), /provider/i);
-});
-
 test('a Custom node knows its own node, workflow and project through context', async () => {
   const app = createApp(),
     p = await newProject(app);
@@ -346,17 +340,10 @@ test('a node can be folded; the fold is saved, copied and validated', async () =
   assert.equal((await p.snapshot()).nodes.find(n => n.id === a.id).folded, false);
 });
 
-test('the built-in items are imported once', async () => {
-  const app = createApp();
-  assert.equal((await app.api('GET', 'library/builtins')).seeded, false);
-  await app.api('PUT', 'library/builtins');
-  assert.equal((await app.api('GET', 'library/builtins')).seeded, true);
-});
-
 test('deleting a Library group deletes its groups and Custom Nodes with it', async () => {
   const app = createApp();
   const bundle = {version: 3, groups: [{id: 'g', name: 'N', members: [], parent: null}], complex: []};
-  const node = (name, folder) => app.api('POST', 'resources', {kind: 'custom_node', name, payload: {bundle, folder}});
+  const node = (name, folder) => app.api('POST', 'resources', {name, payload: {bundle, folder}});
   await app.api('POST', 'library/node-folders', {action: 'create', path: '', name: 'Logic'});
   await app.api('POST', 'library/node-folders', {action: 'create', path: 'Logic', name: 'Text'});
   const keep = await node('Keep', ''),

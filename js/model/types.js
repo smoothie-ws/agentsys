@@ -4,7 +4,7 @@
 //
 // A port's `type` is optional. Without one the port is of type `any`, which fits everything. Otherwise it is a type expression:
 //   any           the built-in type: anything (the same as no type)
-//   signal        the built-in type of a signal (see docs/signal-engine.md): it carries no data and fits only another signal
+//   signal        the built-in type of a signal (see docs/engine.md): it carries no data and fits only another signal
 //   t:<id>        a type: a name, a color and named fields (it may have none: then it is just a named kind)
 // A type may be an alias of another (`alias: 't:<id>'`, no fields of its own): it means exactly what the other type means, so the two
 // are interchangeable on wires, and it only brings its own name, color and control (Script is Text typed in as code).

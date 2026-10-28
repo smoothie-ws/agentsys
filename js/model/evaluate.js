@@ -164,7 +164,7 @@ function customStep(
     targets,
     event,
     context,
-    declared: {capabilities: config.capabilities ?? [], grants: config.grants ?? [], origin: config.origin ?? 'human'},
+    declared: {capabilities: config.capabilities ?? [], grants: config.grants ?? []},
   };
 }
 
@@ -174,7 +174,7 @@ function customStep(
  * signal output the nodes its signal reaches. A root is a node to fire (an event node), to run (a Script) or to read.
  * `events` is the data the event nodes in the roots carry: {node ID: {output name: value}}.
  */
-function compilePlan(snapshot, roots, {context = {}, events = {}} = {}) {
+function compilePlan(snapshot, roots, {context = {}, events = {}, cache = new Map()} = {}) {
   const nodes = Editor.nodeMap(snapshot),
     {incoming, fallback, signals} = wireGraph(snapshot, nodes),
     issues = firstIssues(snapshot),
@@ -252,7 +252,7 @@ function compilePlan(snapshot, roots, {context = {}, events = {}} = {}) {
     stack = [];
   /** Adds a node (and, later, what it needs) to the plan. */
   const need = nid => {
-    if (!planned.has(nid)) {
+    if (!planned.has(nid) && nodes.has(nid) && !issues.has(nid) && !isOff(nodes.get(nid))) {
       planned.set(nid, null);
       stack.push(nid);
     }
@@ -345,6 +345,7 @@ function compilePlan(snapshot, roots, {context = {}, events = {}} = {}) {
   };
   const rootSpecs = roots.map(nid => {
     const node = nodes.get(nid);
+    if (!node) return {id: nid, node: true}; // deleted between admission and a later segment
     if (node.node_type === 'custom') {
       if (isOff(node)) return {id: nid, error: 'The node is disabled'};
       if (issues.has(nid)) return {id: nid, error: issues.get(nid)};
@@ -361,9 +362,60 @@ function compilePlan(snapshot, roots, {context = {}, events = {}} = {}) {
   });
   while (stack.length) {
     const nid = stack.pop();
-    planned.set(nid, compileNode(nid));
+    const node = nodes.get(nid),
+      home = scopes.get(nid);
+    // Indexes are rebuilt from the committed document. Executable entries are rebuilt only when their
+    // resolved inputs, scope, signals or diagnostics change; layout never enters this key.
+    const source = (owner, ports) =>
+      ports.map(p => {
+        const wire = incoming.get(key(owner, p.id));
+        return [p.id, wire ? refOf(wire) : null, fallback.get(key(owner, p.id))];
+      });
+    const signature = TextGraph.canonical({
+      kind: node.kind,
+      node_type: node.node_type,
+      config: node.config,
+      inputs: node.inputs,
+      interface: node.interface,
+      label: evalLabel(node),
+      home,
+      sources: source(nid, node.inputs ?? []),
+      scope_sources: home ? source(home.instance_id, home.inputs) : [],
+      targets: targetsOf(node),
+      scope_targets: (home?.signals ?? []).map(p => [p.name, reach(fires.get(key(home.instance_id, p.id)) ?? [])]),
+      readers: readers.get(home?.instance_id ?? nid),
+      widgets: [widgets[nid], ...(home?.widgets ?? []).map(id => widgets[id])],
+    });
+    let cached = cache.get(nid);
+    if (cached?.signature !== signature) {
+      const before = new Set(planned.keys());
+      const step = compileNode(nid);
+      // Include dependencies already planned as well as newly discovered ones.
+      const needs = [
+        ...(step.inputs ?? []).flatMap(p => (p.ref?.n ? [p.ref.n] : [])),
+        ...Object.values(step.targets ?? {}).flat(),
+        ...Object.values(step.scope_signals ?? {}).flat(),
+        ...(readers.get(home?.instance_id ?? nid) ?? []),
+        ...(step.scope ? [step.scope] : []),
+        ...[...planned.keys()].filter(id => !before.has(id)),
+      ];
+      cached = {signature, step, needs};
+      cache.set(nid, cached);
+    }
+    cached.needs.forEach(need);
+    const step = clone(cached.step);
+    step.context = {...step.context, ...context};
+    if (step.event !== null && step.event !== undefined) step.event = events[nid] ?? {};
+    planned.set(nid, step);
   }
-  return {nodes: [...planned.values()], roots: rootSpecs, context: {...context}, limits: planLimits()};
+  for (const id of cache.keys()) if (!nodes.has(id) || issues.has(id)) cache.delete(id);
+  return {
+    nodes: [...planned.values()],
+    roots: rootSpecs,
+    context: {...context},
+    limits: planLimits(),
+    diagnostics: Object.fromEntries(issues),
+  };
 }
 
 /**
@@ -401,7 +453,7 @@ function checkRoots(roots, nodes) {
 /**
  * Carries out a plan with `execute(plan, onEvent, signal)` and gathers what happened: {outputs, errors, done, failed, displays}, by
  * node id. `hooks` (all optional) are told when a node starts, completes, fails or is skipped (its wave was cancelled, see node.flow in
- * docs/signal-engine.md): onNodeStart({node_id, label}),
+ * docs/engine.md): onNodeStart({node_id, label}),
  * onNodeDone({node_id, label, ms, display}), onNodeFail({node_id, label, ms, error}), onNodeSkip({node_id, label}). When the run itself stops (cancelled, or the
  * Worker died) the nodes in flight fail and every root that has no result takes the error; `crash` is that error.
  */
@@ -415,13 +467,19 @@ async function runPlanned(plan, execute, {signal = null, hooks = {}, control = n
   const fail = (event, error) => {
     failed.push(event.id);
     if (event.announced || !signal?.aborted)
-      hooks.onNodeFail?.({node_id: event.id, label: event.label, ms: event.ms, error});
+      hooks.onNodeFail?.({node_id: event.id, label: event.label, ms: event.ms, error, blocked: event.blocked});
   };
   const onEvent = event => {
     switch (event.ev) {
       case 'start':
         running.set(event.id, event);
-        hooks.onNodeStart?.({node_id: event.id, label: event.label});
+        hooks.onNodeStart?.({
+          node_id: event.id,
+          label: event.label,
+          node_version: event.node_version,
+          invocation: event.invocation,
+          wave_path: event.wave_path,
+        });
         break;
       case 'done':
         running.delete(event.id);
@@ -439,7 +497,22 @@ async function runPlanned(plan, execute, {signal = null, hooks = {}, control = n
         fail(event, event.error);
         break;
       case 'skip':
-        hooks.onNodeSkip?.({node_id: event.id, label: event.label});
+        hooks.onNodeSkip?.({
+          node_id: event.id,
+          label: event.label,
+          reason: event.reason,
+          invocation: event.invocation,
+          wave_path: event.wave_path,
+        });
+        break;
+      case 'blocked':
+        hooks.onNodeBlocked?.({
+          node_id: event.id,
+          label: event.label,
+          reason: event.reason,
+          node_version: event.node_version,
+          invocation: event.invocation,
+        });
         break;
       case 'waiting':
         running.delete(event.id);
@@ -495,12 +568,4 @@ async function evaluateGraph(
   for (const id of done) status[id] = 'completed';
   for (const id of failed) status[id] = 'failed';
   return {outputs, errors, status, evaluated_nodes: done.length, displays};
-}
-
-/** Runs the plan of a hook (see hookPlan); throws what went wrong. */
-async function runHook(plan, execute) {
-  const {errors, crash} = await runPlanned(plan, execute);
-  if (crash) throw crash;
-  const first = plan.roots.find(r => r.id in errors);
-  if (first) throw new Error(errors[first.id]);
 }

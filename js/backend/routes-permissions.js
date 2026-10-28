@@ -1,72 +1,6 @@
 'use strict';
 route(
   'GET PUT',
-  'initiatives/{initiative_id}/policy',
-  'Read or set an Initiative capability allow list',
-  async (c, {initiative_id}) => {
-    await readInitiative(c, initiative_id);
-    const key = 'initiative_policy:' + initiative_id;
-    if (c.method === 'PUT') {
-      checkManifest({capabilities: c.body.allow});
-      if (!Array.isArray(c.body.allow)) throw bad('allow is required');
-      c.ctx.set(key, {allow: c.body.allow});
-    }
-    return c.ctx.get(key, null);
-  },
-  {needs: {GET: ['system.admin'], PUT: ['system.admin']}}
-);
-route('POST', 'permission-requests', 'Authorize creation of a durable human approval', async () => ({allowed: true}), {
-  unlocked: true,
-});
-route(
-  'POST',
-  'projects/{project_id}/permission-approvals',
-  'Request a review of a Library node and its declared permissions',
-  async (c, {project_id}) => {
-    await c.project(project_id);
-    const resource = (await c.ctx.get('resources', [])).find(
-      r => r.id === c.body.resource_id && r.kind === 'custom_node'
-    );
-    if (!resource) throw missing('Library node not found');
-    const script =
-      resource.payload.bundle.records
-        .find(r => r.payload.config?.op === 'script')
-        ?.payload.config.inputs.find(p => p.id === 'script')?.default ?? '';
-    const fullCode = resource.payload.bundle.records
-      .filter(r => r.payload.config?.op === 'script')
-      .map(r => '// ' + r.payload.config.title + '\n' + r.payload.config.inputs.find(p => p.id === 'script')?.default)
-      .join('\n\n');
-    const plan = {
-      nodes: [{id: 'review', context: {resource_id: resource.id}, inputs: [{code: true, fallback: script}]}],
-    };
-    await preparePlanPermissions(plan);
-    const id = uid(),
-      m = plan.nodes[0].manifest;
-    const prior = await c.ctx.get('permission_grant:' + project_id + ':' + resource.id);
-    const approval = {
-      id,
-      run_id: null,
-      node: resource.id,
-      status: 'pending',
-      question: 'Grant the declared capabilities for ' + resource.name + '?',
-      options: ['approve', 'reject'],
-      created_at: Date.now(),
-      expires_at: Date.now() + 86400000,
-      default: 'reject',
-      code: fullCode,
-      previous_code: prior?.code ?? '',
-      capabilities: m.capabilities,
-      permission_request: {project_id, resource_id: resource.id, code_hash: m.code_hash, capabilities: m.capabilities},
-    };
-    c.ctx.set('approvals/' + id, approval);
-    c.ctx.set('approval_index', [...(await c.ctx.get('approval_index', [])), id]);
-    return approval;
-  },
-  {needs: {POST: ['system.admin']}}
-);
-
-route(
-  'GET PUT',
   'projects/{project_id}/policy',
   'Read or set the workspace capability allow list',
   async (c, {project_id}) => {
@@ -84,7 +18,8 @@ route('GET PUT DELETE', 'secrets/{name}', 'Store a secret; reads return metadata
   if (!/^[A-Za-z0-9_-]{1,100}$/.test(name)) throw bad('Invalid secret name');
   const key = 'secrets/' + name;
   if (c.method === 'PUT') {
-    requiredText(c.body.value, 'value', 10000);
+    if (typeof c.body.value !== 'string' || !c.body.value || c.body.value.length > 10000)
+      throw bad('value is text of 1 to 10000 characters');
     c.ctx.set(key, {value: c.body.value});
   }
   if (c.method === 'DELETE') await c.ctx.remove(key);
@@ -104,9 +39,7 @@ route(
     if (!['https:', 'http:'].includes(url.protocol) || url.username || url.password)
       throw bad('Use an HTTP(S) URL without credentials');
     const run = RUNS.byId.get(c.scriptContext?.run_id);
-    const reservation = await reserveUsage(run, {calls: 1, tokens: 0, cost: 0, ms: 0}),
-      started = Date.now();
-    try {
+    {
       const request = await injectSecrets(c.body);
       const response = await fetch(url, {
         method: request.method ?? 'GET',
@@ -132,8 +65,6 @@ route(
         if (secret?.value) clean = clean.replaceAll(secret.value, '[REDACTED]');
       }
       return {status: response.status, text: clean};
-    } finally {
-      await settleUsage(run, reservation, {calls: 1, tokens: 0, cost: 0, ms: Date.now() - started});
     }
   },
   {unlocked: true}

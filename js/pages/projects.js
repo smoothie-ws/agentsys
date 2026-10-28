@@ -1,9 +1,9 @@
-// Pages: project list (home) and one project with its workflows.
+// Pages: the project list and one project with its workflows.
 'use strict';
 
-// ----- home -----
+// ----- projects -----
 const EMPTY_PROJECTS = '<div class="empty"><h2>Start your first project</h2></div>';
-PAGES.home = async view => {
+PAGES.projects = async view => {
   await loadProjects();
   view.innerHTML = `<div class="page">${pageHead({title: 'Projects', actions: `<button class="ghost" id="import-project">${icon('download')}Import project</button><button class="primary" id="create-project">${icon('plus')}New project</button>`})}
     <div class="cards">${app.projects
@@ -66,7 +66,7 @@ function projectActions(project, title = $(`[data-project-title="${CSS.escape(pr
             await api(`projects/${project.id}`, {method: 'DELETE'});
             Tabs.dropProject(project.id);
             await loadProjects();
-            if (app.route.project === project.id) await go('/');
+            if (app.route.project === project.id) await go('/projects');
             else await render();
           },
           'Delete project'
@@ -127,7 +127,7 @@ async function runFromCard(projectId, workflow, button) {
 PAGES.project = async (view, route) => {
   const {project, workflows} = await api(`projects/${route.project}`);
   view.innerHTML = `<div class="page">${pageHead({
-    crumbs: [['Projects', '/']],
+    crumbs: [['Projects', '/projects']],
     title: esc(project.name),
     sub: esc(project.description || ''),
     actions: `<button class="ghost" id="import-workflow">${icon('download')}Import workflow</button><button class="ghost" id="export-project">${icon('upload')}Export project</button><a class="button ghost" href="/p/${esc(project.id)}/settings" data-link>${icon('settings')}Settings</a><button class="primary" id="new-workflow">${icon('plus')}New workflow</button>`,

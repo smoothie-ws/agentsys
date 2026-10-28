@@ -1,5 +1,5 @@
 #!/usr/bin/env node
-// AgentSys local server: serves the site, keeps JSON data and SKILL.md documents in the data/ folder, and runs the same
+// AgentSys local server: serves the site, keeps the data as JSON files in the data/ folder, and runs the same
 // backend the browser has as an HTTP API (/api/…), so runs, triggers and outside programs work with no page open.
 // No dependencies. Run:  node server.js
 // Environment: PORT, HOST (default 127.0.0.1), DATA_DIR, AGENTSYS_TOKEN (required to use /api on a non-loopback
@@ -10,7 +10,6 @@ const http = require('http'),
   path = require('path'),
   crypto = require('crypto');
 const {loadBackend} = require('./headless');
-const SkillFile = require('./js/storage/skills');
 const TextGraph = require('./js/storage/format');
 
 const ROOT = __dirname;
@@ -38,11 +37,13 @@ const FIXED = {
   resources: 'library/resources.json',
   node_folders: 'library/node_folders.json',
   library_types: 'library/types.json',
-  skill_folders: 'library/skill_folders.json',
 };
-const VALID_KEY = /^(?!.*(?:^|\/)\.\.?($|\/))[A-Za-z0-9:_/-]{1,500}$/;
+const VALID_KEY = /^(?!.*(?:^|\/)\.\.?($|\/))[A-Za-z0-9:._/-]{1,500}$/;
+const storagePath = key => key.split('/').map(encodeURIComponent).join('/');
+const journalKey = key => /^(workflows\/[^/]+\/queues\/[^/]+\/journal|runs\/[^/]+\/events)$/.test(key);
 const fileOf = key => {
-  if (key.includes('/')) return key + '.json';
+  if (journalKey(key)) return storagePath(key) + '.jsonl';
+  if (key.includes('/')) return storagePath(key) + '.json';
   if (FIXED[key]) return FIXED[key];
   let m = /^wf:lib-(.+)$/.exec(key);
   if (m) return `library/editors/${m[1]}.json`;
@@ -53,12 +54,12 @@ const fileOf = key => {
   return `other/${key.replace(/:/g, '__')}.json`;
 };
 const keyOf = file => {
-  const rel = file.split(path.sep).join('/');
+  const rel = file.split(path.sep).map(decodeURIComponent).join('/');
+  if (rel.endsWith('.jsonl') && journalKey(rel.slice(0, -6))) return rel.slice(0, -6);
   const sidecar = /^(.*)\.files\/(?:layout\.json|scripts\/[A-Za-z0-9_-]+\.js)$/.exec(rel);
   if (sidecar) return keyOf(sidecar[1] + '.json');
-  if (/^(runs|initiatives|approvals|versions|blobs|secrets|budgets)\//.test(rel) && rel.endsWith('.json'))
+  if ((/^(runs|versions|secrets)\//.test(rel) && rel.endsWith('.json')) || /^workflows\/[^/]+\/.+\.json$/.test(rel))
     return rel.slice(0, -5);
-  if (/^library\/skills\/[^/]+\/SKILL\.md$/.test(rel)) return 'resources';
   for (const [key, f] of Object.entries(FIXED)) if (f === rel) return key;
   let m = /^library\/editors\/(.+)\.json$/.exec(rel);
   if (m) return `wf:lib-${m[1]}`;
@@ -82,7 +83,7 @@ function walk(dir, out = []) {
     if (e.isDirectory()) walk(p, out);
     else if (
       (e.name.endsWith('.json') ||
-        e.name === 'SKILL.md' ||
+        e.name.endsWith('.jsonl') ||
         (p.includes('.files' + path.sep + 'scripts' + path.sep) && e.name.endsWith('.js'))) &&
       !e.name.includes('.tmp-')
     )
@@ -149,13 +150,23 @@ function createServer(options = {}) {
     return map;
   };
   let known = snapshot();
-  const skillPath = name => {
-    if (!SkillFile.validName(name)) throw new Error('Invalid skill directory name.');
-    return path.join(DATA, 'library', 'skills', name, 'SKILL.md');
-  };
   function readKey(key) {
     let value;
     try {
+      if (journalKey(key)) {
+        const text = fs.readFileSync(abs(key), 'utf8'),
+          lines = text.split('\n'),
+          entries = [];
+        for (let i = 0; i < lines.length; i++) {
+          if (!lines[i]) continue;
+          try {
+            entries.push(JSON.parse(lines[i]));
+          } catch (error) {
+            if (i !== lines.length - 1) throw error;
+          }
+        }
+        return entries;
+      }
       value = JSON.parse(fs.readFileSync(abs(key), 'utf8'));
     } catch (error) {
       if (error.code === 'ENOENT') return undefined;
@@ -181,13 +192,6 @@ function createServer(options = {}) {
       }
       value = TextGraph.decode({format: TextGraph.FORMAT, files});
     }
-    if (key === 'resources')
-      for (const item of value)
-        if (item.kind === 'skill' && !item.payload?.markdown) {
-          const markdown = fs.readFileSync(skillPath(item.name), 'utf8');
-          item.payload = {...item.payload, markdown};
-          item.name = SkillFile.read(markdown).meta.name;
-        }
     return value;
   }
   function atomicText(file, text) {
@@ -199,7 +203,25 @@ function createServer(options = {}) {
     fs.mkdirSync(path.dirname(file), {recursive: true});
     const tmp = `${file}.tmp-${process.pid}`;
     fs.writeFileSync(tmp, text);
-    fs.renameSync(tmp, file);
+    // On Windows another program (antivirus, indexer, sync, editor) may hold the target for a moment, and rename then fails with
+    // EPERM/EBUSY/EACCES. Retry briefly; if the target stays locked, fail without replacing it with a partial write.
+    for (let attempt = 0; ; attempt++) {
+      try {
+        fs.renameSync(tmp, file);
+        return;
+      } catch (error) {
+        if (!['EPERM', 'EBUSY', 'EACCES'].includes(error.code)) {
+          fs.rmSync(tmp, {force: true});
+          throw error;
+        }
+        if (attempt < 5) {
+          Atomics.wait(new Int32Array(new SharedArrayBuffer(4)), 0, 0, 50 * (attempt + 1));
+          continue;
+        }
+        fs.rmSync(tmp, {force: true});
+        throw error;
+      }
+    }
   }
 
   // ----- change notifications (Server-Sent Events) -----
@@ -216,36 +238,31 @@ function createServer(options = {}) {
     }
   };
   function writeKey(key, value) {
-    if (key === 'resources') {
-      const previous = fs.existsSync(abs(key)) ? readKey(key) : [];
-      const skills = value.filter(item => item.kind === 'skill' && item.payload?.markdown);
-      for (const item of skills) {
-        const document = SkillFile.read(item.payload.markdown);
-        if (document.meta.name !== item.name) throw new Error('Skill name must match its directory.');
-        skillPath(item.name);
+    if (journalKey(key)) {
+      const file = abs(key),
+        before = readKey(key) ?? [];
+      if (!Array.isArray(value)) throw new Error('Journal entries must be an array');
+      const prefix =
+        before.length <= value.length && before.every((e, i) => JSON.stringify(e) === JSON.stringify(value[i]));
+      if (!prefix) return atomicText(file, value.map(e => JSON.stringify(e) + '\n').join(''));
+      fs.mkdirSync(path.dirname(file), {recursive: true});
+      // Remove a torn final append before retrying the idempotent transaction.
+      const expected = before.map(e => JSON.stringify(e) + '\n').join('');
+      if (fs.existsSync(file) && fs.readFileSync(file, 'utf8') !== expected) atomicText(file, expected);
+      const fd = fs.openSync(file, 'a');
+      try {
+        fs.writeFileSync(
+          fd,
+          value
+            .slice(before.length)
+            .map(e => JSON.stringify(e) + '\n')
+            .join('')
+        );
+        fs.fsyncSync(fd);
+      } finally {
+        fs.closeSync(fd);
       }
-      for (const item of skills) {
-        const old = previous.find(r => r.id === item.id && r.kind === 'skill');
-        if (old && old.name !== item.name && SkillFile.validName(old.name) && fs.existsSync(skillPath(old.name))) {
-          fs.renameSync(path.dirname(skillPath(old.name)), path.dirname(skillPath(item.name)));
-        }
-        atomicText(skillPath(item.name), item.payload.markdown);
-      }
-      const nextNames = new Set(skills.map(item => item.name));
-      for (const item of previous)
-        if (item.kind === 'skill' && SkillFile.validName(item.name) && !nextNames.has(item.name)) {
-          try {
-            fs.unlinkSync(skillPath(item.name));
-            fs.rmdirSync(path.dirname(skillPath(item.name)));
-          } catch (error) {
-            if (!['ENOENT', 'ENOTEMPTY'].includes(error.code)) throw error;
-          }
-        }
-      value = value.map(item => {
-        if (item.kind !== 'skill' || !item.payload?.markdown) return item;
-        const {markdown, ...payload} = item.payload;
-        return {...item, payload};
-      });
+      return;
     }
     const file = abs(key);
     if (key === 'resources' || key.startsWith('wf:') || key.startsWith('versions/content/')) {
@@ -316,6 +333,28 @@ function createServer(options = {}) {
     }
   }
 
+  // A redo record makes a multi-key commit recoverable before the backend can read it.
+  const transactionFile = path.join(DATA, '.transaction.json');
+  function applyTransaction({set = {}, remove = []}) {
+    for (const k of Object.keys(set)) writeKey(k, set[k]);
+    for (const k of remove) removeKey(k);
+    fs.unlinkSync(transactionFile);
+  }
+  function commitKeys({set = {}, remove = []}) {
+    const keys = [...Object.keys(set), ...remove];
+    if (!keys.every(k => VALID_KEY.test(k))) throw new Error('Invalid storage key');
+    if (fs.existsSync(transactionFile)) applyTransaction(JSON.parse(fs.readFileSync(transactionFile, 'utf8')));
+    atomicText(transactionFile, JSON.stringify({set, remove}));
+    const transactionFd = fs.openSync(transactionFile, 'r+');
+    try {
+      fs.fsyncSync(transactionFd);
+    } finally {
+      fs.closeSync(transactionFd);
+    }
+    applyTransaction({set, remove});
+  }
+  if (fs.existsSync(transactionFile)) commitKeys(JSON.parse(fs.readFileSync(transactionFile, 'utf8')));
+  known = snapshot();
   // ----- the backend: the same code the browser runs, with the data folder as its store -----
   let backend = null,
     backendError = null;
@@ -329,8 +368,7 @@ function createServer(options = {}) {
           return readKey(key);
         },
         commit({set, remove}) {
-          for (const k of Object.keys(set)) writeKey(k, set[k]);
-          for (const k of remove) removeKey(k);
+          commitKeys({set, remove});
           const current = snapshot();
           for (const k of Object.keys(set)) known.set(k, current.get(k));
           for (const k of remove) known.delete(k);
@@ -342,8 +380,8 @@ function createServer(options = {}) {
     backendError = error;
   }
 
-  // Files are watched by comparing stamps: a page open gets the news within a second, and the backend forgets what it
   if (backend) backend.Backend.request('GET', 'runs').catch(error => console.error('Recovery:', error.message));
+  // Files are watched by comparing stamps: a page open gets the news within a second, and the backend forgets what it
   // had cached of a file that was edited on disk. With no page open the tree is looked at every few seconds only.
   let ticks = 0;
   const watcher = setInterval(() => {
@@ -403,8 +441,7 @@ function createServer(options = {}) {
         return sendJSON(res, 400, {error: 'bad body'});
       const keys = [...Object.keys(set), ...remove];
       if (!keys.every(k => VALID_KEY.test(k))) return sendJSON(res, 400, {error: 'bad key'});
-      for (const k of Object.keys(set)) writeKey(k, set[k]);
-      for (const k of remove) removeKey(k);
+      commitKeys({set, remove});
       // Only what this request touched can have changed, so the whole tree need not be walked again.
       const current = snapshot();
       for (const k of Object.keys(set)) known.set(k, current.get(k));
@@ -530,9 +567,7 @@ function createServer(options = {}) {
 
   function handleStatic(req, res, url, editor = false) {
     let rel = decodeURIComponent(url.pathname);
-    // The front page of the site is at /; the editor's own page is /editor/ (and index.html).
-    if (rel === '/' && !editor) rel = '/site/index.html';
-    else if (rel.endsWith('/')) rel += 'index.html';
+    if (rel.endsWith('/')) rel += 'index.html';
     let file = path.join(ROOT, rel);
     if (
       !file.startsWith(ROOT + path.sep) ||
@@ -555,9 +590,9 @@ function createServer(options = {}) {
     let run;
     try {
       const url = new URL(req.url, 'http://localhost');
-      // The site is at /, the editor (this app) under /editor/: its files, its data and its API are reached through that prefix too.
+      // The app lives under /editor/: its files, its data and its API are reached through that prefix too; / and /editor go there.
       let editor = false;
-      if (url.pathname === '/editor') {
+      if (url.pathname === '/' || url.pathname === '/editor') {
         res.writeHead(301, {Location: '/editor/' + url.search});
         return res.end();
       }

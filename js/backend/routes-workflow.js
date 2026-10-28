@@ -2,6 +2,41 @@
 // Complex Nodes, clipboard, styles, layout, validation and evaluation.
 'use strict';
 
+route(
+  'POST',
+  'projects/{project_id}/batch',
+  'Apply related graph edits as one document transaction',
+  async (c, params) => {
+    const operations = c.body.operations;
+    if (!Array.isArray(operations) || !operations.length || operations.length > 200)
+      throw bad('Pass 1 to 200 operations');
+    const workflow = await c.workflow(params.project_id);
+    const result = [];
+    for (const operation of operations) {
+      if (
+        !isObject(operation) ||
+        typeof operation.path !== 'string' ||
+        !/^[a-z-]+(?:\/[a-zA-Z0-9:-]+)?$/.test(operation.path) ||
+        !EDITS.has(operation.path.split('/')[0]) ||
+        ['batch', 'available-nodes'].includes(operation.path)
+      )
+        throw bad('Invalid batch edit path');
+      const method = operation.method ?? 'PUT';
+      const path = `projects/${params.project_id}/${operation.path}`;
+      const found = ROUTES.find(r => r.regex.test(path) && r.methods.has(method) && !r.unlocked);
+      if (!found || (operation.body !== undefined && !isObject(operation.body))) throw bad('Invalid batch edit');
+      const before = c.body;
+      c.body = {...(operation.body ?? {}), workflow_id: workflow.meta.id};
+      try {
+        result.push(await found.handler(c, {...path.match(found.regex).groups}));
+      } finally {
+        c.body = before;
+      }
+    }
+    return {results: result};
+  }
+);
+
 // ----- workflow canvas -----
 route(
   'GET',
@@ -68,17 +103,57 @@ route('GET', 'projects/{project_id}/node-types', 'List node types', async (c, {p
 });
 
 route(
+  'PUT',
+  'projects/{project_id}/available-nodes',
+  'Include or exclude a Library node or all current nodes in a Library group from this workflow’s Add menu',
+  async (c, {project_id}) => {
+    const {resource_id, folder, enabled} = c.body;
+    if (typeof enabled !== 'boolean') throw bad('Pass enabled: true or false');
+    if ((typeof resource_id === 'string') === (typeof folder === 'string'))
+      throw bad('Pass either resource_id or folder');
+    const items = (await c.ctx.get('resources', []));
+    let targets;
+    if (typeof resource_id === 'string') {
+      if (!items.some(r => r.id === resource_id)) throw missing('Custom Node not found');
+      if (project_id === 'lib-' + resource_id) throw bad('A Custom Node cannot contain itself');
+      targets = [resource_id];
+    } else {
+      if (!(await nodeFolders(c)).includes(folder)) throw missing('Group not found');
+      targets = items
+        .filter(r => project_id !== 'lib-' + r.id && underPath(String(r.payload.folder || ''), folder))
+        .map(r => r.id);
+    }
+    const {doc} = await c.workflow(project_id),
+      available = new Set(doc.library_nodes ?? []);
+    for (const id of targets) {
+      if (enabled) available.add(id);
+      else available.delete(id);
+    }
+    doc.library_nodes = [...available];
+    return {library_nodes: clone(doc.library_nodes)};
+  },
+  {
+    body: {resource_id: 'Library resource ID', enabled: true},
+    query: ['workflow_id'],
+    note: 'Use folder instead of resource_id to toggle a group and its subgroups. All Library nodes are excluded by default.',
+  }
+);
+
+route(
   'POST',
   'projects/{project_id}/custom-nodes/{resource_id}',
   'Place a Library Custom Node on the canvas as one node',
   async (c, {project_id, resource_id}) => {
-    const item = (await c.ctx.get('resources', [])).find(r => r.id === resource_id && r.kind === 'custom_node');
+    const item = (await c.ctx.get('resources', [])).find(r => r.id === resource_id);
     if (!item) throw bad('Custom Node not found');
     if (project_id === 'lib-' + resource_id) throw bad('A Custom Node cannot contain itself');
     if (item.payload.bundle?.version !== BUNDLE_VERSION)
       throw bad(`The Custom Node “${item.name}” has a bundle this version cannot read.`);
-    const {editor} = await c.workflow(project_id);
-    return editor.paste(clone(item.payload.bundle), c.body.point, {source: {resource_id, stamp: item.updated}});
+    const {editor, doc} = await c.workflow(project_id);
+    const result = editor.paste(clone(item.payload.bundle), c.body.point, {source: {resource_id, stamp: item.updated}});
+    // Placement and inclusion are one edit: failed placement never changes the available set.
+    doc.library_nodes = [...new Set([...(doc.library_nodes ?? []), resource_id])];
+    return result;
   },
   {body: {point: {x: 0, y: 0}}, query: ['workflow_id']}
 );
@@ -332,8 +407,6 @@ route(
       project_id,
       workflow_id: c.workflowId,
       node_ids: multiple ? ids : [ids],
-      budget: body.budget,
-      initiative_id: body.initiative_id ?? c.scriptContext?.initiative_id ?? null,
     });
     await run.done;
     if (body.collect !== true) {

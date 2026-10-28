@@ -141,7 +141,7 @@ function wireCanvas() {
     if (element || frame) return popup(event.clientX, event.clientY, selectionMenu());
     popup(event.clientX, event.clientY, [
       ['Paste', () => paste(), {icon: 'paste', hint: shortcutText('paste'), disabled: !hasClipboard()}],
-      ['Add', null, {icon: 'plus', children: addItems(), search: true}],
+      ['Add', null, {icon: 'plus', children: addItems(), search: true, searchItems: addItems({all: true})}],
     ]);
   });
   canvas.addEventListener('pointerdown', event => {

@@ -106,7 +106,6 @@
               }
             ],
             "op": "script",
-            "origin": "human",
             "outputs": [],
             "title": "Script"
           },

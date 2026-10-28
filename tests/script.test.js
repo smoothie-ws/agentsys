@@ -77,7 +77,7 @@ test('an editable output of a Complex Node (a Library node that is only a frame,
   const T = 'd1714f2eec0f4bcfa0edc8602f7f67c2';
   const types = [{id: T, name: 'bool', color: '#d666c2', fields: [], control: 'checkbox'}];
   const read = async (output, expected) => {
-    const lib = await app.api('POST', 'resources', {kind: 'custom_node', name: 'V' + Math.random(), payload: {bundle: bundle([output], types), description: ''}});
+    const lib = await app.api('POST', 'resources', {name: 'V' + Math.random(), payload: {bundle: bundle([output], types), description: ''}});
     const placed = await app.api('POST', `projects/${id}/custom-nodes/${lib.id}`, {...q, point: {x: 0, y: 0}});
     const snap = await app.api('GET', `projects/${id}/workflow`, {}, q);
     const complexId = 'complex:' + placed.roots[0],
@@ -103,9 +103,9 @@ test('a placed Library node that was saved again is brought up to date once: rea
     groups: [{id: 'g1', name: 'V', parent: null, members: ['r1'], color: null, pinned: false, folded: false, disabled: false}],
     complex: [{id: 'g1', interface: {inputs: [], outputs: []}, collapsed: false, compact_width: 240, compact_height: 90, arbitrary: {inputs: false, outputs: false}}],
   });
-  const lib = await app.api('POST', 'resources', {kind: 'custom_node', name: 'V', payload: {bundle: bundle(1), description: ''}});
+  const lib = await app.api('POST', 'resources', {name: 'V', payload: {bundle: bundle(1), description: ''}});
   await app.api('POST', `projects/${id}/custom-nodes/${lib.id}`, {...q, point: {x: 0, y: 0}});
-  await app.api('PUT', `resources/${lib.id}`, {kind: 'custom_node', name: 'V', payload: {bundle: bundle(2), description: ''}});
+  await app.api('PUT', `resources/${lib.id}`, {name: 'V', payload: {bundle: bundle(2), description: ''}});
   const ids = async () => (await app.api('GET', `projects/${id}/workflow`, {}, q)).nodes.map(n => n.id).sort().join();
   const first = await ids();
   assert.equal(await ids(), first);
@@ -136,7 +136,7 @@ test('two Library nodes that each define the same type (Text and Preview both ha
     const bundle = {version: 3, source_project: 'lib-' + name, types: [{id: T, name: 'text', fields: [], control: 'textarea'}], port_edges: [], widgets: {}, positions: {}, styles: {}, records: [],
       groups: [{id: 'g1', name, parent: null, members: [], color: null, pinned: false, folded: false, disabled: false, position: {x: 0, y: 0}}],
       complex: [{id: 'g1', interface: {inputs: [], outputs: [{id: 'p', name: port, type: 't:' + T, editable: true}]}, collapsed: false, compact_width: 240, compact_height: 90, arbitrary: {inputs: false, outputs: false}}]};
-    const lib = await app.api('POST', 'resources', {kind: 'custom_node', name, payload: {bundle, description: ''}});
+    const lib = await app.api('POST', 'resources', {name, payload: {bundle, description: ''}});
     return app.api('POST', `projects/${id}/custom-nodes/${lib.id}`, {...q, point: {x: 0, y: 0}});
   };
   await make('A', '1'.repeat(32), 'a');

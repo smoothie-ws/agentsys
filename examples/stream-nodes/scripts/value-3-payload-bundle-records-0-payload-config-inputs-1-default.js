@@ -1,0 +1,1 @@
+const q=node.queue(node.input.queue??"jobs");const [item]=await q.pull();if(item){node.output.result=item.value;await node.emit("out");await q.ack(item.id);}

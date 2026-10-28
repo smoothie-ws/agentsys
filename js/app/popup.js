@@ -2,7 +2,8 @@
 'use strict';
 
 /** Small popup menu anchored at a point. `items` are [label, action, {danger, disabled}] or null separators. */
-function popup(x, y, items, {search = false} = {}) {
+// `searchItems` can supply a wider catalog than the entries shown with an empty query, also on searchable submenus.
+function popup(x, y, items, {search = false, searchItems = items} = {}) {
   closePopup(true);
   const menu = document.createElement('div');
   menu.className = 'popup';
@@ -70,7 +71,7 @@ function popup(x, y, items, {search = false} = {}) {
             const field = $('input', sub);
             field.oninput = () => {
               const q = field.value.trim().toLocaleLowerCase();
-              renderItems(list, q ? flatten(children).filter(item => item[0].toLocaleLowerCase().includes(q)) : children);
+              renderItems(list, q ? flatten(meta.searchItems || children).filter(item => item[0].toLocaleLowerCase().includes(q)) : children);
             };
             if (!phoneLayout.matches) setTimeout(() => field.focus(), 0);
           }
@@ -121,7 +122,7 @@ function popup(x, y, items, {search = false} = {}) {
   if (input)
     input.oninput = () => {
       const q = input.value.trim().toLocaleLowerCase();
-      renderItems(rootItems, q ? flatten(items).filter(item => item[0].toLocaleLowerCase().includes(q)) : items);
+      renderItems(rootItems, q ? flatten(searchItems).filter(item => item[0].toLocaleLowerCase().includes(q)) : items);
       const r = menu.getBoundingClientRect();
       menu.style.top = Math.max(8, Math.min(parseFloat(menu.style.top), innerHeight - r.height - 8)) + 'px';
     };

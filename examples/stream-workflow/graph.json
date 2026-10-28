@@ -1,0 +1,406 @@
+{
+  "format": "agentsys.text/1",
+  "value": {
+    "document": {
+      "complex": [
+        {
+          "arbitrary": {
+            "inputs": false,
+            "outputs": false
+          },
+          "collapsed": false,
+          "compact_height": 90,
+          "compact_width": 240,
+          "id": "92424408c8fcfea12f8b062634b3d9be",
+          "interface": {
+            "inputs": [
+              {
+                "bound": [
+                  {
+                    "node_id": "record:65371b944beaf8c8b82f053f091ebba0",
+                    "port_id": "in"
+                  }
+                ],
+                "id": "in",
+                "name": "In",
+                "type": "signal"
+              }
+            ],
+            "outputs": []
+          },
+          "source": {
+            "resource_id": "78a4c69d5625a8a135f56cfa570bbde4",
+            "stamp": 1793168601.564
+          }
+        },
+        {
+          "arbitrary": {
+            "inputs": false,
+            "outputs": false
+          },
+          "collapsed": false,
+          "compact_height": 90,
+          "compact_width": 240,
+          "id": "9f9b7e065f7a9a0721f9a1d4e6239373",
+          "interface": {
+            "inputs": [
+              {
+                "bound": [
+                  {
+                    "node_id": "record:eae65913a43f129983930c1006927955",
+                    "port_id": "in"
+                  }
+                ],
+                "id": "in",
+                "name": "In",
+                "type": "signal"
+              }
+            ],
+            "outputs": []
+          },
+          "source": {
+            "resource_id": "21377054adf59269a6aceaf134e895f4",
+            "stamp": 1793168601.576
+          }
+        },
+        {
+          "arbitrary": {
+            "inputs": false,
+            "outputs": false
+          },
+          "collapsed": false,
+          "compact_height": 90,
+          "compact_width": 240,
+          "id": "caea6d6913cc69f60eb6d479664aa781",
+          "interface": {
+            "inputs": [
+              {
+                "bound": [
+                  {
+                    "node_id": "record:8c7bfd28ddb812d6292a51c89923dad5",
+                    "port_id": "in"
+                  }
+                ],
+                "id": "in",
+                "name": "In",
+                "type": "signal"
+              }
+            ],
+            "outputs": []
+          },
+          "source": {
+            "resource_id": "d8f8354d9ec8d7008c95897830a2f45f",
+            "stamp": 1793168601.572
+          }
+        }
+      ],
+      "groups": [
+        {
+          "id": "92424408c8fcfea12f8b062634b3d9be",
+          "members": [
+            "record:62b9b7c8fce83a1d381ca568d409642f",
+            "record:65371b944beaf8c8b82f053f091ebba0"
+          ],
+          "name": "Webhook to queue",
+          "parent": null
+        },
+        {
+          "id": "9f9b7e065f7a9a0721f9a1d4e6239373",
+          "members": [
+            "record:0fba0e910cbf4d4a2c043b2da3c64216",
+            "record:eae65913a43f129983930c1006927955"
+          ],
+          "name": "Wait for event",
+          "parent": null
+        },
+        {
+          "id": "caea6d6913cc69f60eb6d479664aa781",
+          "members": [
+            "record:b73ad2009dca36b3b1b886d76816b70d",
+            "record:8c7bfd28ddb812d6292a51c89923dad5"
+          ],
+          "name": "Process queue item",
+          "parent": null
+        }
+      ],
+      "library_nodes": [
+        "78a4c69d5625a8a135f56cfa570bbde4",
+        "d8f8354d9ec8d7008c95897830a2f45f",
+        "21377054adf59269a6aceaf134e895f4"
+      ],
+      "nodes": [
+        {
+          "config": {
+            "inputs": [],
+            "op": "on_run",
+            "outputs": [
+              {
+                "id": "out",
+                "name": "Out",
+                "type": "signal"
+              },
+              {
+                "id": "payload",
+                "name": "payload"
+              }
+            ],
+            "title": "queue entry"
+          },
+          "id": "record:01fa3159d4642639013099c5b3e7fff4",
+          "kind": "function",
+          "label": "Custom",
+          "node_type": "custom",
+          "status": "ready"
+        },
+        {
+          "config": {
+            "inputs": [],
+            "outputs": [],
+            "title": "Body"
+          },
+          "id": "record:0fba0e910cbf4d4a2c043b2da3c64216",
+          "kind": "function",
+          "label": "Custom",
+          "node_type": "custom",
+          "status": "ready"
+        },
+        {
+          "config": {
+            "inputs": [],
+            "op": "on_run",
+            "outputs": [
+              {
+                "id": "out",
+                "name": "Out",
+                "type": "signal"
+              },
+              {
+                "id": "payload",
+                "name": "payload"
+              }
+            ],
+            "title": "webhook entry"
+          },
+          "id": "record:22fb130d510809fc4ed9714dab3e0dc8",
+          "kind": "function",
+          "label": "Custom",
+          "node_type": "custom",
+          "status": "ready"
+        },
+        {
+          "config": {
+            "inputs": [],
+            "outputs": [],
+            "title": "Body"
+          },
+          "id": "record:62b9b7c8fce83a1d381ca568d409642f",
+          "kind": "function",
+          "label": "Custom",
+          "node_type": "custom",
+          "status": "ready"
+        },
+        {
+          "config": {
+            "capabilities": [
+              "graph.read",
+              "graph.write"
+            ],
+            "grants": [
+              "graph.read",
+              "graph.write"
+            ],
+            "inputs": [
+              {
+                "id": "in",
+                "name": "In",
+                "type": "signal"
+              },
+              {
+                "default": {
+                  "$script": "scripts/value-document-nodes-4-config-inputs-1-default.js"
+                },
+                "id": "script",
+                "name": "script",
+                "type": "t:c0de0c0de0c0de0c0de0c0de0c0de0c0"
+              }
+            ],
+            "op": "script",
+            "outputs": [],
+            "title": "Script"
+          },
+          "id": "record:65371b944beaf8c8b82f053f091ebba0",
+          "kind": "function",
+          "label": "Custom",
+          "node_type": "custom",
+          "status": "ready"
+        },
+        {
+          "config": {
+            "capabilities": [
+              "graph.read",
+              "graph.write"
+            ],
+            "grants": [
+              "graph.read",
+              "graph.write"
+            ],
+            "inputs": [
+              {
+                "id": "in",
+                "name": "In",
+                "type": "signal"
+              },
+              {
+                "default": {
+                  "$script": "scripts/value-document-nodes-5-config-inputs-1-default.js"
+                },
+                "id": "script",
+                "name": "script",
+                "type": "t:c0de0c0de0c0de0c0de0c0de0c0de0c0"
+              }
+            ],
+            "op": "script",
+            "outputs": [],
+            "title": "Script"
+          },
+          "id": "record:8c7bfd28ddb812d6292a51c89923dad5",
+          "kind": "function",
+          "label": "Custom",
+          "node_type": "custom",
+          "status": "ready"
+        },
+        {
+          "config": {
+            "inputs": [],
+            "op": "on_run",
+            "outputs": [
+              {
+                "id": "out",
+                "name": "Out",
+                "type": "signal"
+              },
+              {
+                "id": "payload",
+                "name": "payload"
+              }
+            ],
+            "title": "wait entry"
+          },
+          "id": "record:8c8d52f8d9e0b07d5799fcd76d81cdff",
+          "kind": "function",
+          "label": "Custom",
+          "node_type": "custom",
+          "status": "ready"
+        },
+        {
+          "config": {
+            "inputs": [],
+            "outputs": [],
+            "title": "Body"
+          },
+          "id": "record:b73ad2009dca36b3b1b886d76816b70d",
+          "kind": "function",
+          "label": "Custom",
+          "node_type": "custom",
+          "status": "ready"
+        },
+        {
+          "config": {
+            "capabilities": [
+              "graph.read",
+              "graph.write"
+            ],
+            "grants": [
+              "graph.read",
+              "graph.write"
+            ],
+            "inputs": [
+              {
+                "id": "in",
+                "name": "In",
+                "type": "signal"
+              },
+              {
+                "default": {
+                  "$script": "scripts/value-document-nodes-8-config-inputs-1-default.js"
+                },
+                "id": "script",
+                "name": "script",
+                "type": "t:c0de0c0de0c0de0c0de0c0de0c0de0c0"
+              }
+            ],
+            "op": "script",
+            "outputs": [],
+            "title": "Script"
+          },
+          "id": "record:eae65913a43f129983930c1006927955",
+          "kind": "function",
+          "label": "Custom",
+          "node_type": "custom",
+          "status": "ready"
+        }
+      ],
+      "port_edges": [
+        {
+          "id": "138b2cbcacabb851cd6780ea28d8840a",
+          "source": "record:22fb130d510809fc4ed9714dab3e0dc8",
+          "source_port": "out",
+          "target": "complex:92424408c8fcfea12f8b062634b3d9be",
+          "target_port": "in"
+        },
+        {
+          "id": "6ad58b2378b10897ffc3ef6d966e3e7c",
+          "source": "record:01fa3159d4642639013099c5b3e7fff4",
+          "source_port": "out",
+          "target": "complex:caea6d6913cc69f60eb6d479664aa781",
+          "target_port": "in"
+        },
+        {
+          "id": "fcb392f15ceea70752c92d1f7d562be2",
+          "source": "record:8c8d52f8d9e0b07d5799fcd76d81cdff",
+          "source_port": "out",
+          "target": "complex:9f9b7e065f7a9a0721f9a1d4e6239373",
+          "target_port": "in"
+        }
+      ],
+      "style": {
+        "record:0fba0e910cbf4d4a2c043b2da3c64216": {
+          "color": null,
+          "pinned": false
+        },
+        "record:62b9b7c8fce83a1d381ca568d409642f": {
+          "color": null,
+          "pinned": false
+        },
+        "record:65371b944beaf8c8b82f053f091ebba0": {
+          "color": null,
+          "pinned": false
+        },
+        "record:8c7bfd28ddb812d6292a51c89923dad5": {
+          "color": null,
+          "pinned": false
+        },
+        "record:b73ad2009dca36b3b1b886d76816b70d": {
+          "color": null,
+          "pinned": false
+        },
+        "record:eae65913a43f129983930c1006927955": {
+          "color": null,
+          "pinned": false
+        }
+      },
+      "types": [
+        {
+          "color": "#8a6fd6",
+          "control": "code",
+          "fields": [],
+          "id": "c0de0c0de0c0de0c0de0c0de0c0de0c0",
+          "name": "code"
+        }
+      ],
+      "widgets": {}
+    },
+    "kind": "workflow",
+    "name": "Main"
+  }
+}

@@ -35,7 +35,7 @@ body .mobile-only,
     width: 100%;
     height: var(--mobile-primary);
     display: grid;
-    grid-template-columns: repeat(5, minmax(0, 1fr));
+    grid-template-columns: repeat(4, minmax(0, 1fr));
     gap: 2px;
     padding: 3px max(4px, env(safe-area-inset-right, 0px)) env(safe-area-inset-bottom, 0px) max(4px, env(safe-area-inset-left, 0px));
     border-radius: 0;
@@ -43,12 +43,21 @@ body .mobile-only,
     overflow: hidden;
     transition: none;
   }
-  #sidebar .brand,
   #sidebar hr,
   body .panel-resize,
   #subnav-body > .nav-pill,
   .nav-joined #subnav::after,
   .nav-joined main::after {
+    display: none;
+  }
+  #sidebar .brand {
+    min-width: 0;
+    height: 48px;
+    padding: 5px 2px;
+    justify-content: center;
+    border-radius: 18px;
+  }
+  #sidebar .brand > span:last-child {
     display: none;
   }
   #sidebar .sidebar-top,

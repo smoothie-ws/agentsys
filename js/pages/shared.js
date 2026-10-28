@@ -2,20 +2,14 @@
 'use strict';
 
 const PAGES = {};
-const KINDS = {provider: 'Providers', skill: 'Skills', custom_node: 'Nodes'};
-const KIND_ICONS = {provider: 'server', skill: 'spark', custom_node: 'package'};
 const COMMON_CAPABILITIES = [
   'graph.read',
   'graph.write',
   'library.read',
   'library.write',
-  'initiative.read',
-  'initiative.write:*',
-  'llm.call:*',
   'net.fetch:*',
   'run.read',
   'run.start',
-  'approval.request',
 ];
 function manifestControls(payload = {}) {
   const list = (field, attr) =>
@@ -114,7 +108,7 @@ const pageHead = ({crumbs = [], title, sub = '', actions = ''}) =>
   `<div class="page-head"><div>${crumbs.length ? `<nav class="crumbs" aria-label="Path">${crumbs.map(([label, href]) => `<a href="${esc(href)}" data-link>${esc(label)}</a>`).join('<span aria-hidden="true">/</span>')}</nav>` : ''}<h1>${title}</h1>${sub ? `<p class="muted">${sub}</p>` : ''}</div><div class="actions">${actions}</div></div>`;
 
 /**
- * The card of every page (projects, workflows, Library kinds, items and groups), built like a node of the canvas: a header with an icon
+ * The card of every page (projects, workflows, Library nodes and groups), built like a node of the canvas: a header with an icon
  * and the name, a well showing what is inside, a line of facts, and its buttons. `menu` is what its "⋯" opens (see menuItems in nav.js);
  * `attrs` marks the title for renaming on the spot; `tint` is "k-complex" for what is made of other nodes; `extra` goes on the card itself.
  */
@@ -131,14 +125,9 @@ function card({
   run = '',
   tint = '',
   extra = '',
-  enable = null,
 }) {
   const tag = href ? 'a' : 'div';
-  return `<article class="card ${tint} ${enable && !enable.on ? 'off' : ''}" ${extra}><${tag} class="card-main" ${href ? `href="${esc(href)}" data-link` : ''}><header class="card-head"><span class="head-icon">${icon(glyph)}</span><h3><span ${attrs}>${esc(title)}</span></h3></header><div class="card-preview ${previewClass}" ${previewAttrs}>${preview}</div>${facts ? `<p class="card-facts">${facts}</p>` : ''}</${tag}><span class="card-actions">${run}${
-    enable
-      ? `<label class="card-enable" title="${esc(enable.title)}"><input type="checkbox" data-enable="${esc(enable.target)}" ${enable.on ? 'checked' : ''} ${enable.locked ? 'disabled' : ''} aria-label="Enabled: ${esc(title)}"></label>`
-      : ''
-  }${menu ? `<button class="icon" data-menu="${esc(menu)}" aria-label="Actions of ${esc(title)}">${icon('dots')}</button>` : ''}</span></article>`;
+  return `<article class="card ${tint}" ${extra}><${tag} class="card-main" ${href ? `href="${esc(href)}" data-link` : ''}><header class="card-head"><span class="head-icon">${icon(glyph)}</span><h3><span ${attrs}>${esc(title)}</span></h3></header><div class="card-preview ${previewClass}" ${previewAttrs}>${preview}</div>${facts ? `<p class="card-facts">${facts}</p>` : ''}</${tag}><span class="card-actions">${run}${menu ? `<button class="icon" data-menu="${esc(menu)}" aria-label="Actions of ${esc(title)}">${icon('dots')}</button>` : ''}</span></article>`;
 }
 
 function inlineRename(title, value, save, {maxLength = 100, pattern = ''} = {}) {
@@ -260,7 +249,7 @@ document.addEventListener('keydown', async event => {
     return renameSelection();
   }
   if (!spec && app.route.id && app.route.id !== 'new') spec = 'resource:' + app.route.id;
-  if (!spec && app.route.folder) spec = folderSpec(app.route.folder, app.route.kind);
+  if (!spec && app.route.folder) spec = 'folder:' + app.route.folder;
   if (!spec && app.route.project) spec = 'project:' + app.route.project;
   if (!spec) return;
   event.preventDefault();
@@ -413,26 +402,16 @@ async function loadLibrary() {
   app.resources = settings.resources;
   app.nodeFolders = settings.node_folders || [];
   app.nodeFolderIcons = settings.node_folder_icons || {};
-  app.nodeDisabledFolders = settings.node_disabled_folders || [];
-  app.skillFolders = settings.skill_folders || [];
-  app.skillFolderIcons = settings.skill_folder_icons || {};
   app.preferences = settings.preferences;
   return settings;
 }
-/** Whether a Custom Node group, or Custom Node, is on: switched on itself and in no group that is off. */
-const folderOn = path => !(app.nodeDisabledFolders || []).some(p => underPath(path, p));
-const nodeOn = r => r.enabled !== false && folderOn(String(r.payload.folder || ''));
-const resourcesOf = kind => app.resources.filter(r => r.kind === kind);
 const baseName = path => path.slice(path.lastIndexOf('/') + 1);
-const resourceHref = r => `/resources/${r.kind}/${r.id}`;
-const groupedKind = kind => kind === 'custom_node' || kind === 'skill';
-const canManageKind = kind => kind !== 'custom_node' || developerMode();
-const foldersOf = kind => (kind === 'skill' ? app.skillFolders : app.nodeFolders) || [];
-const folderIconsOf = kind => (kind === 'skill' ? app.skillFolderIcons : app.nodeFolderIcons) || {};
-const folderHref = (path, kind = 'custom_node') => `/resources/${kind}?folder=${encodeURIComponent(path)}`;
-const folderKey = (path, kind = 'custom_node') => (kind === 'skill' ? 'sf:' : 'f:') + path;
-const folderSpec = (path, kind = 'custom_node') => (kind === 'skill' ? 'skill-folder:' : 'folder:') + path;
-const resourceIcon = r => (r.kind === 'custom_node' ? r.payload.icon || 'complex' : KIND_ICONS[r.kind]);
+/** The Library has sections (now one: Nodes) under /resources; the nodes live at /resources/nodes. */
+const NODES_PATH = '/resources/nodes';
+const resourceHref = r => `${NODES_PATH}/${r.id}`;
+const folderHref = path => `${NODES_PATH}?folder=${encodeURIComponent(path)}`;
+const folderKey = path => 'f:' + path;
+const resourceIcon = r => r.payload.icon || 'complex';
 
 /** A saved Custom Node as the graph previewSVG draws: its nodes where they are, the groups around their members, the wires. */
 function graphFromBundle(bundle) {

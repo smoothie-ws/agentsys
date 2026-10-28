@@ -12,7 +12,7 @@ async def main():
         pid=await pg.evaluate("api('projects',{method:'POST',body:{name:'T'}}).then(p=>p.id)")
         await pg.goto(f'{U}#/p/{pid}/w/{pid}'); await pg.wait_for_selector('#canvas'); await pg.wait_for_timeout(400)
         ids=await pg.evaluate('''async()=>{const P=W.project,w={workflow_id:W.workflow};
-          const mk=async(t,x,y,ins,outs)=>(await api(`projects/${P}/typed-nodes`,{method:'POST',body:{...w,node_type:'custom',config:{title:t,inputs:ins,outputs:outs,init:''},position:{x,y}}})).id;
+          const mk=async(t,x,y,ins,outs)=>(await api(`projects/${P}/typed-nodes`,{method:'POST',body:{...w,node_type:'custom',config:{title:t,inputs:ins,outputs:outs},position:{x,y}}})).id;
           const O=[{id:'o',name:'o'}], I=[{id:'i',name:'i'}];
           const a=await mk('A',0,0,[],O), b=await mk('B',400,0,I,O), c=await mk('C',800,0,I,O), d=await mk('D',0,300,[],O), e=await mk('E',400,300,I,[]);
           const con=(s,t)=>({source:s,source_port:'o',target:t,target_port:'i'});

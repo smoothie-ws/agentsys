@@ -7,9 +7,9 @@ function syncToolbar() {
   $('#run-summary').innerHTML = W.running
     ? `<span class="dot busy"></span>${W.runPaused ? 'Paused' : 'Running…'}`
     : W.waitingRun
-      ? `<span class="dot busy"></span>Waiting <a href="/controller" data-link>Details</a><button id="wait-resume">Resume</button><button id="wait-cancel">Cancel</button>`
+      ? `<span class="dot busy"></span>Waiting <a href="/runs" data-link>Details</a><button id="wait-resume">Manage wait</button><button id="wait-cancel">Cancel</button>`
       : W.observedRun
-        ? `<span class="dot busy"></span>Running <a href="/controller" data-link>Details</a>`
+        ? `<span class="dot busy"></span>Running <a href="/runs" data-link>Details</a>`
         : last?.failed && W.results.size + W.runStatus.size
           ? `<span class="warn">${last.failed} failed</span>`
           : '';
@@ -19,6 +19,7 @@ function syncToolbar() {
       button.onclick = async () => {
         try {
           const id = W.waitingRun.id;
+          if (action === 'resume') return await showRunIntervention(id);
           const run = await api(`runs/${id}/${action}`, {method: 'POST'});
           W.followedRunId = terminalRun(run.status) ? null : id;
           W.observedRun = run.status === 'running' ? run : null;
@@ -42,8 +43,8 @@ function syncToolbar() {
     pause.title = pause.ariaLabel = W.runPaused ? 'Resume the run' : 'Pause the run';
     pause.innerHTML = icon(W.runPaused ? 'play' : 'pause');
   }
-  $('#undo').disabled = !W.history.undo || W.running;
-  $('#redo').disabled = !W.history.redo || W.running;
+  $('#undo').disabled = !W.history.undo;
+  $('#redo').disabled = !W.history.redo;
   W.canvas.classList.toggle('busy', !!W.running);
   W.canvas.closest('.editor')?.classList.toggle('running', !!W.running);
 }
@@ -60,7 +61,7 @@ function runRecord(nodes, result, started) {
     displays = result.displays || {},
     last = {
       ran: result.evaluated_nodes,
-      failed: Object.values(result.status).filter(s => s === 'failed').length,
+      failed: Object.values(result.status).filter(s => ['failed', 'blocked'].includes(s)).length,
       at: Date.now(),
       ms: Date.now() - started,
     };
@@ -108,7 +109,7 @@ function syncComplexStatus() {
     if (memo.has(id)) return memo.get(id);
     memo.set(id, undefined); // a group inside itself is not possible; this only guards the recursion
     const states = (W.complex.get(id.slice('complex:'.length))?.members || []).map(stateOf);
-    const state = ['running', 'waiting', 'failed', 'completed', 'skipped'].find(s => states.includes(s));
+    const state = ['running', 'waiting', 'blocked', 'failed', 'completed', 'skipped'].find(s => states.includes(s));
     memo.set(id, state);
     return state;
   };
@@ -123,6 +124,12 @@ function syncComplexStatus() {
 
 /** What one event of the run changes on the canvas: a node starts (running), is done (what it showed) or fails (its error). */
 function applyRunEvent(event) {
+  if (event.type === 'run_paused' || event.type === 'run_resumed') {
+    W.runPaused = event.type === 'run_paused'; // by the button, the Runs page or the workflow being paused
+    syncToolbar();
+    draw();
+    return;
+  }
   const node = W.nodes.get(event.node_id);
   if (!node) return;
   const states = {
@@ -130,6 +137,7 @@ function applyRunEvent(event) {
     node_waiting: 'waiting',
     node_completed: 'completed',
     node_failed: 'failed',
+    node_blocked: 'blocked',
     node_skipped: 'skipped',
     node_cancelled: 'ready',
   };
@@ -141,7 +149,8 @@ function applyRunEvent(event) {
   syncComplexStatus();
   if (event.type === 'node_completed' && typeof event.display === 'string')
     W.results.set(node.id, {text: event.display});
-  if (event.type === 'node_failed') W.results.set(node.id, {error: event.error});
+  if (['node_failed', 'node_blocked'].includes(event.type))
+    W.results.set(node.id, {error: event.error ?? event.reason});
 }
 
 /** Starts the run in the background and shows it on the graph as it goes: the events of the run are followed until it finishes.
@@ -196,6 +205,7 @@ async function pauseRun() {
   const run = await api(`runs/${W.runId}/${W.runPaused ? 'resume' : 'pause'}`, {method: 'POST', body: {}});
   W.runPaused = run.paused;
   syncToolbar();
+  draw();
 }
 
 /** Run fires every on_run of the workflow: the signals go from there, and the run lasts until nothing is running. */
@@ -223,8 +233,10 @@ async function runAction() {
     W.running = false;
     W.runPaused = false;
     W.runId = null;
-    for (const [id, status] of [...W.runStatus]) if (!['failed', 'waiting'].includes(status)) W.runStatus.delete(id);
-    for (const node of W.snapshot.nodes) if (!['failed', 'waiting'].includes(node.status)) node.status = 'ready';
+    for (const [id, status] of [...W.runStatus])
+      if (!['failed', 'blocked', 'waiting'].includes(status)) W.runStatus.delete(id);
+    for (const node of W.snapshot.nodes)
+      if (!['failed', 'blocked', 'waiting'].includes(node.status)) node.status = 'ready';
     syncComplexStatus();
     // The toolbar and the nodes must come back to rest even when the call itself failed.
     draw();
@@ -233,7 +245,8 @@ async function runAction() {
   if (!result || W.workflow !== workflow || !W.canvas?.isConnected) return;
   const {failed, last, results, log} = runRecord(W.snapshot.nodes, result, started);
   // Only a failure stays after the run (its icon, with the error); a node that did its work is not marked.
-  for (const [id, status] of Object.entries(result.status)) if (status === 'failed') W.runStatus.set(id, status);
+  for (const [id, status] of Object.entries(result.status))
+    if (['failed', 'blocked'].includes(status)) W.runStatus.set(id, status);
   for (const [id, value] of results) W.results.set(id, value);
   W.lastRun = last;
   W.runLog = log;
@@ -245,7 +258,7 @@ async function runAction() {
   const firstFailed = [...failed][0];
   toast(
     W.waitingRun
-      ? 'Waiting. Manage this run in Controller.'
+      ? 'Waiting. Manage this run on the Runs page.'
       : result.cancelled
         ? 'Stopped.'
         : failed.size

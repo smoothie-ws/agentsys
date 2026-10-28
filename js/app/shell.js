@@ -172,11 +172,12 @@ document.addEventListener('keydown', event => {
 /** Everything one can jump to by name: the pages, the Library sections, every project and every workflow. */
 async function destinations() {
   const found = [
-    {label: 'Projects', hint: 'Page', href: '/'},
+    {label: 'Dashboard', hint: 'Page', href: '/'},
+    {label: 'Projects', hint: 'Page', href: '/projects'},
     {label: 'Library', hint: 'Page', href: '/resources'},
-    ...Object.entries(KINDS).map(([kind, label]) => ({label, hint: 'Library', href: `/resources/${kind}`})),
+    {label: 'Runs', hint: 'Page', href: '/runs'},
+    {label: 'API', hint: 'Page', href: '/api'},
     {label: 'Settings', hint: 'Page', href: '/settings'},
-    {label: 'API', hint: 'Page', href: '/api-docs'},
   ];
   const list = await api('projects'); // fresh: a project made a moment ago by a script is not in the sidebar's list yet
   const projects = await Promise.all(list.map(p => api(`projects/${p.id}`).catch(() => null)));
@@ -186,18 +187,17 @@ async function destinations() {
       found.push({label: wf.name, hint: `Workflow · ${data.project.name}`, href: `/p/${data.project.id}/w/${wf.id}`});
   }
   const library = await api('settings').catch(() => ({})); // fresh as well: Library items are part of the places to go to
-  for (const r of (library.resources || []).filter(r => r.kind !== 'custom_node' || library.preferences?.developer_mode))
-    found.push({label: r.name, hint: `Library · ${KINDS[r.kind]}`, href: resourceHref(r)});
+  for (const r of (library.resources || []).filter(() => library.preferences?.developer_mode))
+    found.push({label: r.name, hint: 'Library · Node', href: resourceHref(r)});
   for (const path of library.node_folders || [])
     found.push({label: baseName(path), hint: 'Library · Nodes group', href: folderHref(path)});
-  for(const path of library.skill_folders || [])found.push({label:baseName(path),hint:'Library · Skills group',href:folderHref(path,'skill')});
   return found;
 }
 
 function openSearch() {
   dialog(
     'Search',
-    `<input id="search-input" type="search" autofocus placeholder="Go to a project, workflow, Library item or page, or find a node or group" autocomplete="off"><div id="search-results" class="search-results"></div>`
+    `<input id="search-input" type="search" autofocus placeholder="Go to a project, workflow, Library node or page, or find a node or group" autocomplete="off"><div id="search-results" class="search-results"></div>`
   );
   const input = $('#search-input'),
     results = $('#search-results');
@@ -266,7 +266,6 @@ async function boot() {
   applyStyle(session.preferences.style);
   if (!Backend.persistent)
     setTimeout(() => toast('Storage is unavailable here. Changes will be lost when you close this tab.', true), 500);
-  await seedBuiltins().catch(() => {}); // first run only; without the files (or storage) the Library simply starts empty
   await Promise.all([loadLibrary(), loadProjects()]);
   await render();
 }
@@ -275,7 +274,7 @@ Backend.subscribe(keys => {
     loadProjects().catch(() => {});
     for (const key of navOpen) if (key.startsWith('p:')) loadProjectWorkflows(key.slice(2), true);
   }
-  if (keys.some(k => k === 'resources' || k.startsWith('node_folder') || k.startsWith('skill_folder')))
+  if (keys.some(k => k === 'resources' || k.startsWith('node_folder')))
     loadLibrary()
       .then(renderSidebar)
       .catch(() => {});

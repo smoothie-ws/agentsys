@@ -77,7 +77,7 @@ async def main():
         await page.wait_for_selector('#modal', state='hidden')
         print('PASS right-aligned search opens from its button')
 
-        await page.goto(URL + '#/resources/skill')
+        await page.goto(URL + '#/settings')
         await page.wait_for_selector('#subnav .subnav-row.active')
         await page.evaluate('applyStyle(THEMES.Dark)')
         for _ in range(2):

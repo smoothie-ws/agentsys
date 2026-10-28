@@ -3,7 +3,7 @@
 // refresh from the Library when the same Library item exists in the target.
 'use strict';
 
-const EXCHANGE_KEYS = ['types', 'nodes', 'layout', 'style', 'groups', 'complex', 'port_edges', 'widgets'];
+const EXCHANGE_KEYS = ['types', 'nodes', 'layout', 'style', 'groups', 'complex', 'port_edges', 'widgets', 'library_nodes'];
 const decodeExchange = packet => {
   try {
     return TextGraph.decode(packet);
@@ -38,7 +38,7 @@ function importedDocument(project, input) {
   const doc = emptyDoc();
   for (const key of EXCHANGE_KEYS) {
     if (!(key in input)) continue;
-    const kind = ['types', 'nodes', 'groups', 'complex', 'port_edges'].includes(key)
+    const kind = ['types', 'nodes', 'groups', 'complex', 'port_edges', 'library_nodes'].includes(key)
       ? Array.isArray(input[key])
       : isObject(input[key]);
     if (!kind) throw bad(`document.${key} has the wrong shape`);
@@ -46,6 +46,8 @@ function importedDocument(project, input) {
   }
   if (JSON.stringify(doc).length > 20000000) throw bad('This workflow is too large to import');
   if (doc.nodes.length > 1000) throw bad('A workflow has at most 1000 nodes');
+  if (doc.library_nodes.some(id => typeof id !== 'string')) throw bad('document.library_nodes must contain resource IDs');
+  doc.library_nodes = [...new Set(doc.library_nodes)];
   const ids = new Set();
   for (const node of doc.nodes) {
     if (!isObject(node) || typeof node.id !== 'string' || ids.has(node.id))

@@ -85,6 +85,7 @@ async def desktop_theme(browser):
       const project=await api('projects',{method:'POST',body:{name:'Inspector actions'}});
       window.polishProject=project.id;
       await go(`/p/${project.id}/w/${project.id}`);
+      await addEntries(TextGraph.decode(await fetch('examples/basic-nodes.json').then(r=>r.json())),'Fixture');await loadLibrary();
       const resource=app.resources.find(r=>r.name==='Text');
       const placed=await api(`projects/${W.project}/custom-nodes/${resource.id}`,{method:'POST',body:wf({point:{x:100,y:100}})});
       window.polishSelection=pastedSelection(placed);
@@ -118,8 +119,8 @@ async def phone(browser,width,height):
     await page.goto(URL+'#/settings?section=appearance')
     await page.wait_for_selector('.theme-component-editor')
     assert (await page.locator('#sidebar').bounding_box())['width']==width
-    assert await page.locator('#sidebar [data-section]:visible').count()==5
-    assert await page.locator('#sidebar [data-section] > span:visible').count()==0
+    assert await page.locator('#sidebar [data-section]:visible').count()==4
+    assert await page.locator('#sidebar [data-section] > span:not(.brand-mark):visible').count()==0
     await page.wait_for_timeout(400)
     assert await page.locator('#sidebar').evaluate('(el)=>{const rows=[...el.querySelectorAll("[data-section]")],r=parseFloat(getComputedStyle(el).getPropertyValue("--join-r"));return rows[0].getBoundingClientRect().left>=r && rows.at(-1).getBoundingClientRect().right<=innerWidth-r}')
     for selector in ['#sidebar > .nav-pill','#mobile-secondary > .nav-pill','main > .nav-seam']:
@@ -150,20 +151,14 @@ async def phone(browser,width,height):
     await set_part(page,'fields','radius','12')
     await page.wait_for_function('app.preferences.style?.components?.fields?.radius===12')
     assert await page.evaluate('document.documentElement.scrollWidth===innerWidth')
-    await page.locator('#sidebar [data-section=api]').tap()
-    await page.wait_for_selector('#api-method')
-    await page.locator('#mobile-browse').tap()
-    await page.locator('#api-search').fill('project-defaults')
-    if width==390:
-        await page.set_viewport_size({'width':390,'height':460})
-        await page.wait_for_function("document.body.classList.contains('keyboard-open')")
-        search=await page.locator('#api-search').bounding_box()
-        tree=await page.locator('#subnav').bounding_box()
-        assert search['y']>=0 and tree['y']+tree['height']<=460
-    await page.locator('#subnav [data-method]:not([hidden])').first.tap()
-    if width==390:await page.set_viewport_size({'width':390,'height':844})
-    assert not await page.evaluate("document.body.classList.contains('mobile-subnav-open')")
+    await page.locator('#sidebar [data-section=home]').tap()
+    await page.wait_for_selector('.tile')
+    await page.locator('#home-api a.card-main').tap()
+    await page.wait_for_selector('.api-call')
+    await page.locator('.api-list input').fill('project-defaults')
+    await page.locator('.api-call:not([hidden])').first.tap()
     assert '/api/project-defaults' in await page.locator('.api-method-heading').inner_text()
+    assert await page.evaluate('document.documentElement.scrollWidth===innerWidth')
     await page.locator('#sidebar [data-section=projects]').tap()
     await page.wait_for_selector('#create-project')
     await page.locator('#create-project').tap()

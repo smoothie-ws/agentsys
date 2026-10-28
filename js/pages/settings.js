@@ -6,7 +6,7 @@ PAGES['project-settings'] = async (view, route) => {
   const {project} = await api(`projects/${route.project}`);
   view.innerHTML = `<form class="page form-page" id="project-form">${pageHead({
     crumbs: [
-      ['Projects', '/'],
+      ['Projects', '/projects'],
       [project.name, `/p/${project.id}`],
     ],
     title: 'Project settings',

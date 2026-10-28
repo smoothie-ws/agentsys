@@ -1,0 +1,676 @@
+{
+  "format": "agentsys.text/1",
+  "value": [
+    {
+      "name": "Counter",
+      "payload": {
+        "bundle": {
+          "complex": [
+            {
+              "arbitrary": {
+                "inputs": false,
+                "outputs": false
+              },
+              "collapsed": false,
+              "compact_height": 90,
+              "compact_width": 240,
+              "id": "a198c9d5a7deb48143c5f627ca655e05",
+              "interface": {
+                "inputs": [
+                  {
+                    "bound": [
+                      {
+                        "node_id": "record:3956cca4720b99206804b0df2d83d81d",
+                        "port_id": "in"
+                      }
+                    ],
+                    "id": "in",
+                    "name": "In",
+                    "type": "signal"
+                  },
+                  {
+                    "id": "key",
+                    "name": "key"
+                  },
+                  {
+                    "id": "amount",
+                    "name": "amount"
+                  }
+                ],
+                "outputs": [
+                  {
+                    "id": "result",
+                    "name": "result"
+                  },
+                  {
+                    "id": "out",
+                    "name": "out",
+                    "type": "signal"
+                  }
+                ]
+              }
+            }
+          ],
+          "groups": [
+            {
+              "color": null,
+              "folded": false,
+              "id": "a198c9d5a7deb48143c5f627ca655e05",
+              "members": [
+                "record:3956cca4720b99206804b0df2d83d81d"
+              ],
+              "name": "Counter",
+              "parent": null,
+              "pinned": false
+            }
+          ],
+          "port_edges": [],
+          "records": [
+            {
+              "id": "record:3956cca4720b99206804b0df2d83d81d",
+              "payload": {
+                "config": {
+                  "capabilities": [
+                    "graph.read",
+                    "graph.write"
+                  ],
+                  "grants": [
+                    "graph.read",
+                    "graph.write"
+                  ],
+                  "inputs": [
+                    {
+                      "id": "in",
+                      "name": "In",
+                      "type": "signal"
+                    },
+                    {
+                      "default": {
+                        "$script": "scripts/value-0-payload-bundle-records-0-payload-config-inputs-1-default.js"
+                      },
+                      "id": "script",
+                      "name": "script",
+                      "type": "t:c0de0c0de0c0de0c0de0c0de0c0de0c0"
+                    }
+                  ],
+                  "op": "script",
+                  "outputs": [],
+                  "title": "Script"
+                },
+                "kind": "function",
+                "label": "Custom",
+                "node_type": "custom",
+                "status": "ready"
+              }
+            }
+          ],
+          "source_project": "lib-64d129224a5377b63e9727479ec987d9",
+          "styles": {
+            "record:3956cca4720b99206804b0df2d83d81d": {
+              "color": null,
+              "folded": false,
+              "pinned": false
+            }
+          },
+          "types": [
+            {
+              "color": "#8a6fd6",
+              "control": "code",
+              "fields": [],
+              "id": "c0de0c0de0c0de0c0de0c0de0c0de0c0",
+              "name": "code"
+            }
+          ],
+          "version": 3,
+          "widgets": {}
+        },
+        "capabilities": [
+          "graph.read",
+          "graph.write"
+        ],
+        "folder": "Streams",
+        "grants": [
+          "graph.read",
+          "graph.write"
+        ],
+        "name": "Counter"
+      }
+    },
+    {
+      "name": "Dedupe",
+      "payload": {
+        "bundle": {
+          "complex": [
+            {
+              "arbitrary": {
+                "inputs": false,
+                "outputs": false
+              },
+              "collapsed": false,
+              "compact_height": 90,
+              "compact_width": 240,
+              "id": "4c0f7c7e26c25235cd9f57923832727f",
+              "interface": {
+                "inputs": [
+                  {
+                    "bound": [
+                      {
+                        "node_id": "record:fbece834c19f240fd77f8bca2f75227c",
+                        "port_id": "in"
+                      }
+                    ],
+                    "id": "in",
+                    "name": "In",
+                    "type": "signal"
+                  },
+                  {
+                    "id": "key",
+                    "name": "key"
+                  }
+                ],
+                "outputs": [
+                  {
+                    "id": "result",
+                    "name": "result"
+                  },
+                  {
+                    "id": "out",
+                    "name": "out",
+                    "type": "signal"
+                  }
+                ]
+              }
+            }
+          ],
+          "groups": [
+            {
+              "color": null,
+              "folded": false,
+              "id": "4c0f7c7e26c25235cd9f57923832727f",
+              "members": [
+                "record:fbece834c19f240fd77f8bca2f75227c"
+              ],
+              "name": "Dedupe",
+              "parent": null,
+              "pinned": false
+            }
+          ],
+          "port_edges": [],
+          "records": [
+            {
+              "id": "record:fbece834c19f240fd77f8bca2f75227c",
+              "payload": {
+                "config": {
+                  "capabilities": [
+                    "graph.read",
+                    "graph.write"
+                  ],
+                  "grants": [
+                    "graph.read",
+                    "graph.write"
+                  ],
+                  "inputs": [
+                    {
+                      "id": "in",
+                      "name": "In",
+                      "type": "signal"
+                    },
+                    {
+                      "default": {
+                        "$script": "scripts/value-1-payload-bundle-records-0-payload-config-inputs-1-default.js"
+                      },
+                      "id": "script",
+                      "name": "script",
+                      "type": "t:c0de0c0de0c0de0c0de0c0de0c0de0c0"
+                    }
+                  ],
+                  "op": "script",
+                  "outputs": [],
+                  "title": "Script"
+                },
+                "kind": "function",
+                "label": "Custom",
+                "node_type": "custom",
+                "status": "ready"
+              }
+            }
+          ],
+          "source_project": "lib-b6eaf1689161afa68a899e2cb6673f38",
+          "styles": {
+            "record:fbece834c19f240fd77f8bca2f75227c": {
+              "color": null,
+              "folded": false,
+              "pinned": false
+            }
+          },
+          "types": [
+            {
+              "color": "#8a6fd6",
+              "control": "code",
+              "fields": [],
+              "id": "c0de0c0de0c0de0c0de0c0de0c0de0c0",
+              "name": "code"
+            }
+          ],
+          "version": 3,
+          "widgets": {}
+        },
+        "capabilities": [
+          "graph.read",
+          "graph.write"
+        ],
+        "folder": "Streams",
+        "grants": [
+          "graph.read",
+          "graph.write"
+        ],
+        "name": "Dedupe"
+      }
+    },
+    {
+      "name": "Queue push",
+      "payload": {
+        "bundle": {
+          "complex": [
+            {
+              "arbitrary": {
+                "inputs": false,
+                "outputs": false
+              },
+              "collapsed": false,
+              "compact_height": 90,
+              "compact_width": 240,
+              "id": "498ef380ea98ee6438ca5931c438b20a",
+              "interface": {
+                "inputs": [
+                  {
+                    "bound": [
+                      {
+                        "node_id": "record:a94b6030e834971ab2bc7cac5774b55a",
+                        "port_id": "in"
+                      }
+                    ],
+                    "id": "in",
+                    "name": "In",
+                    "type": "signal"
+                  },
+                  {
+                    "id": "queue",
+                    "name": "queue"
+                  },
+                  {
+                    "id": "item",
+                    "name": "item"
+                  }
+                ],
+                "outputs": [
+                  {
+                    "id": "result",
+                    "name": "result"
+                  },
+                  {
+                    "id": "out",
+                    "name": "out",
+                    "type": "signal"
+                  }
+                ]
+              }
+            }
+          ],
+          "groups": [
+            {
+              "color": null,
+              "folded": false,
+              "id": "498ef380ea98ee6438ca5931c438b20a",
+              "members": [
+                "record:a94b6030e834971ab2bc7cac5774b55a"
+              ],
+              "name": "Queue push",
+              "parent": null,
+              "pinned": false
+            }
+          ],
+          "port_edges": [],
+          "records": [
+            {
+              "id": "record:a94b6030e834971ab2bc7cac5774b55a",
+              "payload": {
+                "config": {
+                  "capabilities": [
+                    "graph.read",
+                    "graph.write"
+                  ],
+                  "grants": [
+                    "graph.read",
+                    "graph.write"
+                  ],
+                  "inputs": [
+                    {
+                      "id": "in",
+                      "name": "In",
+                      "type": "signal"
+                    },
+                    {
+                      "default": {
+                        "$script": "scripts/value-2-payload-bundle-records-0-payload-config-inputs-1-default.js"
+                      },
+                      "id": "script",
+                      "name": "script",
+                      "type": "t:c0de0c0de0c0de0c0de0c0de0c0de0c0"
+                    }
+                  ],
+                  "op": "script",
+                  "outputs": [],
+                  "title": "Script"
+                },
+                "kind": "function",
+                "label": "Custom",
+                "node_type": "custom",
+                "status": "ready"
+              }
+            }
+          ],
+          "source_project": "lib-d61ba37cc383040c14a24b60ab7764aa",
+          "styles": {
+            "record:a94b6030e834971ab2bc7cac5774b55a": {
+              "color": null,
+              "folded": false,
+              "pinned": false
+            }
+          },
+          "types": [
+            {
+              "color": "#8a6fd6",
+              "control": "code",
+              "fields": [],
+              "id": "c0de0c0de0c0de0c0de0c0de0c0de0c0",
+              "name": "code"
+            }
+          ],
+          "version": 3,
+          "widgets": {}
+        },
+        "capabilities": [
+          "graph.read",
+          "graph.write"
+        ],
+        "folder": "Streams",
+        "grants": [
+          "graph.read",
+          "graph.write"
+        ],
+        "name": "Queue push"
+      }
+    },
+    {
+      "name": "Queue worker",
+      "payload": {
+        "bundle": {
+          "complex": [
+            {
+              "arbitrary": {
+                "inputs": false,
+                "outputs": false
+              },
+              "collapsed": false,
+              "compact_height": 90,
+              "compact_width": 240,
+              "id": "a477a658de1a9b3562740ef880beb4bf",
+              "interface": {
+                "inputs": [
+                  {
+                    "bound": [
+                      {
+                        "node_id": "record:7c287b19b47646cd681442f3269021e2",
+                        "port_id": "in"
+                      }
+                    ],
+                    "id": "in",
+                    "name": "In",
+                    "type": "signal"
+                  },
+                  {
+                    "id": "queue",
+                    "name": "queue"
+                  }
+                ],
+                "outputs": [
+                  {
+                    "id": "result",
+                    "name": "result"
+                  },
+                  {
+                    "id": "out",
+                    "name": "out",
+                    "type": "signal"
+                  }
+                ]
+              }
+            }
+          ],
+          "groups": [
+            {
+              "color": null,
+              "folded": false,
+              "id": "a477a658de1a9b3562740ef880beb4bf",
+              "members": [
+                "record:7c287b19b47646cd681442f3269021e2"
+              ],
+              "name": "Queue worker",
+              "parent": null,
+              "pinned": false
+            }
+          ],
+          "port_edges": [],
+          "records": [
+            {
+              "id": "record:7c287b19b47646cd681442f3269021e2",
+              "payload": {
+                "config": {
+                  "capabilities": [
+                    "graph.read",
+                    "graph.write"
+                  ],
+                  "grants": [
+                    "graph.read",
+                    "graph.write"
+                  ],
+                  "inputs": [
+                    {
+                      "id": "in",
+                      "name": "In",
+                      "type": "signal"
+                    },
+                    {
+                      "default": {
+                        "$script": "scripts/value-3-payload-bundle-records-0-payload-config-inputs-1-default.js"
+                      },
+                      "id": "script",
+                      "name": "script",
+                      "type": "t:c0de0c0de0c0de0c0de0c0de0c0de0c0"
+                    }
+                  ],
+                  "op": "script",
+                  "outputs": [],
+                  "title": "Script"
+                },
+                "kind": "function",
+                "label": "Custom",
+                "node_type": "custom",
+                "status": "ready"
+              }
+            }
+          ],
+          "source_project": "lib-c693f17549676c9678b44d9c4f8065f1",
+          "styles": {
+            "record:7c287b19b47646cd681442f3269021e2": {
+              "color": null,
+              "folded": false,
+              "pinned": false
+            }
+          },
+          "types": [
+            {
+              "color": "#8a6fd6",
+              "control": "code",
+              "fields": [],
+              "id": "c0de0c0de0c0de0c0de0c0de0c0de0c0",
+              "name": "code"
+            }
+          ],
+          "version": 3,
+          "widgets": {}
+        },
+        "capabilities": [
+          "graph.read",
+          "graph.write"
+        ],
+        "folder": "Streams",
+        "grants": [
+          "graph.read",
+          "graph.write"
+        ],
+        "name": "Queue worker"
+      }
+    },
+    {
+      "name": "Batch/Window",
+      "payload": {
+        "bundle": {
+          "complex": [
+            {
+              "arbitrary": {
+                "inputs": false,
+                "outputs": false
+              },
+              "collapsed": false,
+              "compact_height": 90,
+              "compact_width": 240,
+              "id": "f1150dca9953052a086351124c9add5f",
+              "interface": {
+                "inputs": [
+                  {
+                    "bound": [
+                      {
+                        "node_id": "record:e4c951ff0d726a932aec634fc5f9b14c",
+                        "port_id": "in"
+                      }
+                    ],
+                    "id": "in",
+                    "name": "In",
+                    "type": "signal"
+                  },
+                  {
+                    "id": "key",
+                    "name": "key"
+                  },
+                  {
+                    "id": "item",
+                    "name": "item"
+                  },
+                  {
+                    "id": "size",
+                    "name": "size"
+                  }
+                ],
+                "outputs": [
+                  {
+                    "id": "result",
+                    "name": "result"
+                  },
+                  {
+                    "id": "out",
+                    "name": "out",
+                    "type": "signal"
+                  }
+                ]
+              }
+            }
+          ],
+          "groups": [
+            {
+              "color": null,
+              "folded": false,
+              "id": "f1150dca9953052a086351124c9add5f",
+              "members": [
+                "record:e4c951ff0d726a932aec634fc5f9b14c"
+              ],
+              "name": "Batch/Window",
+              "parent": null,
+              "pinned": false
+            }
+          ],
+          "port_edges": [],
+          "records": [
+            {
+              "id": "record:e4c951ff0d726a932aec634fc5f9b14c",
+              "payload": {
+                "config": {
+                  "capabilities": [
+                    "graph.read",
+                    "graph.write"
+                  ],
+                  "grants": [
+                    "graph.read",
+                    "graph.write"
+                  ],
+                  "inputs": [
+                    {
+                      "id": "in",
+                      "name": "In",
+                      "type": "signal"
+                    },
+                    {
+                      "default": {
+                        "$script": "scripts/value-4-payload-bundle-records-0-payload-config-inputs-1-default.js"
+                      },
+                      "id": "script",
+                      "name": "script",
+                      "type": "t:c0de0c0de0c0de0c0de0c0de0c0de0c0"
+                    }
+                  ],
+                  "op": "script",
+                  "outputs": [],
+                  "title": "Script"
+                },
+                "kind": "function",
+                "label": "Custom",
+                "node_type": "custom",
+                "status": "ready"
+              }
+            }
+          ],
+          "source_project": "lib-426516f49b289c969f0d2e0f57f1ff41",
+          "styles": {
+            "record:e4c951ff0d726a932aec634fc5f9b14c": {
+              "color": null,
+              "folded": false,
+              "pinned": false
+            }
+          },
+          "types": [
+            {
+              "color": "#8a6fd6",
+              "control": "code",
+              "fields": [],
+              "id": "c0de0c0de0c0de0c0de0c0de0c0de0c0",
+              "name": "code"
+            }
+          ],
+          "version": 3,
+          "widgets": {}
+        },
+        "capabilities": [
+          "graph.read",
+          "graph.write"
+        ],
+        "folder": "Streams",
+        "grants": [
+          "graph.read",
+          "graph.write"
+        ],
+        "name": "Batch/Window"
+      }
+    }
+  ]
+}

@@ -1,0 +1,1 @@
+node.input.condition ? await node.emit("if_true") : await node.emit("if_false");

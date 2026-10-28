@@ -341,9 +341,6 @@ details[open] > summary {
 .grid2 {
   grid-template-columns: repeat(auto-fit, minmax(200px, 1fr));
 }
-.provider-keys {
-  align-items: start;
-}
 .input-row {
   display: flex;
   gap: 0.4rem;

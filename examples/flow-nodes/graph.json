@@ -2,7 +2,6 @@
   "format": "agentsys.text/1",
   "value": [
     {
-      "kind": "custom_node",
       "name": "For",
       "payload": {
         "bundle": {
@@ -105,7 +104,6 @@
                     }
                   ],
                   "op": "script",
-                  "origin": "human",
                   "outputs": [],
                   "title": "Script"
                 },
@@ -161,12 +159,10 @@
           "width": 300
         },
         "grants": [],
-        "icon": "loop",
-        "origin": "human"
+        "icon": "loop"
       }
     },
     {
-      "kind": "custom_node",
       "name": "For each",
       "payload": {
         "bundle": {
@@ -259,7 +255,6 @@
                     }
                   ],
                   "op": "script",
-                  "origin": "human",
                   "outputs": [],
                   "title": "Script"
                 },
@@ -315,12 +310,10 @@
           "width": 300
         },
         "grants": [],
-        "icon": "list",
-        "origin": "human"
+        "icon": "list"
       }
     },
     {
-      "kind": "custom_node",
       "name": "While",
       "payload": {
         "bundle": {
@@ -412,7 +405,6 @@
                     }
                   ],
                   "op": "script",
-                  "origin": "human",
                   "outputs": [],
                   "title": "Script"
                 },
@@ -475,12 +467,10 @@
           "width": 300
         },
         "grants": [],
-        "icon": "refresh",
-        "origin": "human"
+        "icon": "refresh"
       }
     },
     {
-      "kind": "custom_node",
       "name": "Break",
       "payload": {
         "bundle": {
@@ -549,7 +539,6 @@
                     }
                   ],
                   "op": "script",
-                  "origin": "human",
                   "outputs": [],
                   "title": "Script"
                 },
@@ -598,12 +587,10 @@
           "width": 300
         },
         "grants": [],
-        "icon": "exit",
-        "origin": "human"
+        "icon": "exit"
       }
     },
     {
-      "kind": "custom_node",
       "name": "Continue",
       "payload": {
         "bundle": {
@@ -672,7 +659,6 @@
                     }
                   ],
                   "op": "script",
-                  "origin": "human",
                   "outputs": [],
                   "title": "Script"
                 },
@@ -721,12 +707,10 @@
           "width": 300
         },
         "grants": [],
-        "icon": "skip",
-        "origin": "human"
+        "icon": "skip"
       }
     },
     {
-      "kind": "custom_node",
       "name": "Variable",
       "payload": {
         "bundle": {
@@ -809,7 +793,6 @@
                     }
                   ],
                   "op": "script",
-                  "origin": "human",
                   "outputs": [],
                   "title": "Script"
                 },
@@ -858,8 +841,7 @@
           "width": 300
         },
         "grants": [],
-        "icon": "database",
-        "origin": "human"
+        "icon": "database"
       }
     }
   ]

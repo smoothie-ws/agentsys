@@ -5,7 +5,7 @@
 /**
  * What a Custom node does besides holding values (`config.op`): the operations the engine knows. A node without one only holds the
  * values typed into its outputs. `script` runs JavaScript when a signal reaches it; the `on_*` nodes are the sources of signals
- * (see docs/signal-engine.md). Nothing else is built into the engine.
+ * (see docs/engine.md). Nothing else is built into the engine.
  */
 const OPS = new Set(['script', 'on_run', 'on_read', 'on_placed', 'on_deleted', 'on_wired', 'on_widget']);
 /** The operations that fire a signal by themselves: the event nodes. */
@@ -19,7 +19,7 @@ const CUSTOM_CONFIG_LIMIT = 400000;
 const MAX_PORTS = 256; // per direction
 /** The format of a clipboard / Custom Node bundle (see Editor.copy). Another version is not read. */
 const BUNDLE_VERSION = 3;
-const CUSTOM_KEYS = new Set(['title', 'inputs', 'outputs', 'op', 'widgets', 'capabilities', 'grants', 'origin']);
+const CUSTOM_KEYS = new Set(['title', 'inputs', 'outputs', 'op', 'widgets', 'capabilities', 'grants']);
 const COLOR = /^#(?:[0-9a-fA-F]{6}|[0-9a-fA-F]{8})$/;
 // ----- Widgets: the controls and displays code puts on a Custom node -----
 const WIDGET_KINDS = new Set(['text', 'textarea', 'number', 'checkbox', 'select', 'range', 'button', 'label', 'html', 'markdown']);
@@ -83,10 +83,6 @@ const DEFINITIONS = {
 };
 
 const key = (node, port) => node + '|' + port;
-const splitKey = value => {
-  const i = value.indexOf('|');
-  return [value.slice(0, i), value.slice(i + 1)];
-};
 
 /** The ports inside a group that a slot of its interface is bound to: [{node_id, port_id}], at least one, no port twice. */
 const validBound = list =>

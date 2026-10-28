@@ -31,7 +31,7 @@ function syncMobileNavigation() {
   const tabs=$$('#subnav-list [role=tab]');
   const section=sectionOf(app.route || {}),title=SECTION_TITLES[section] || 'Browse';
   const active=$('#subnav .subnav-row.active');
-  const activeName=active?.matches('.subnav-call') ? active.lastElementChild : active; // an API method: its summary, not "GET" glued to it
+  const activeName=active;
   $('#mobile-browse-label').textContent=activeName?.textContent.trim() || title;
   $('#mobile-browse').setAttribute('aria-label',`Browse ${title}`);
   bar.classList.toggle('has-tabs',tabs.length>0);
@@ -62,7 +62,7 @@ document.addEventListener('click',event=>{
   if(event.target.closest('.inline-rename'))return;
   const current=event.target.closest('#sidebar a.active[data-section]');
   if (current) {event.preventDefault();event.stopImmediatePropagation();toggleMobileNavigation();}
-  else if (event.target.closest('#sidebar [data-section], #subnav a[data-link], #subnav [data-method], #subnav [role=tab]')) toggleMobileNavigation(false);
+  else if (event.target.closest('#sidebar [data-section], #subnav a[data-link], #subnav [role=tab]')) toggleMobileNavigation(false);
 },true);
 document.addEventListener('click',()=>{
   if (phoneLayout.matches) syncMobileNavigation();

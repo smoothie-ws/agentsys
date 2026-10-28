@@ -21,14 +21,18 @@ function annotate(nodes, groups, complexes, stored) {
       ['outputs', 'source'],
     ]) {
       occupied[direction].add(key(edge[side], edge[side + '_port']));
-      for (const b of binding(edge[side], edge[side + '_port'], direction)?.bound ?? []) occupied[direction].add(key(b.node_id, b.port_id));
+      for (const b of binding(edge[side], edge[side + '_port'], direction)?.bound ?? [])
+        occupied[direction].add(key(b.node_id, b.port_id));
     }
   // Inner Complex Nodes first, so a wire on a bound port marks every wrapper above it as connected.
   for (const cx of [...complexes].sort((a, b) => b.depth - a.depth))
     for (const direction of ['inputs', 'outputs'])
       for (const p of cx.interface[direction])
-        if ((p.bound ?? []).some(b => occupied[direction].has(key(b.node_id, b.port_id)))) occupied[direction].add(key('complex:' + cx.id, p.id));
-  const exposed = new Set(complexes.flatMap(c => c.interface.inputs.flatMap(p => (p.bound ?? []).map(b => key(b.node_id, b.port_id)))));
+        if ((p.bound ?? []).some(b => occupied[direction].has(key(b.node_id, b.port_id))))
+          occupied[direction].add(key('complex:' + cx.id, p.id));
+  const exposed = new Set(
+    complexes.flatMap(c => c.interface.inputs.flatMap(p => (p.bound ?? []).map(b => key(b.node_id, b.port_id))))
+  );
   for (const node of all.values()) {
     const spec = schema(node),
       inputs = spec.inputs.map(p => ({...p}));
@@ -48,7 +52,8 @@ function annotate(nodes, groups, complexes, stored) {
 
 /** A Reroute passes values through, so it takes the type of what feeds it (or, unfed, of what it feeds). */
 function typeReroutes(nodes, edges) {
-  const portType = (nodeId, portId, direction) => nodes.get(nodeId)?.[direction]?.find(p => p.id === portId)?.type || '';
+  const portType = (nodeId, portId, direction) =>
+    nodes.get(nodeId)?.[direction]?.find(p => p.id === portId)?.type || '';
   // The wires of each node, in the order they are stored (the first one with a known type decides).
   const feeding = new Map(),
     fed = new Map();
@@ -109,11 +114,13 @@ function diagnostics(snapshot) {
   const report = (message, node_id, port_id = null, direction = null, edge_id = null) =>
     issues.push({message, node_id, port_id, direction, edge_id});
   for (const [nid, node] of nodes) {
+    if (node.refresh_error) report(node.refresh_error, nid);
     if (node.node_type === 'custom') {
       const declared = node.config?.inputs || [],
         names = declared.map(p => p.name);
       for (const p of declared)
-        if (names.filter(n => n === p.name).length > 1) report('Custom node input names must be unique', nid, p.id, 'inputs');
+        if (names.filter(n => n === p.name).length > 1)
+          report('Custom node input names must be unique', nid, p.id, 'inputs');
       const outputs = (node.config?.outputs || []).map(p => p.name);
       for (const p of node.config?.outputs || [])
         if (outputs.filter(n => n === p.name).length > 1)
@@ -130,7 +137,9 @@ function diagnostics(snapshot) {
   /** The ports a wire end lands on once Complex Nodes are looked through (an input bound to several ports lands on all of them). */
   const endpoints = (nid, pid, direction, depth = 0) => {
     const list = (nodes.get(nid)?.interface?.[direction] || []).find(p => p.id === pid)?.bound ?? [];
-    return list.length && depth < 32 ? list.flatMap(b => endpoints(b.node_id, b.port_id, direction, depth + 1)) : [[nid, pid]];
+    return list.length && depth < 32
+      ? list.flatMap(b => endpoints(b.node_id, b.port_id, direction, depth + 1))
+      : [[nid, pid]];
   };
   const adjacency = new Map(),
     occupied = new Map(),
@@ -279,6 +288,7 @@ function buildSnapshot(project, workflow, doc, structure = false) {
         position: doc.layout['complex:' + c.id],
         locked,
         source: c.source ?? null,
+        ...(c.refresh_error ? {refresh_error: c.refresh_error} : {}),
         // The nodes inside that have widgets: a node placed from the Library shows them on itself.
         widget_nodes: c.source ? g.all_members.filter(id => doc.widgets?.[id]?.length) : [],
         arbitrary: {inputs: !!c.arbitrary?.inputs, outputs: !!c.arbitrary?.outputs},
@@ -303,6 +313,7 @@ function buildSnapshot(project, workflow, doc, structure = false) {
     complex: complexes,
     widgets: clone(doc.widgets ?? {}),
     types: clone(types),
+    library_nodes: clone(doc.library_nodes ?? []),
     root: doc.root ?? null,
   };
   snapshot.diagnostics = structure ? [] : diagnostics(snapshot);

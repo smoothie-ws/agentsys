@@ -1,9 +1,10 @@
 // The stored shape of a workflow document, and copying one with fresh ids.
 //
 // A document holds: nodes (function nodes: Custom and Reroute), layout, style, groups, complex, port_edges, widgets
-// (the widgets code put on nodes: {node ID: [{id, kind, label, value, ...}]}) and types (the types its ports use, see model/types.js).
+// (the widgets code put on nodes: {node ID: [{id, kind, label, value, ...}]}), types (see model/types.js),
+// and library_nodes (the Library resource IDs included in this workflow's Add menu; empty by default).
 // A group is only a visual frame around nodes (and other groups). A Complex Node wraps one group: it adds ports
-// bound to ports inside the group and is shown as one node. docs/code-guide.md describes the whole data model.
+// bound to ports inside the group and is shown as one node. docs/concepts.md describes the data model.
 'use strict';
 
 const emptyDoc = () => ({
@@ -16,6 +17,7 @@ const emptyDoc = () => ({
   port_edges: [],
   widgets: {},
   types: [],
+  library_nodes: [],
 });
 const stateOf = doc => ({
   nodes: doc.nodes,
@@ -26,6 +28,7 @@ const stateOf = doc => ({
   port_edges: doc.port_edges,
   widgets: doc.widgets,
   types: doc.types ?? [],
+  library_nodes: doc.library_nodes ?? [],
 });
 
 /** Copies a workflow document with fresh IDs (used for duplicated workflows and projects). */
@@ -41,6 +44,7 @@ function duplicateDocument(doc) {
   const m = id => map.get(id) ?? id;
   const copy = emptyDoc();
   copy.types = clone(doc.types ?? []);
+  copy.library_nodes = clone(doc.library_nodes ?? []);
   copy.nodes = doc.nodes.map(n => ({...clone(n), id: m(n.id)}));
   copy.layout = Object.fromEntries(
     Object.entries(doc.layout)

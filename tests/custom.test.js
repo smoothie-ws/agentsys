@@ -12,7 +12,8 @@ async function project(app, name = 'Custom') {
   const {id} = await app.api('POST', 'projects', {name});
   const self = {
     id,
-    node: (config, extra = {}) => app.api('POST', `projects/${id}/typed-nodes`, {node_type: 'custom', config, position: {x: 0, y: 0}, ...extra}),
+    node: (config, extra = {}) =>
+      app.api('POST', `projects/${id}/typed-nodes`, {node_type: 'custom', config, position: {x: 0, y: 0}, ...extra}),
     connect: (s, sp, t, tp) =>
       app.api('POST', `projects/${id}/port-connections`, {
         add: [{source: s, source_port: sp, target: t, target_port: tp}],
@@ -22,7 +23,7 @@ async function project(app, name = 'Custom') {
     run: async (...steps) => self.evaluate([await flow(app, id, {}, steps)]),
     remove: ids => app.api('POST', `projects/${id}/delete-nodes`, {node_ids: ids}),
     snapshot: () => app.api('GET', `projects/${id}/workflow`),
-    state: async key => (await app.api('GET', `projects/${id}/state/${key}`).catch(() => ({}))).value,
+    state: async key => (await app.api('GET', `workflows/${id}/state/${key}`).catch(() => ({}))).value,
     log: async () => {
       await app.Backend.hooksIdle();
       return app.api('GET', 'node-hooks');
@@ -36,7 +37,9 @@ const hooked = (name, who, hooks = {on_placed: 'placed', on_deleted: 'deleted'},
     wires = [];
   for (const [hook, key] of Object.entries(hooks)) {
     members['E' + hook] = nodes.event(hook);
-    members['S' + hook] = nodes.script(`${extra}await agentsys("PUT", "projects/" + context.project_id + "/state/${key}", {value: "${who}"})`);
+    members['S' + hook] = nodes.script(
+      `${extra}await agentsys("PUT", "workflows/" + context.workflow_id + "/state/${key}", {value: "${who}"})`
+    );
     wires.push(['E' + hook, 'out', 'S' + hook, 'in']);
   }
   return bundleOf(name, members, {wires});
@@ -45,13 +48,22 @@ const hooked = (name, who, hooks = {on_placed: 'placed', on_deleted: 'deleted'},
 test('a Script runs when its signal arrives; it sends Out only with emit, and what it sets in output.<name> is its result', async () => {
   const app = createApp(),
     p = await project(app);
-  const a = await fn(app, p.id, {}, {code: 'node.output.result = 1 + 1; await node.emit("Out")', outputs: ['result'], signals: ['Out']}),
+  const a = await fn(
+      app,
+      p.id,
+      {},
+      {code: 'node.output.result = 1 + 1; await node.emit("Out")', outputs: ['result'], signals: ['Out']}
+    ),
     show = await fn(app, p.id, {}, {code: 'node.display(String(v))', inputs: ['v']});
   await p.connect(a.wrapper, 'result', show.wrapper, 'v');
   const r = await p.run(a.step, show.step);
   assert.deepEqual(r.errors, {});
   assert.equal(r.displays[show.id], '2');
-  assert.deepEqual((await p.evaluate([a.id])).outputs[a.id], {result: 2}, 'a Script that is run directly runs as if its signal arrived');
+  assert.deepEqual(
+    (await p.evaluate([a.id])).outputs[a.id],
+    {result: 2},
+    'a Script that is run directly runs as if its signal arrived'
+  );
 });
 
 test('a slot takes one wire: connecting a second one replaces the first; a signal input takes as many as you like', async () => {
@@ -99,7 +111,12 @@ test('node.display() shows an image ({mime_type, data}) as a data URL and refuse
 test('a node can have several outputs of any kind; one it does not set is undefined, not an error', async () => {
   const app = createApp(),
     p = await project(app);
-  const ok = await fn(app, p.id, {}, {code: 'node.output.a = 2; node.output.b = "y"; await node.emit("Out")', outputs: ['a', 'b'], signals: ['Out']});
+  const ok = await fn(
+    app,
+    p.id,
+    {},
+    {code: 'node.output.a = 2; node.output.b = "y"; await node.emit("Out")', outputs: ['a', 'b'], signals: ['Out']}
+  );
   const second = await fn(app, p.id, {}, {code: 'node.display(String(v))', inputs: ['v']});
   await p.connect(ok.wrapper, 'b', second.wrapper, 'v');
   assert.equal((await p.run(ok.step, second.step)).displays[second.id], 'y');
@@ -123,7 +140,7 @@ test('on_placed and on_deleted fire for a copy of a Library node when it enters 
   assert.equal(await state('placed'), 'one');
   // Moving or editing the node is not placing it.
   await app.api('PUT', `projects/${p.id}/layout`, {positions: {[one.id]: {x: 40, y: 40}}}).catch(() => {});
-  await app.api('PUT', `projects/${p.id}/state/placed`, {value: 'untouched'});
+  await app.api('PUT', `workflows/${p.id}/state/placed`, {value: 'untouched'});
   await app.Backend.hooksIdle();
   assert.equal(await state('placed'), 'untouched');
 
@@ -133,11 +150,11 @@ test('on_placed and on_deleted fire for a copy of a Library node when it enters 
   assert.equal(await state('deleted'), 'one');
 
   // Undo brings the node back, so on_placed fires again; redo removes it, so on_deleted does.
-  await app.api('PUT', `projects/${p.id}/state/placed`, {value: 'cleared'});
+  await app.api('PUT', `workflows/${p.id}/state/placed`, {value: 'cleared'});
   await app.api('POST', `projects/${p.id}/undo`);
   await app.Backend.hooksIdle();
   assert.equal(await state('placed'), 'one');
-  await app.api('PUT', `projects/${p.id}/state/deleted`, {value: 'cleared'});
+  await app.api('PUT', `workflows/${p.id}/state/deleted`, {value: 'cleared'});
   await app.api('POST', `projects/${p.id}/redo`);
   await app.Backend.hooksIdle();
   assert.equal(await state('deleted'), 'one');
@@ -145,7 +162,7 @@ test('on_placed and on_deleted fire for a copy of a Library node when it enters 
   // Copy and paste places a new copy, so on_placed fires for it.
   const two = await place(app, p.id, {}, hooked('Hooked two', 'two'));
   const bundle = await app.api('POST', `projects/${p.id}/copy`, {node_ids: [], group_ids: [two.group]});
-  await app.api('PUT', `projects/${p.id}/state/placed`, {value: 'cleared'});
+  await app.api('PUT', `workflows/${p.id}/state/placed`, {value: 'cleared'});
   await app.api('POST', `projects/${p.id}/paste`, {clipboard: bundle, point: {x: 100, y: 100}});
   await app.Backend.hooksIdle();
   assert.equal(await state('placed'), 'two');
@@ -154,7 +171,17 @@ test('on_placed and on_deleted fire for a copy of a Library node when it enters 
 test('the hooks of a copy belong to that copy: another copy, or an ordinary workflow, does not fire them', async () => {
   const app = createApp(),
     p = await project(app);
-  const def = bundleOf('Counter', {Body: {inputs: [], outputs: []}, E: nodes.event('on_placed'), S: nodes.script('const n = (await agentsys("GET", "projects/" + context.project_id + "/state/n").catch(() => ({}))).value ?? 0; await agentsys("PUT", "projects/" + context.project_id + "/state/n", {value: n + 1}); await agentsys("PUT", "projects/" + context.project_id + "/state/who", {value: context.instance_id})')}, {wires: [['E', 'out', 'S', 'in']]});
+  const def = bundleOf(
+    'Counter',
+    {
+      Body: {inputs: [], outputs: []},
+      E: nodes.event('on_placed'),
+      S: nodes.script(
+        'const n = (await agentsys("GET", "workflows/" + context.workflow_id + "/state/n").catch(() => ({}))).value ?? 0; await agentsys("PUT", "workflows/" + context.workflow_id + "/state/n", {value: n + 1}); await agentsys("PUT", "workflows/" + context.workflow_id + "/state/who", {value: context.instance_id})'
+      ),
+    },
+    {wires: [['E', 'out', 'S', 'in']]}
+  );
   const a = await place(app, p.id, {}, def);
   await app.Backend.hooksIdle();
   assert.equal(await p.state('n'), 1);
@@ -163,7 +190,9 @@ test('the hooks of a copy belong to that copy: another copy, or an ordinary work
   await app.Backend.hooksIdle();
   // A plain on_placed on the workflow is never fired (nothing places a workflow); on_run is.
   const loose = await p.node(nodes.event('on_placed'));
-  const log = await p.node(nodes.script('await agentsys("PUT", "projects/" + context.project_id + "/state/loose", {value: 1})'));
+  const log = await p.node(
+    nodes.script('await agentsys("PUT", "workflows/" + context.workflow_id + "/state/loose", {value: 1})')
+  );
   await p.connect(loose.id, 'out', log.id, 'in');
   await app.Backend.hooksIdle();
   assert.equal(await p.state('loose'), undefined);
@@ -173,9 +202,27 @@ test('the hooks of a copy belong to that copy: another copy, or an ordinary work
 test('a failing hook is logged and hooks always run', async () => {
   const app = createApp(),
     p = await project(app);
-  const def = bundleOf('Bad', {Body: {inputs: [], outputs: []}, E: nodes.event('on_placed'), S: nodes.script('throw new Error("nope")'), D: nodes.event('on_deleted'), T: nodes.script('throw new Error("deleted")')}, {wires: [['E', 'out', 'S', 'in'], ['D', 'out', 'T', 'in']]});
+  const def = bundleOf(
+    'Bad',
+    {
+      Body: {inputs: [], outputs: []},
+      E: nodes.event('on_placed'),
+      S: nodes.script('throw new Error("nope")'),
+      D: nodes.event('on_deleted'),
+      T: nodes.script('throw new Error("deleted")'),
+    },
+    {
+      wires: [
+        ['E', 'out', 'S', 'in'],
+        ['D', 'out', 'T', 'in'],
+      ],
+    }
+  );
   const bad = await place(app, p.id, {}, def);
-  assert.ok((await p.snapshot()).complex.some(c => c.id === bad.group), 'the node is on the canvas');
+  assert.ok(
+    (await p.snapshot()).complex.some(c => c.id === bad.group),
+    'the node is on the canvas'
+  );
   const log = await p.log();
   assert.equal(log.length, 1);
   assert.deepEqual([log[0].hook, log[0].ok, log[0].node_id], ['on_placed', false, bad.id]);
@@ -196,7 +243,16 @@ test('the configuration is validated: unknown keys, removed flags, the old Const
     await rejects(p.node({title: 'x', inputs: [{...out('n', 'text'), [flag]: true}]}), /./);
   await rejects(p.node({title: 'x'.repeat(200001)}), /./);
   // Any name is allowed: one that is not a name is read as node.input["a b"].
-  const odd = await fn(app, p.id, {}, {code: 'node.output.result = node.input["a b"] + "|" + node.input.class', inputs: ['a b', 'class'], outputs: ['result']});
+  const odd = await fn(
+    app,
+    p.id,
+    {},
+    {
+      code: 'node.output.result = node.input["a b"] + "|" + node.input.class',
+      inputs: ['a b', 'class'],
+      outputs: ['result'],
+    }
+  );
   const one = await p.node(nodes.value('text', 'x'));
   await p.connect(one.id, 'value', odd.wrapper, 'a b');
   const r = await p.evaluate([odd.id]);
@@ -208,7 +264,12 @@ test('Logic: a Custom node does what If and Switch did, choosing among the value
   const app = createApp(),
     p = await project(app);
   const mode = await p.node(nodes.value('text', 'b'));
-  const sw = await fn(app, p.id, {}, {code: 'node.output.result = ({a, b, c})[key]', inputs: ['key', 'a', 'b', 'c'], outputs: ['result']});
+  const sw = await fn(
+    app,
+    p.id,
+    {},
+    {code: 'node.output.result = ({a, b, c})[key]', inputs: ['key', 'a', 'b', 'c'], outputs: ['result']}
+  );
   const one = await p.node(nodes.value('number', 1)),
     two = await p.node(nodes.value('number', 2)),
     three = await p.node(nodes.value('number', 3));
@@ -233,37 +294,72 @@ test('a Custom node without an operation holds its values and runs nothing: it i
 test('importing a document with a node of an unsupported type is refused', async () => {
   const app = createApp(),
     p = await project(app);
-  const keep = {id: 'node:keep', kind: 'function', node_type: 'custom', config: nodes.value('text', 'a'), label: 'Custom', status: 'ready'};
-  const old = {id: 'node:old', kind: 'function', node_type: 'script', config: {code: 'return 1', inputs: []}, label: 'Script', status: 'ready'};
+  const keep = {
+    id: 'node:keep',
+    kind: 'function',
+    node_type: 'custom',
+    config: nodes.value('text', 'a'),
+    label: 'Custom',
+    status: 'ready',
+  };
+  const old = {
+    id: 'node:old',
+    kind: 'function',
+    node_type: 'script',
+    config: {code: 'return 1', inputs: []},
+    label: 'Script',
+    status: 'ready',
+  };
   const document = {nodes: [keep, old], layout: {}, style: {}, groups: [], complex: [], port_edges: [], widgets: {}};
-  await assert.rejects(app.api('POST', `projects/${p.id}/workflows/import`, require('../js/storage/format').encode({name: 'Old', document})), /unsupported type/);
+  await assert.rejects(
+    app.api(
+      'POST',
+      `projects/${p.id}/workflows/import`,
+      require('../js/storage/format').encode({name: 'Old', document})
+    ),
+    /unsupported type/
+  );
 });
-
 
 test('a Script reads its inputs as variables; code can change the nodes of the graph and the properties of its own node', async () => {
   const app = createApp({scripts: 'worker'}),
     p = await project(app);
   const two = await p.node(nodes.value('number', 2)),
     three = await p.node(nodes.value('number', 3));
-  const n = await fn(app, p.id, {}, {code: 'node.output.sum = a + b; node.output.twice = (a + b) * 2; await node.emit("Out")', inputs: ['a', 'b'], outputs: ['sum', 'twice'], signals: ['Out']});
+  const n = await fn(
+    app,
+    p.id,
+    {},
+    {
+      code: 'node.output.sum = a + b; node.output.twice = (a + b) * 2; await node.emit("Out")',
+      inputs: ['a', 'b'],
+      outputs: ['sum', 'twice'],
+      signals: ['Out'],
+    }
+  );
   await p.connect(two.id, 'value', n.wrapper, 'a');
   await p.connect(three.id, 'value', n.wrapper, 'b');
   const show = await fn(app, p.id, {}, {code: 'node.display(String(v))', inputs: ['v']});
   await p.connect(n.wrapper, 'twice', show.wrapper, 'v');
   assert.equal((await p.run(n.step, show.step)).displays[show.id], '10');
   const target = await p.node({title: 'Before', outputs: []});
-  const editor = await p.node(nodes.script(`const base = "projects/" + context.project_id;
+  const editor = await p.node(
+    nodes.script(`const base = "projects/" + context.project_id;
 // another node of the graph: a new title and a new output
 const other = (await agentsys("GET", base + "/workflow")).nodes.find(n => n.config.title === "Before");
 await agentsys("PUT", base + "/typed-nodes/" + other.id, {node_type: "custom", config: {...other.config, title: "After", outputs: [{id: "r", name: "r"}]}});
 // its own properties: the title
 const me = (await agentsys("GET", base + "/workflow")).nodes.find(n => n.id === context.node_id);
 await agentsys("PUT", base + "/typed-nodes/" + context.node_id, {node_type: "custom", config: {...me.config, title: "Edited"}});
-await agentsys("POST", base + "/typed-nodes", {node_type: "custom", config: {title: "Made by code", outputs: []}, position: {x: 10, y: 10}});`));
+await agentsys("POST", base + "/typed-nodes", {node_type: "custom", config: {title: "Made by code", outputs: []}, position: {x: 10, y: 10}});`)
+  );
   const run = await app.api('POST', `projects/${p.id}/runs`, {node_ids: [editor.id], wait: 10}).catch(e => e);
   const snap = await p.snapshot();
   const byTitle = title => snap.nodes.find(n => n.config.title === title);
-  assert.ok(byTitle('After')?.outputs.some(q => q.id === 'r'), 'another node was changed');
+  assert.ok(
+    byTitle('After')?.outputs.some(q => q.id === 'r'),
+    'another node was changed'
+  );
   assert.ok(byTitle('Edited'), 'the node changed its own properties');
   assert.ok(byTitle('Made by code'), 'and made a new node');
   assert.ok(run && target);
@@ -273,11 +369,13 @@ test('code can change the layout of nodes: position, size, color, fold and pin',
   const app = createApp({scripts: 'worker'}),
     p = await project(app);
   const other = await p.node({title: 'Other', outputs: []});
-  const editor = await p.node(nodes.script(`const base = "projects/" + context.project_id;
+  const editor = await p.node(
+    nodes.script(`const base = "projects/" + context.project_id;
 const other = (await agentsys("GET", base + "/workflow")).nodes.find(n => n.config.title === "Other");
 await agentsys("PUT", base + "/layout", {positions: {[other.id]: {x: 300, y: 120, width: 400, height: 200}, [context.node_id]: {x: 5, y: 6}}});
 await agentsys("PUT", base + "/node-style", {node_id: other.id, color: "#3b6ea8", folded: true});
-await agentsys("PUT", base + "/node-style", {node_id: context.node_id, color: "#aa3333", pinned: true});`));
+await agentsys("PUT", base + "/node-style", {node_id: context.node_id, color: "#aa3333", pinned: true});`)
+  );
   await app.api('POST', `projects/${p.id}/runs`, {node_ids: [editor.id], wait: 10}).catch(e => e);
   const snap = await p.snapshot(),
     o = snap.nodes.find(n => n.id === other.id),
@@ -303,7 +401,10 @@ test('developer mode: off by default for the app, Custom nodes cannot be made or
   const show = await fn(app, p.id, {}, {code: 'node.display(String(v))', inputs: ['v']});
   await p.connect(n.id, 'value', show.wrapper, 'v');
   await api('PUT', 'settings', {developer_mode: false});
-  await rejects(api('PUT', `projects/${p.id}/typed-nodes/${n.id}`, {node_type: 'custom', config: nodes.value('text', 'y')}), /developer mode/);
+  await rejects(
+    api('PUT', `projects/${p.id}/typed-nodes/${n.id}`, {node_type: 'custom', config: nodes.value('text', 'y')}),
+    /developer mode/
+  );
   assert.equal((await p.evaluate([show.id])).displays[show.id], 'kept');
   // Moving and styling nodes, typing values and copying and pasting them are not editing the node.
   await api('PUT', `projects/${p.id}/layout`, {positions: {[n.id]: {x: 5, y: 5}}});
@@ -315,7 +416,10 @@ test('a Library node can be overwritten as a whole: the graph is replaced and th
   const app = createApp(),
     a = await app.api('POST', 'library/node-editor', {}),
     b = await app.api('POST', 'library/node-editor', {});
-  await app.api('PUT', `projects/${b.project_id}/types`, {workflow_id: b.workflow_id, types: [{id: '1'.repeat(32), name: 'Only B', fields: []}]});
+  await app.api('PUT', `projects/${b.project_id}/types`, {
+    workflow_id: b.workflow_id,
+    types: [{id: '1'.repeat(32), name: 'Only B', fields: []}],
+  });
   const source = await app.api('GET', `resources/${b.resource_id}`),
     old = await app.api('GET', `resources/${a.resource_id}`);
   assert.notDeepEqual(source.payload.bundle, old.payload.bundle);

@@ -340,7 +340,7 @@ test('two nodes defining the same type share it; the same name with another shap
     foreign = JSON.parse(JSON.stringify(bundle).split(hex(11)).join(hex(40)).split(hex(12)).join(hex(41)));
   foreign.types.find(t => t.id === hex(41)).fields = [{name: 'x', type: 'any'}];
   foreign.types.find(t => t.id === hex(41)).control = undefined;
-  const imported = await app.api('POST', 'resources', {kind: 'custom_node', name: 'Imported', payload: {bundle: foreign, description: ''}});
+  const imported = await app.api('POST', 'resources', {name: 'Imported', payload: {bundle: foreign, description: ''}});
   assert.deepEqual((await libraryOf(app)).map(t => t.name), ['Number', 'Number (2)', 'Text']);
   const kept = (await app.api('GET', `resources/${imported.id}`)).payload.bundle;
   assert.ok(kept.types.some(t => t.id === hex(11)), 'the twin Text is the first Text');

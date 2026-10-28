@@ -6,142 +6,92 @@
 const parentPath = path => (path.includes('/') ? path.slice(0, path.lastIndexOf('/')) : '');
 const underPath = (path, root) => path === root || path.startsWith(root + '/');
 /** Stored groups plus every level of the group path of each item (imported items name a group that may not exist yet). */
-async function nodeFolders(c, kind = 'custom_node') {
-  const all = new Set(await c.ctx.get(kind === 'skill' ? 'skill_folders' : 'node_folders', []));
-  for (const r of await c.ctx.get('resources', []))
-    if (r.kind === kind) {
-      const parts = String(r.payload.folder || '')
-        .split('/')
-        .filter(Boolean);
-      parts.forEach((_, i) => all.add(parts.slice(0, i + 1).join('/')));
-    }
+async function nodeFolders(c) {
+  const all = new Set(await c.ctx.get('node_folders', []));
+  for (const r of await c.ctx.get('resources', [])) {
+    const parts = String(r.payload.folder || '')
+      .split('/')
+      .filter(Boolean);
+    parts.forEach((_, i) => all.add(parts.slice(0, i + 1).join('/')));
+  }
   return [...all].sort((a, z) => a.localeCompare(z, undefined, {sensitivity: 'base'}));
 }
-for (const [kind, foldersKey, iconsKey, folderEndpoint, itemEndpoint, label] of [
-  ['custom_node', 'node_folders', 'node_folder_icons', 'node-folders', 'custom-nodes', 'Custom Node'],
-  ['skill', 'skill_folders', 'skill_folder_icons', 'skill-folders', 'skills', 'skill'],
-]) {
-  route(
-    'GET POST',
-    'library/' + folderEndpoint,
-    'List, create, rename or delete ' + label + ' groups',
-    async c => {
-      const folders = await nodeFolders(c, kind);
-      if (c.method === 'GET') return folders;
-      const {action} = c.body,
-        path = String(c.body.path ?? ''),
-        name = String(c.body.name ?? '').trim();
-      let items = await c.ctx.get('resources', []);
-      const nodes = items.filter(r => r.kind === kind);
-      const validName = () => {
-        if (!name || name.length > 100 || name.includes('/'))
-          throw bad('A group name has 1 to 100 characters and no “/”.');
-      };
-      let next = folders;
-      const icons = await c.ctx.get(iconsKey, {});
-      // Groups switched off in the Library (Custom Nodes only): everything inside them is off too.
-      let off = kind === 'custom_node' ? await c.ctx.get('node_disabled_folders', []) : [];
-      if (action === 'enabled') {
-        if (kind !== 'custom_node' || typeof c.body.enabled !== 'boolean')
-          throw bad('Pass enabled: true or false for a Custom Node group');
-        if (!folders.includes(path)) throw bad('Group not found');
-        off = off.filter(p => p !== path);
-        if (!c.body.enabled) off.push(path);
-      } else if (action === 'icon') {
-        if (!folders.includes(path)) throw bad('Group not found');
-        const icon = String(c.body.icon ?? '');
-        validateIcon(icon);
-        if (icon) icons[path] = icon;
-        else delete icons[path];
-      } else if (action === 'create') {
-        validName();
-        if (path && !folders.includes(path)) throw bad('Group not found');
-        const made = path ? path + '/' + name : name;
-        if (folders.includes(made)) throw bad('A group with this name already exists here.');
-        next = [...folders, made];
-      } else if (action === 'rename') {
-        validName();
-        if (!folders.includes(path)) throw bad('Group not found');
-        const target = parentPath(path) ? parentPath(path) + '/' + name : name;
-        if (target !== path && folders.includes(target)) throw bad('A group with this name already exists here.');
-        const move = p => (underPath(p, path) ? target + p.slice(path.length) : p);
-        next = folders.map(move);
-        off = off.map(move);
-        for (const k of Object.keys(icons))
-          if (underPath(k, path)) {
-            icons[move(k)] = icons[k];
-            delete icons[k];
-          }
-        for (const r of nodes) r.payload.folder = move(String(r.payload.folder || ''));
-      } else if (action === 'delete') {
-        if (!folders.includes(path)) throw bad('Group not found');
-        // The group goes with everything in it: its groups, and the Custom Nodes (with their graphs).
-        next = folders.filter(p => !underPath(p, path));
-        off = off.filter(p => !underPath(p, path));
-        for (const k of Object.keys(icons)) if (underPath(k, path)) delete icons[k];
-        const doomed = nodes.filter(r => underPath(String(r.payload.folder || ''), path));
-        if (kind === 'custom_node') for (const r of doomed) await c.ctx.remove('wf:lib-' + r.id);
-        items = items.filter(r => !doomed.includes(r));
-      } else throw bad('Unknown action');
-      c.ctx.set(foldersKey, next);
-      if (kind === 'custom_node') c.ctx.set('node_disabled_folders', off);
-      c.ctx.set(iconsKey, icons);
-      c.ctx.set('resources', items);
-      return nodeFolders(c, kind);
-    },
-    {
-      body: {action: 'create', path: '', name: 'Logic'},
-      note: 'action: create | rename | delete | icon | enabled (Custom Node groups: {path, enabled})',
-    }
-  );
-
-  route(
-    'POST',
-    'library/' + itemEndpoint + '/{resource_id}/move',
-    'Move a ' + label + ' into a group',
-    async (c, {resource_id}) => {
-      const items = await c.ctx.get('resources', []),
-        item = items.find(r => r.id === resource_id && r.kind === kind);
-      if (!item) throw missing('Record not found');
-      const folder = String(c.body.folder ?? '');
-      if (folder && !(await nodeFolders(c, kind)).includes(folder)) throw bad('Group not found');
-      item.payload.folder = folder;
-      c.ctx.set('resources', items);
-      return {id: item.id, folder};
-    },
-    {body: {folder: 'Logic'}}
-  );
-}
-
-// ----- Enabled: which Custom Nodes the Add menu offers -----
 route(
-  'POST',
-  'library/custom-nodes/{resource_id}/enabled',
-  'Switch a Custom Node on or off (off: not in the Add menu; placed copies are not affected)',
-  async (c, {resource_id}) => {
-    const items = await c.ctx.get('resources', []),
-      item = items.find(r => r.id === resource_id && r.kind === 'custom_node');
-    if (!item) throw missing('Record not found');
-    if (typeof c.body.enabled !== 'boolean') throw bad('Pass enabled: true or false');
-    if (c.body.enabled) delete item.enabled;
-    else item.enabled = false;
+  'GET POST',
+  'library/node-folders',
+  'List, create, rename or delete Library groups',
+  async c => {
+    const folders = await nodeFolders(c);
+    if (c.method === 'GET') return folders;
+    const {action} = c.body,
+      path = String(c.body.path ?? ''),
+      name = String(c.body.name ?? '').trim();
+    let items = await c.ctx.get('resources', []);
+    const validName = () => {
+      if (!name || name.length > 100 || name.includes('/')) throw bad('A group name has 1 to 100 characters and no “/”.');
+    };
+    let next = folders;
+    const icons = await c.ctx.get('node_folder_icons', {});
+    if (action === 'icon') {
+      if (!folders.includes(path)) throw bad('Group not found');
+      const icon = String(c.body.icon ?? '');
+      validateIcon(icon);
+      if (icon) icons[path] = icon;
+      else delete icons[path];
+    } else if (action === 'create') {
+      validName();
+      if (path && !folders.includes(path)) throw bad('Group not found');
+      const made = path ? path + '/' + name : name;
+      if (folders.includes(made)) throw bad('A group with this name already exists here.');
+      next = [...folders, made];
+    } else if (action === 'rename') {
+      validName();
+      if (!folders.includes(path)) throw bad('Group not found');
+      const target = parentPath(path) ? parentPath(path) + '/' + name : name;
+      if (target !== path && folders.includes(target)) throw bad('A group with this name already exists here.');
+      const move = p => (underPath(p, path) ? target + p.slice(path.length) : p);
+      next = folders.map(move);
+      for (const k of Object.keys(icons))
+        if (underPath(k, path)) {
+          icons[move(k)] = icons[k];
+          delete icons[k];
+        }
+      for (const r of items) r.payload.folder = move(String(r.payload.folder || ''));
+    } else if (action === 'delete') {
+      if (!folders.includes(path)) throw bad('Group not found');
+      // The group goes with everything in it: its groups, and the Custom Nodes (with their graphs).
+      next = folders.filter(p => !underPath(p, path));
+      for (const k of Object.keys(icons)) if (underPath(k, path)) delete icons[k];
+      const doomed = items.filter(r => underPath(String(r.payload.folder || ''), path));
+      for (const r of doomed) await c.ctx.remove('wf:lib-' + r.id);
+      items = items.filter(r => !doomed.includes(r));
+    } else throw bad('Unknown action');
+    c.ctx.set('node_folders', next);
+    c.ctx.set('node_folder_icons', icons);
     c.ctx.set('resources', items);
-    return {id: item.id, enabled: c.body.enabled};
+    return nodeFolders(c);
   },
-  {body: {enabled: false}}
+  {
+    body: {action: 'create', path: '', name: 'Logic'},
+    note: 'action: create | rename | delete | icon',
+  }
 );
 
-// ----- Built-in items: imported once, on the first run (see seedBuiltins in pages/library.js) -----
 route(
-  'GET PUT',
-  'library/builtins',
-  'Whether the built-in Library items were imported already, and which ones (body: {names})',
-  async c => {
-    if (c.method === 'PUT') c.ctx.set('builtins_seeded', c.body.names || true);
-    const seeded = c.method === 'PUT' ? c.body.names || true : await c.ctx.get('builtins_seeded', false);
-    return {seeded: !!seeded, names: Array.isArray(seeded) ? seeded : null};
+  'POST',
+  'library/custom-nodes/{resource_id}/move',
+  'Move a Custom Node into a group',
+  async (c, {resource_id}) => {
+    const items = await c.ctx.get('resources', []),
+      item = items.find(r => r.id === resource_id);
+    if (!item) throw missing('Record not found');
+    const folder = String(c.body.folder ?? '');
+    if (folder && !(await nodeFolders(c)).includes(folder)) throw bad('Group not found');
+    item.payload.folder = folder;
+    c.ctx.set('resources', items);
+    return {id: item.id, folder};
   },
-  {body: {names: ['Text']}}
+  {body: {folder: 'Logic'}}
 );
 
 // ----- Library graph editor: a private workflow that holds the Custom Node being edited -----
@@ -153,7 +103,7 @@ route(
     await c.requireDeveloper('Editing a Custom Node');
     const items = await c.ctx.get('resources', []);
     const rid = c.body.resource_id || uid(),
-      item = items.find(r => r.id === rid && r.kind === 'custom_node');
+      item = items.find(r => r.id === rid);
     if (c.body.resource_id && !item) throw missing('Record not found');
     const id = 'lib-' + rid,
       doc = emptyDoc();
@@ -203,12 +153,12 @@ route(
     if (!item) {
       // The new node exists in the Library from the start and follows every change.
       let name = 'Custom node';
-      for (let n = 2; items.some(r => r.kind === 'custom_node' && r.name === name); n++) name = 'Custom node ' + n;
+      for (let n = 2; items.some(r => r.name === name); n++) name = 'Custom node ' + n;
       doc.groups.find(g => g.id === doc.root).name = name;
       const project = await c.project(id),
         editor = new Editor(project, project.workflows[0], doc);
       const bundle = editor.copy([], [doc.root]);
-      saveResource(c, items, null, 'custom_node', name, {bundle, description: '', folder: doc.folder}, rid);
+      saveResource(c, items, null, name, {bundle, description: '', folder: doc.folder}, rid);
     }
     histories.delete(id);
     return {project_id: id, workflow_id: id, resource_id: rid};
@@ -223,14 +173,14 @@ route(
   async (c, {resource_id}) => {
     await c.requireDeveloper('Duplicating a Custom Node');
     const items = await c.ctx.get('resources', []),
-      item = items.find(r => r.id === resource_id && r.kind === 'custom_node');
+      item = items.find(r => r.id === resource_id);
     if (!item) throw missing('Record not found');
     let name = item.name + ' copy';
-    for (let n = 2; items.some(r => r.kind === 'custom_node' && r.name === name); n++) name = `${item.name} copy ${n}`;
+    for (let n = 2; items.some(r => r.name === name); n++) name = `${item.name} copy ${n}`;
     const payload = clone(item.payload),
       top = payload.bundle?.groups?.find(g => !g.parent);
     if (top) top.name = name.slice(0, 100);
-    const copy = saveResource(c, items, null, 'custom_node', name.slice(0, 100), payload);
+    const copy = saveResource(c, items, null, name.slice(0, 100), payload);
     return {id: copy.id, name: copy.name};
   },
   {body: {}}
