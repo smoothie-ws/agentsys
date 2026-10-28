@@ -1,0 +1,493 @@
+/* The right-hand panel (Properties and Run log): content on the left, a 56px icon rail on the right. */
+.side {
+  position: relative;
+  grid-column: 2;
+  grid-row: 1;
+  display: grid;
+  grid-template-columns: minmax(0, 1fr) 56px;
+  min-width: 0;
+  min-height: 0;
+  margin: 0 0.6rem 0.6rem 0.6rem;
+  background: none;
+  overflow: clip;
+  overflow-clip-margin: 8px; /* the resize handle sits just outside */
+  z-index: 2;
+  transition: opacity var(--base) var(--ease);
+}
+.side-content {
+  order: 1;
+  display: flex;
+  flex-direction: column;
+  min-width: 0;
+  min-height: 0;
+  border-radius: var(--theme-panels-radius, 30px);
+  background: var(--dither), var(--theme-panels-inspector, var(--glass));
+  overflow: hidden;
+  transition: opacity var(--base) var(--ease);
+}
+.side[data-collapsed='true'] .side-content {
+  visibility: hidden;
+  opacity: 0;
+  pointer-events: none;
+}
+.side-tabs {
+  order: 2;
+  display: flex;
+  flex-direction: column;
+  align-items: center;
+  gap: 0.4rem;
+  width: 56px;
+  min-height: 0;
+  margin: 0;
+  padding: 0.65rem 0.4rem;
+}
+.side-tabs button {
+  width: 36px;
+  height: 36px;
+  padding: 0;
+  background: transparent;
+  color: var(--muted);
+}
+.side-tabs button:hover:not(:disabled) {
+  background: var(--hover);
+  color: var(--text);
+}
+.side-tabs button.active {
+  background: var(--current);
+  color: var(--accent);
+}
+.side-heading {
+  flex: none;
+  display: flex;
+  align-items: center;
+  justify-content: space-between;
+  padding: 0.65rem 0.6rem 0.35rem 1.1rem;
+  color: var(--muted);
+  font-size: 0.85rem;
+}
+.side-body {
+  flex: 1;
+  min-height: 0;
+  width: 100%;
+  padding: 0.5rem 1.1rem 2rem;
+  overflow: auto;
+}
+.side-actions {
+  flex: none;
+  padding: 0.75rem 1.1rem 1rem;
+}
+.side-actions .button-row {
+  margin: 0;
+  flex-wrap: wrap;
+}
+.side-body .grid2 {
+  grid-template-columns: repeat(auto-fit, minmax(100px, 1fr));
+}
+.save-status {
+  display: block;
+  min-height: 1.2em;
+  margin: 0.4rem 0;
+  font-size: 0.75rem;
+}
+
+/* Lists in the panel */
+.links,
+.timeline {
+  display: grid;
+  gap: 0.45rem;
+  margin: 0;
+  padding: 0;
+  list-style: none;
+}
+.links li {
+  display: flex;
+  align-items: center;
+  justify-content: space-between;
+  gap: 0.5rem;
+}
+.timeline li {
+  display: flex;
+  justify-content: space-between;
+  gap: 0.6rem;
+  padding-left: 1rem;
+  position: relative;
+  font-size: 0.86rem;
+}
+.timeline li::before {
+  content: '';
+  position: absolute;
+  left: 0;
+  top: 0.5em;
+  width: 7px;
+  height: 7px;
+  border-radius: 50%;
+  background: var(--idle);
+}
+.timeline li.ok::before {
+  background: var(--ok);
+}
+.timeline li.bad::before {
+  background: var(--bad);
+}
+.timeline li > div {
+  flex: 1;
+  min-width: 0;
+  overflow-wrap: anywhere;
+}
+
+/* Slot editor rows (Custom node inputs and outputs, group ports): the rows of "Inputs / Outputs" below, made editable.
+   The type and the name read as text until pointed at; the remove cross appears with the pointer. */
+.port-rows,
+.connection-grid {
+  display: grid;
+  grid-template-columns: 10px 3.8rem minmax(0, 0.8fr) minmax(0, 1.2fr) 78px;
+  gap: 0.1rem 0.35rem;
+}
+.port-row.editable {
+  display: grid;
+  grid-column: 1 / -1;
+  grid-template-columns: subgrid;
+  align-items: center;
+  padding: 0.2rem 0;
+  border-radius: 12px;
+  transition: background-color var(--fast) var(--ease);
+}
+.port-row.editable:hover,
+.port-row.editable:focus-within {
+  background: var(--field);
+}
+.port-row .connection-label {
+  display: contents;
+}
+.port-row input,
+.port-row select {
+  width: 100%;
+  min-width: 0;
+  padding: 0.25rem 0.4rem;
+  font-size: 0.85rem;
+  background-color: transparent;
+}
+.port-row input:hover,
+.port-row select:hover {
+  background-color: var(--hover);
+}
+.port-row input:focus,
+.port-row select:focus {
+  background-color: color-mix(in srgb, var(--accent) 9%, var(--hover));
+}
+.port-row .slot-type {
+  grid-column: 2;
+  width: 100%;
+  padding-right: 0.4rem;
+  color: var(--muted);
+  font-size: 0.78rem;
+  background-image: none;
+}
+.port-row .slot-name {
+  grid-column: 3;
+  min-width: 0;
+  font-weight: 600;
+}
+.port-row .slot-actions {
+  grid-column: 5;
+  grid-row: 1;
+  display: flex;
+  justify-content: flex-end;
+  opacity: 0;
+  transition: opacity var(--fast) var(--ease);
+}
+.port-row .slot-actions .icon {
+  width: 26px;
+  min-width: 0;
+  padding: 0.25rem;
+}
+.port-row .slot-move.up svg {
+  transform: rotate(-90deg);
+}
+.port-row .slot-move.down svg {
+  transform: rotate(90deg);
+}
+.port-row:hover .slot-actions,
+.port-row:focus-within .slot-actions {
+  opacity: 1;
+}
+.port-row .slot-value,
+.connection-port .port-conn {
+  grid-column: 4;
+  grid-row: 1;
+  min-width: 0;
+  display: grid;
+  gap: 0.3rem;
+  text-align: left;
+}
+/* In a row of the slot editor the value cell holds the default of a free input or, once it is wired, what it is wired to. */
+.port-row .slot-value .port-conn,
+.port-row .slot-value .slot-default {
+  grid-column: auto;
+  grid-row: auto;
+}
+.port-row .slot-default {
+  display: grid;
+  min-width: 0;
+}
+.port-row .slot-default:empty,
+.port-conn:empty,
+.slot-value:has(.port-conn[data-conn-dir='inputs']:not(:empty)) .slot-default,
+.port-row .slot-default[hidden] {
+  display: none;
+}
+.port-row .slot-default textarea,
+.connection-port .port-conn textarea {
+  width: 100%;
+  min-width: 0;
+  min-height: 2.6rem;
+  resize: vertical;
+  font-size: 0.8rem;
+}
+.port-row .slot-default select,
+.connection-port .port-conn select {
+  font-size: 0.8rem;
+}
+.port-row .type-dot {
+  grid-column: 1;
+  grid-row: 1;
+}
+.port-conn select,
+.port-conn input:not([type='checkbox']) {
+  font-size: 0.8rem;
+}
+
+/* Inputs / Outputs of the selected node */
+#node-connections,
+.slot-section {
+  margin-top: 1.5rem;
+}
+.connection-port {
+  display: grid;
+  grid-column: 1 / -1;
+  grid-template-columns: subgrid;
+  align-items: center;
+  padding: 0.35rem 0;
+}
+.connection-label {
+  display: contents;
+  font-size: 0.85rem;
+}
+.connection-label small {
+  grid-column: 2;
+  min-width: 0;
+  overflow: hidden;
+  text-overflow: ellipsis;
+  color: var(--muted);
+}
+.connection-label strong {
+  grid-column: 3;
+  min-width: 0;
+  padding-inline: 0.4rem;
+  overflow: hidden;
+  text-overflow: ellipsis;
+  white-space: nowrap;
+}
+.connection-port .port-conn input:not([type='checkbox']),
+.connection-port .port-conn select {
+  width: 100%;
+  min-width: 0;
+}
+.connection-port .port-conn .link {
+  min-width: 0;
+  white-space: normal;
+  overflow-wrap: anywhere;
+  text-align: left;
+}
+.connection-status {
+  display: block;
+  margin-top: 0.5rem;
+  font-size: 0.75rem;
+  overflow-wrap: anywhere;
+}
+
+@media (max-width: 900px) {
+  /* The panel floats over the canvas; its cell is only the rail. */
+  .side {
+    z-index: 30;
+    justify-self: end;
+    width: min(var(--side-width, 380px), calc(100vw - 70px));
+    box-shadow: var(--shadow-lg);
+  }
+  .side[data-collapsed='true'] {
+    width: 56px;
+    box-shadow: none;
+  }
+  /* Over the canvas the panel must hide what is under it (the toolbar, the selection tools, the nodes). */
+  .side-content {
+    background: var(--dither), var(--theme-panels-inspector, color-mix(in srgb, var(--surface) 92%, var(--background)));
+    backdrop-filter: var(--blur);
+  }
+}
+
+/* Adding a slot under a list of slots. */
+button.dashed-action[data-add] {
+  margin: 0.3rem 0 0.6rem;
+}
+
+/* A heading with its own switch on the right (Inputs ... Arbitrary). */
+.heading-check {
+  display: flex;
+  align-items: center;
+  justify-content: space-between;
+  gap: 0.6rem;
+}
+.heading-check .check {
+  font-weight: 400;
+}
+
+/* A circle in the colour of the slot's type, like the sockets on the canvas. */
+.type-dot {
+  flex: none;
+  width: 10px;
+  height: 10px;
+  border-radius: 50%;
+  background: var(--tc, var(--idle));
+  transition: background-color var(--fast) var(--ease);
+}
+
+/* ----- Types: the list in the overview, the type editor, the catalog ----- */
+.type-list,
+.type-catalog {
+  display: grid;
+  gap: 0.35rem;
+  margin: 0 0 0.6rem;
+  padding: 0;
+  list-style: none;
+}
+.type-item {
+  display: flex;
+  align-items: flex-start;
+  gap: 0.5rem;
+  min-width: 0;
+}
+.type-item .type-dot {
+  margin-top: 0.35rem;
+}
+.type-item > div {
+  flex: 1;
+  min-width: 0;
+  overflow-wrap: anywhere;
+}
+.type-item small.block {
+  display: block;
+}
+.type-actions {
+  display: flex;
+  flex: none;
+}
+.type-fields {
+  display: grid;
+  gap: 0.35rem;
+  margin-bottom: 0.4rem;
+}
+.type-field {
+  display: grid;
+  grid-template-columns: 1fr 1fr auto;
+  gap: 0.35rem;
+}
+.type-catalog .link {
+  display: flex;
+  align-items: center;
+  gap: 0.5rem;
+  text-align: left;
+}
+.type-catalog .link[disabled] {
+  opacity: 0.5;
+}
+.type-catalog .type-dot {
+  background: var(--tc);
+}
+
+/* The widgets of a Custom Node: one card per widget. */
+.widget-rows {
+  display: grid;
+  gap: 0.5rem;
+}
+.widget-row {
+  display: grid;
+  gap: 0.3rem;
+  padding: 0.4rem;
+  border-radius: 14px;
+  background: var(--field);
+}
+.widget-head {
+  display: grid;
+  grid-template-columns: 6.5rem minmax(0, 1fr) 26px;
+  align-items: center;
+  gap: 0.3rem;
+}
+.widget-row input:not([type='checkbox']),
+.widget-row select,
+.widget-row textarea {
+  width: 100%;
+  min-width: 0;
+  padding: 0.25rem 0.5rem;
+  font-size: 0.85rem;
+  background-color: var(--hover);
+}
+.widget-row .slot-type {
+  color: var(--muted);
+  font-size: 0.78rem;
+}
+.widget-row .slot-name {
+  font-weight: 600;
+}
+.widget-row .slot-remove {
+  width: 26px;
+  min-width: 0;
+  padding: 0.25rem;
+}
+.widget-fields {
+  display: grid;
+  grid-template-columns: repeat(2, minmax(0, 1fr));
+  gap: 0.3rem;
+}
+.widget-field {
+  display: grid;
+  gap: 0.15rem;
+  min-width: 0;
+}
+.widget-field.wide {
+  grid-column: 1 / -1;
+}
+.widget-field > span {
+  color: var(--muted);
+  font-size: 0.72rem;
+}
+
+/* The name of the selected item with a pencil beside it; the pencil turns the name into a field. */
+.title-row {
+  display: flex;
+  margin-bottom: 0.6rem;
+  align-items: center;
+  gap: 0.25rem;
+  min-width: 0;
+}
+.title-row h2,
+.title-row .title-input {
+  flex: 1;
+  min-width: 0;
+  margin: 0;
+}
+.title-row h2 {
+  overflow: hidden;
+  text-overflow: ellipsis;
+  white-space: nowrap;
+}
+.title-row .title-input {
+  font-size: 1.17em;
+  font-weight: 700;
+}
+.title-kind {
+  margin: 0 0 0.2rem;
+}
+
+.connection-grid:empty {
+  display: none;
+}

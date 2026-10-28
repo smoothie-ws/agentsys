@@ -1,0 +1,1013 @@
+{
+  "format": "agentsys.text/1",
+  "value": [
+    {
+      "kind": "custom_node",
+      "name": "LLM call",
+      "payload": {
+        "bundle": {
+          "complex": [
+            {
+              "arbitrary": {
+                "inputs": false,
+                "outputs": false
+              },
+              "collapsed": false,
+              "compact_height": 90,
+              "compact_width": 240,
+              "id": "2d193ee1df3793d26711faa632c1858c",
+              "interface": {
+                "inputs": [
+                  {
+                    "bound": [
+                      {
+                        "node_id": "record:87ce87c958024dbd7b835fb8bedf9176",
+                        "port_id": "in"
+                      }
+                    ],
+                    "id": "in",
+                    "name": "In",
+                    "type": "signal"
+                  },
+                  {
+                    "id": "prompt",
+                    "name": "prompt",
+                    "type": "t:66c2b29a3c847c2e129136b4ecf38991"
+                  },
+                  {
+                    "id": "provider",
+                    "name": "provider",
+                    "type": "t:66c2b29a3c847c2e129136b4ecf38991"
+                  },
+                  {
+                    "id": "model",
+                    "name": "model",
+                    "type": "t:66c2b29a3c847c2e129136b4ecf38991"
+                  }
+                ],
+                "outputs": [
+                  {
+                    "id": "result",
+                    "name": "result"
+                  },
+                  {
+                    "id": "Out",
+                    "name": "Out",
+                    "type": "signal"
+                  }
+                ]
+              }
+            }
+          ],
+          "groups": [
+            {
+              "color": null,
+              "folded": false,
+              "id": "2d193ee1df3793d26711faa632c1858c",
+              "members": [
+                "record:87ce87c958024dbd7b835fb8bedf9176"
+              ],
+              "name": "LLM call",
+              "parent": null,
+              "pinned": false
+            }
+          ],
+          "port_edges": [],
+          "records": [
+            {
+              "id": "record:87ce87c958024dbd7b835fb8bedf9176",
+              "payload": {
+                "config": {
+                  "capabilities": [
+                    "llm.call:*"
+                  ],
+                  "grants": [
+                    "llm.call:*"
+                  ],
+                  "inputs": [
+                    {
+                      "id": "in",
+                      "name": "In",
+                      "type": "signal"
+                    },
+                    {
+                      "default": {
+                        "$script": "scripts/value-0-payload-bundle-records-0-payload-config-inputs-1-default.js"
+                      },
+                      "id": "script",
+                      "name": "script",
+                      "type": "t:c0de0c0de0c0de0c0de0c0de0c0de0c0"
+                    }
+                  ],
+                  "op": "script",
+                  "origin": "human",
+                  "outputs": [],
+                  "title": "Script"
+                },
+                "kind": "function",
+                "label": "Custom",
+                "node_type": "custom",
+                "status": "ready"
+              }
+            }
+          ],
+          "source_project": "lib-1dddbef0de8d6206368929d3dd1e99a8",
+          "styles": {
+            "record:87ce87c958024dbd7b835fb8bedf9176": {
+              "color": null,
+              "folded": false,
+              "pinned": false
+            }
+          },
+          "types": [
+            {
+              "color": "#669ed6",
+              "control": "textarea",
+              "fields": [],
+              "id": "66c2b29a3c847c2e129136b4ecf38991",
+              "name": "Text"
+            },
+            {
+              "color": "#8a6fd6",
+              "control": "code",
+              "fields": [],
+              "id": "c0de0c0de0c0de0c0de0c0de0c0de0c0",
+              "name": "test code"
+            }
+          ],
+          "version": 3,
+          "widgets": {}
+        },
+        "capabilities": [
+          "llm.call:*"
+        ],
+        "description": "LLM call",
+        "grants": [
+          "llm.call:*"
+        ],
+        "origin": "human"
+      }
+    },
+    {
+      "kind": "custom_node",
+      "name": "LLM structured",
+      "payload": {
+        "bundle": {
+          "complex": [
+            {
+              "arbitrary": {
+                "inputs": false,
+                "outputs": false
+              },
+              "collapsed": false,
+              "compact_height": 90,
+              "compact_width": 240,
+              "id": "182a2e2eb9af3cdfb82ebb8f8a66a4d5",
+              "interface": {
+                "inputs": [
+                  {
+                    "bound": [
+                      {
+                        "node_id": "record:c4d2a34cee7d2685aa6e9b5c98bb6618",
+                        "port_id": "in"
+                      }
+                    ],
+                    "id": "in",
+                    "name": "In",
+                    "type": "signal"
+                  },
+                  {
+                    "id": "prompt",
+                    "name": "prompt",
+                    "type": "t:66c2b29a3c847c2e129136b4ecf38991"
+                  },
+                  {
+                    "id": "schema",
+                    "name": "schema"
+                  }
+                ],
+                "outputs": [
+                  {
+                    "id": "result",
+                    "name": "result"
+                  },
+                  {
+                    "id": "Out",
+                    "name": "Out",
+                    "type": "signal"
+                  }
+                ]
+              }
+            }
+          ],
+          "groups": [
+            {
+              "color": null,
+              "folded": false,
+              "id": "182a2e2eb9af3cdfb82ebb8f8a66a4d5",
+              "members": [
+                "record:c4d2a34cee7d2685aa6e9b5c98bb6618"
+              ],
+              "name": "LLM structured",
+              "parent": null,
+              "pinned": false
+            }
+          ],
+          "port_edges": [],
+          "records": [
+            {
+              "id": "record:c4d2a34cee7d2685aa6e9b5c98bb6618",
+              "payload": {
+                "config": {
+                  "capabilities": [
+                    "llm.call:*"
+                  ],
+                  "grants": [
+                    "llm.call:*"
+                  ],
+                  "inputs": [
+                    {
+                      "id": "in",
+                      "name": "In",
+                      "type": "signal"
+                    },
+                    {
+                      "default": {
+                        "$script": "scripts/value-1-payload-bundle-records-0-payload-config-inputs-1-default.js"
+                      },
+                      "id": "script",
+                      "name": "script",
+                      "type": "t:c0de0c0de0c0de0c0de0c0de0c0de0c0"
+                    }
+                  ],
+                  "op": "script",
+                  "origin": "human",
+                  "outputs": [],
+                  "title": "Script"
+                },
+                "kind": "function",
+                "label": "Custom",
+                "node_type": "custom",
+                "status": "ready"
+              }
+            }
+          ],
+          "source_project": "lib-601ef7812685d42e8021c367f70fa99d",
+          "styles": {
+            "record:c4d2a34cee7d2685aa6e9b5c98bb6618": {
+              "color": null,
+              "folded": false,
+              "pinned": false
+            }
+          },
+          "types": [
+            {
+              "color": "#669ed6",
+              "control": "textarea",
+              "fields": [],
+              "id": "66c2b29a3c847c2e129136b4ecf38991",
+              "name": "Text"
+            },
+            {
+              "color": "#8a6fd6",
+              "control": "code",
+              "fields": [],
+              "id": "c0de0c0de0c0de0c0de0c0de0c0de0c0",
+              "name": "test code"
+            }
+          ],
+          "version": 3,
+          "widgets": {}
+        },
+        "capabilities": [
+          "llm.call:*"
+        ],
+        "description": "LLM structured",
+        "grants": [
+          "llm.call:*"
+        ],
+        "origin": "human"
+      }
+    },
+    {
+      "kind": "custom_node",
+      "name": "Ask human",
+      "payload": {
+        "bundle": {
+          "complex": [
+            {
+              "arbitrary": {
+                "inputs": false,
+                "outputs": false
+              },
+              "collapsed": false,
+              "compact_height": 90,
+              "compact_width": 240,
+              "id": "190e8637e99ee3c8448561b546271849",
+              "interface": {
+                "inputs": [
+                  {
+                    "bound": [
+                      {
+                        "node_id": "record:a53ea8545cbec83a4d5b9a908d38db33",
+                        "port_id": "in"
+                      }
+                    ],
+                    "id": "in",
+                    "name": "In",
+                    "type": "signal"
+                  },
+                  {
+                    "id": "question",
+                    "name": "question",
+                    "type": "t:66c2b29a3c847c2e129136b4ecf38991"
+                  },
+                  {
+                    "default": 86400000,
+                    "id": "timeout",
+                    "name": "timeout",
+                    "type": "t:8a2385fc2f2954252d8633c7b9986d71"
+                  }
+                ],
+                "outputs": [
+                  {
+                    "id": "result",
+                    "name": "result"
+                  },
+                  {
+                    "id": "Out",
+                    "name": "Out",
+                    "type": "signal"
+                  }
+                ]
+              }
+            }
+          ],
+          "groups": [
+            {
+              "color": null,
+              "folded": false,
+              "id": "190e8637e99ee3c8448561b546271849",
+              "members": [
+                "record:a53ea8545cbec83a4d5b9a908d38db33"
+              ],
+              "name": "Ask human",
+              "parent": null,
+              "pinned": false
+            }
+          ],
+          "port_edges": [],
+          "records": [
+            {
+              "id": "record:a53ea8545cbec83a4d5b9a908d38db33",
+              "payload": {
+                "config": {
+                  "capabilities": [
+                    "approval.request"
+                  ],
+                  "grants": [
+                    "approval.request"
+                  ],
+                  "inputs": [
+                    {
+                      "id": "in",
+                      "name": "In",
+                      "type": "signal"
+                    },
+                    {
+                      "default": {
+                        "$script": "scripts/value-2-payload-bundle-records-0-payload-config-inputs-1-default.js"
+                      },
+                      "id": "script",
+                      "name": "script",
+                      "type": "t:c0de0c0de0c0de0c0de0c0de0c0de0c0"
+                    }
+                  ],
+                  "op": "script",
+                  "origin": "human",
+                  "outputs": [],
+                  "title": "Script"
+                },
+                "kind": "function",
+                "label": "Custom",
+                "node_type": "custom",
+                "status": "ready"
+              }
+            }
+          ],
+          "source_project": "lib-4867ef20832db349d7626fcf50f2cfd7",
+          "styles": {
+            "record:a53ea8545cbec83a4d5b9a908d38db33": {
+              "color": null,
+              "folded": false,
+              "pinned": false
+            }
+          },
+          "types": [
+            {
+              "color": "#669ed6",
+              "control": "textarea",
+              "fields": [],
+              "id": "66c2b29a3c847c2e129136b4ecf38991",
+              "name": "Text"
+            },
+            {
+              "color": "#669ed6",
+              "control": "number",
+              "fields": [],
+              "id": "8a2385fc2f2954252d8633c7b9986d71",
+              "name": "Number"
+            },
+            {
+              "color": "#8a6fd6",
+              "control": "code",
+              "fields": [],
+              "id": "c0de0c0de0c0de0c0de0c0de0c0de0c0",
+              "name": "test code"
+            }
+          ],
+          "version": 3,
+          "widgets": {}
+        },
+        "capabilities": [
+          "approval.request"
+        ],
+        "description": "Ask human",
+        "grants": [
+          "approval.request"
+        ],
+        "origin": "human"
+      }
+    },
+    {
+      "kind": "custom_node",
+      "name": "Check budget",
+      "payload": {
+        "bundle": {
+          "complex": [
+            {
+              "arbitrary": {
+                "inputs": false,
+                "outputs": false
+              },
+              "collapsed": false,
+              "compact_height": 90,
+              "compact_width": 240,
+              "id": "5c9b7fcea31794bfc9b0a14a70f5c932",
+              "interface": {
+                "inputs": [
+                  {
+                    "bound": [
+                      {
+                        "node_id": "record:7f0f866dac868e0a6ccd469353515dcf",
+                        "port_id": "in"
+                      }
+                    ],
+                    "id": "in",
+                    "name": "In",
+                    "type": "signal"
+                  }
+                ],
+                "outputs": [
+                  {
+                    "id": "result",
+                    "name": "result"
+                  },
+                  {
+                    "id": "Out",
+                    "name": "Out",
+                    "type": "signal"
+                  }
+                ]
+              }
+            }
+          ],
+          "groups": [
+            {
+              "color": null,
+              "folded": false,
+              "id": "5c9b7fcea31794bfc9b0a14a70f5c932",
+              "members": [
+                "record:7f0f866dac868e0a6ccd469353515dcf"
+              ],
+              "name": "Check budget",
+              "parent": null,
+              "pinned": false
+            }
+          ],
+          "port_edges": [],
+          "records": [
+            {
+              "id": "record:7f0f866dac868e0a6ccd469353515dcf",
+              "payload": {
+                "config": {
+                  "capabilities": [
+                    "run.read"
+                  ],
+                  "grants": [
+                    "run.read"
+                  ],
+                  "inputs": [
+                    {
+                      "id": "in",
+                      "name": "In",
+                      "type": "signal"
+                    },
+                    {
+                      "default": {
+                        "$script": "scripts/value-3-payload-bundle-records-0-payload-config-inputs-1-default.js"
+                      },
+                      "id": "script",
+                      "name": "script",
+                      "type": "t:c0de0c0de0c0de0c0de0c0de0c0de0c0"
+                    }
+                  ],
+                  "op": "script",
+                  "origin": "human",
+                  "outputs": [],
+                  "title": "Script"
+                },
+                "kind": "function",
+                "label": "Custom",
+                "node_type": "custom",
+                "status": "ready"
+              }
+            }
+          ],
+          "source_project": "lib-faeef65c7336f7911d1bb1a365f81470",
+          "styles": {
+            "record:7f0f866dac868e0a6ccd469353515dcf": {
+              "color": null,
+              "folded": false,
+              "pinned": false
+            }
+          },
+          "types": [
+            {
+              "color": "#8a6fd6",
+              "control": "code",
+              "fields": [],
+              "id": "c0de0c0de0c0de0c0de0c0de0c0de0c0",
+              "name": "test code"
+            }
+          ],
+          "version": 3,
+          "widgets": {}
+        },
+        "capabilities": [
+          "run.read"
+        ],
+        "description": "Check budget",
+        "grants": [
+          "run.read"
+        ],
+        "origin": "human"
+      }
+    },
+    {
+      "kind": "custom_node",
+      "name": "Summarize context",
+      "payload": {
+        "bundle": {
+          "complex": [
+            {
+              "arbitrary": {
+                "inputs": false,
+                "outputs": false
+              },
+              "collapsed": false,
+              "compact_height": 90,
+              "compact_width": 240,
+              "id": "e3e27ac1e772e2b1e2c7a59db96f4f90",
+              "interface": {
+                "inputs": [
+                  {
+                    "bound": [
+                      {
+                        "node_id": "record:4e8697d0c2363d526102b9e04092f8fc",
+                        "port_id": "in"
+                      }
+                    ],
+                    "id": "in",
+                    "name": "In",
+                    "type": "signal"
+                  },
+                  {
+                    "id": "context",
+                    "name": "context",
+                    "type": "t:66c2b29a3c847c2e129136b4ecf38991"
+                  }
+                ],
+                "outputs": [
+                  {
+                    "id": "result",
+                    "name": "result"
+                  },
+                  {
+                    "id": "Out",
+                    "name": "Out",
+                    "type": "signal"
+                  }
+                ]
+              }
+            }
+          ],
+          "groups": [
+            {
+              "color": null,
+              "folded": false,
+              "id": "e3e27ac1e772e2b1e2c7a59db96f4f90",
+              "members": [
+                "record:4e8697d0c2363d526102b9e04092f8fc"
+              ],
+              "name": "Summarize context",
+              "parent": null,
+              "pinned": false
+            }
+          ],
+          "port_edges": [],
+          "records": [
+            {
+              "id": "record:4e8697d0c2363d526102b9e04092f8fc",
+              "payload": {
+                "config": {
+                  "capabilities": [
+                    "llm.call:*"
+                  ],
+                  "grants": [
+                    "llm.call:*"
+                  ],
+                  "inputs": [
+                    {
+                      "id": "in",
+                      "name": "In",
+                      "type": "signal"
+                    },
+                    {
+                      "default": {
+                        "$script": "scripts/value-4-payload-bundle-records-0-payload-config-inputs-1-default.js"
+                      },
+                      "id": "script",
+                      "name": "script",
+                      "type": "t:c0de0c0de0c0de0c0de0c0de0c0de0c0"
+                    }
+                  ],
+                  "op": "script",
+                  "origin": "human",
+                  "outputs": [],
+                  "title": "Script"
+                },
+                "kind": "function",
+                "label": "Custom",
+                "node_type": "custom",
+                "status": "ready"
+              }
+            }
+          ],
+          "source_project": "lib-f951a5bcfbdc0f5a7409d5c4bee1ef7d",
+          "styles": {
+            "record:4e8697d0c2363d526102b9e04092f8fc": {
+              "color": null,
+              "folded": false,
+              "pinned": false
+            }
+          },
+          "types": [
+            {
+              "color": "#669ed6",
+              "control": "textarea",
+              "fields": [],
+              "id": "66c2b29a3c847c2e129136b4ecf38991",
+              "name": "Text"
+            },
+            {
+              "color": "#8a6fd6",
+              "control": "code",
+              "fields": [],
+              "id": "c0de0c0de0c0de0c0de0c0de0c0de0c0",
+              "name": "test code"
+            }
+          ],
+          "version": 3,
+          "widgets": {}
+        },
+        "capabilities": [
+          "llm.call:*"
+        ],
+        "description": "Summarize context",
+        "grants": [
+          "llm.call:*"
+        ],
+        "origin": "human"
+      }
+    },
+    {
+      "kind": "custom_node",
+      "name": "Router",
+      "payload": {
+        "bundle": {
+          "complex": [
+            {
+              "arbitrary": {
+                "inputs": false,
+                "outputs": false
+              },
+              "collapsed": false,
+              "compact_height": 90,
+              "compact_width": 240,
+              "id": "96b29ca4b03257879c31caf6d0573502",
+              "interface": {
+                "inputs": [
+                  {
+                    "bound": [
+                      {
+                        "node_id": "record:9de89405c39e89c1f3566d2b49f835f2",
+                        "port_id": "in"
+                      }
+                    ],
+                    "id": "in",
+                    "name": "In",
+                    "type": "signal"
+                  },
+                  {
+                    "id": "prompt",
+                    "name": "prompt",
+                    "type": "t:66c2b29a3c847c2e129136b4ecf38991"
+                  }
+                ],
+                "outputs": [
+                  {
+                    "id": "result",
+                    "name": "result"
+                  },
+                  {
+                    "id": "Yes",
+                    "name": "Yes",
+                    "type": "signal"
+                  },
+                  {
+                    "id": "No",
+                    "name": "No",
+                    "type": "signal"
+                  }
+                ]
+              }
+            }
+          ],
+          "groups": [
+            {
+              "color": null,
+              "folded": false,
+              "id": "96b29ca4b03257879c31caf6d0573502",
+              "members": [
+                "record:9de89405c39e89c1f3566d2b49f835f2"
+              ],
+              "name": "Router",
+              "parent": null,
+              "pinned": false
+            }
+          ],
+          "port_edges": [],
+          "records": [
+            {
+              "id": "record:9de89405c39e89c1f3566d2b49f835f2",
+              "payload": {
+                "config": {
+                  "capabilities": [
+                    "llm.call:*"
+                  ],
+                  "grants": [
+                    "llm.call:*"
+                  ],
+                  "inputs": [
+                    {
+                      "id": "in",
+                      "name": "In",
+                      "type": "signal"
+                    },
+                    {
+                      "default": {
+                        "$script": "scripts/value-5-payload-bundle-records-0-payload-config-inputs-1-default.js"
+                      },
+                      "id": "script",
+                      "name": "script",
+                      "type": "t:c0de0c0de0c0de0c0de0c0de0c0de0c0"
+                    }
+                  ],
+                  "op": "script",
+                  "origin": "human",
+                  "outputs": [],
+                  "title": "Script"
+                },
+                "kind": "function",
+                "label": "Custom",
+                "node_type": "custom",
+                "status": "ready"
+              }
+            }
+          ],
+          "source_project": "lib-9cd72ef099fa539e3b793ffb8d36f0bd",
+          "styles": {
+            "record:9de89405c39e89c1f3566d2b49f835f2": {
+              "color": null,
+              "folded": false,
+              "pinned": false
+            }
+          },
+          "types": [
+            {
+              "color": "#669ed6",
+              "control": "textarea",
+              "fields": [],
+              "id": "66c2b29a3c847c2e129136b4ecf38991",
+              "name": "Text"
+            },
+            {
+              "color": "#8a6fd6",
+              "control": "code",
+              "fields": [],
+              "id": "c0de0c0de0c0de0c0de0c0de0c0de0c0",
+              "name": "test code"
+            }
+          ],
+          "version": 3,
+          "widgets": {}
+        },
+        "capabilities": [
+          "llm.call:*"
+        ],
+        "description": "Router",
+        "grants": [
+          "llm.call:*"
+        ],
+        "origin": "human"
+      }
+    },
+    {
+      "kind": "custom_node",
+      "name": "Tool-use loop",
+      "payload": {
+        "bundle": {
+          "complex": [
+            {
+              "arbitrary": {
+                "inputs": false,
+                "outputs": false
+              },
+              "collapsed": false,
+              "compact_height": 90,
+              "compact_width": 240,
+              "id": "03730a215ecf2ba667a652b6270d48e9",
+              "interface": {
+                "inputs": [
+                  {
+                    "bound": [
+                      {
+                        "node_id": "record:fc99d184c57e973d2a686751d3ee0ec2",
+                        "port_id": "in"
+                      }
+                    ],
+                    "id": "in",
+                    "name": "In",
+                    "type": "signal"
+                  },
+                  {
+                    "id": "prompt",
+                    "name": "prompt",
+                    "type": "t:66c2b29a3c847c2e129136b4ecf38991"
+                  },
+                  {
+                    "default": 8,
+                    "id": "max_steps",
+                    "name": "max_steps",
+                    "type": "t:8a2385fc2f2954252d8633c7b9986d71"
+                  },
+                  {
+                    "id": "tools",
+                    "name": "tools"
+                  }
+                ],
+                "outputs": [
+                  {
+                    "id": "result",
+                    "name": "result"
+                  },
+                  {
+                    "id": "Out",
+                    "name": "Out",
+                    "type": "signal"
+                  }
+                ]
+              }
+            }
+          ],
+          "groups": [
+            {
+              "color": null,
+              "folded": false,
+              "id": "03730a215ecf2ba667a652b6270d48e9",
+              "members": [
+                "record:fc99d184c57e973d2a686751d3ee0ec2"
+              ],
+              "name": "Tool-use loop",
+              "parent": null,
+              "pinned": false
+            }
+          ],
+          "port_edges": [],
+          "records": [
+            {
+              "id": "record:fc99d184c57e973d2a686751d3ee0ec2",
+              "payload": {
+                "config": {
+                  "capabilities": [
+                    "llm.call:*",
+                    "initiative.read",
+                    "initiative.write:*",
+                    "run.read"
+                  ],
+                  "grants": [
+                    "llm.call:*",
+                    "initiative.read",
+                    "initiative.write:*",
+                    "run.read"
+                  ],
+                  "inputs": [
+                    {
+                      "id": "in",
+                      "name": "In",
+                      "type": "signal"
+                    },
+                    {
+                      "default": {
+                        "$script": "scripts/value-6-payload-bundle-records-0-payload-config-inputs-1-default.js"
+                      },
+                      "id": "script",
+                      "name": "script",
+                      "type": "t:c0de0c0de0c0de0c0de0c0de0c0de0c0"
+                    }
+                  ],
+                  "op": "script",
+                  "origin": "human",
+                  "outputs": [],
+                  "title": "Script"
+                },
+                "kind": "function",
+                "label": "Custom",
+                "node_type": "custom",
+                "status": "ready"
+              }
+            }
+          ],
+          "source_project": "lib-eb45fa8e468244591f9e8aab3046e14f",
+          "styles": {
+            "record:fc99d184c57e973d2a686751d3ee0ec2": {
+              "color": null,
+              "folded": false,
+              "pinned": false
+            }
+          },
+          "types": [
+            {
+              "color": "#669ed6",
+              "control": "textarea",
+              "fields": [],
+              "id": "66c2b29a3c847c2e129136b4ecf38991",
+              "name": "Text"
+            },
+            {
+              "color": "#669ed6",
+              "control": "number",
+              "fields": [],
+              "id": "8a2385fc2f2954252d8633c7b9986d71",
+              "name": "Number"
+            },
+            {
+              "color": "#8a6fd6",
+              "control": "code",
+              "fields": [],
+              "id": "c0de0c0de0c0de0c0de0c0de0c0de0c0",
+              "name": "test code"
+            }
+          ],
+          "version": 3,
+          "widgets": {}
+        },
+        "capabilities": [
+          "llm.call:*",
+          "initiative.read",
+          "initiative.write:*",
+          "run.read"
+        ],
+        "description": "Tool-use loop",
+        "grants": [
+          "llm.call:*",
+          "initiative.read",
+          "initiative.write:*",
+          "run.read"
+        ],
+        "origin": "human"
+      }
+    }
+  ]
+}

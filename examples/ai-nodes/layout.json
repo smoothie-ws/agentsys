@@ -1,0 +1,44 @@
+{
+  "[\"value\",\"0\",\"payload\",\"bundle\",\"positions\"]": {
+    "record:87ce87c958024dbd7b835fb8bedf9176": {
+      "x": 0,
+      "y": 24
+    }
+  },
+  "[\"value\",\"1\",\"payload\",\"bundle\",\"positions\"]": {
+    "record:c4d2a34cee7d2685aa6e9b5c98bb6618": {
+      "x": 0,
+      "y": 24
+    }
+  },
+  "[\"value\",\"2\",\"payload\",\"bundle\",\"positions\"]": {
+    "record:a53ea8545cbec83a4d5b9a908d38db33": {
+      "x": 0,
+      "y": 24
+    }
+  },
+  "[\"value\",\"3\",\"payload\",\"bundle\",\"positions\"]": {
+    "record:7f0f866dac868e0a6ccd469353515dcf": {
+      "x": 0,
+      "y": 24
+    }
+  },
+  "[\"value\",\"4\",\"payload\",\"bundle\",\"positions\"]": {
+    "record:4e8697d0c2363d526102b9e04092f8fc": {
+      "x": 0,
+      "y": 24
+    }
+  },
+  "[\"value\",\"5\",\"payload\",\"bundle\",\"positions\"]": {
+    "record:9de89405c39e89c1f3566d2b49f835f2": {
+      "x": 0,
+      "y": 24
+    }
+  },
+  "[\"value\",\"6\",\"payload\",\"bundle\",\"positions\"]": {
+    "record:fc99d184c57e973d2a686751d3ee0ec2": {
+      "x": 0,
+      "y": 24
+    }
+  }
+}

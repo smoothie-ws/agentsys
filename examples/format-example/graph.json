@@ -1,0 +1,153 @@
+{
+  "format": "agentsys.text/1",
+  "value": {
+    "document": {
+      "complex": [
+        {
+          "arbitrary": {
+            "inputs": false,
+            "outputs": false
+          },
+          "collapsed": false,
+          "compact_height": 90,
+          "compact_width": 240,
+          "id": "55f0dd46f0a9fa3b425381436d7d02b9",
+          "interface": {
+            "inputs": [
+              {
+                "bound": [
+                  {
+                    "node_id": "record:ba0a2a3c2637bd24e51cc6c20618d5db",
+                    "port_id": "in"
+                  }
+                ],
+                "id": "in",
+                "name": "In",
+                "type": "signal"
+              }
+            ],
+            "outputs": [
+              {
+                "id": "result",
+                "name": "result"
+              }
+            ]
+          },
+          "source": {
+            "resource_id": "6cd24a843be3ce5b37d041c0bc7e10a6",
+            "stamp": 1793145313.438
+          }
+        }
+      ],
+      "groups": [
+        {
+          "id": "55f0dd46f0a9fa3b425381436d7d02b9",
+          "members": [
+            "record:7cd8a984dd2a06733c1f47309c4143a3",
+            "record:ba0a2a3c2637bd24e51cc6c20618d5db"
+          ],
+          "name": "Compute report",
+          "parent": null
+        }
+      ],
+      "nodes": [
+        {
+          "config": {
+            "inputs": [],
+            "outputs": [],
+            "title": "Body"
+          },
+          "id": "record:7cd8a984dd2a06733c1f47309c4143a3",
+          "kind": "function",
+          "label": "Custom",
+          "node_type": "custom",
+          "status": "ready"
+        },
+        {
+          "config": {
+            "inputs": [],
+            "op": "on_run",
+            "outputs": [
+              {
+                "id": "out",
+                "name": "Out",
+                "type": "signal"
+              },
+              {
+                "id": "payload",
+                "name": "payload"
+              }
+            ],
+            "title": "on_run"
+          },
+          "id": "record:a01eb1fb9d54efd67b38b387a8944558",
+          "kind": "function",
+          "label": "Custom",
+          "node_type": "custom",
+          "status": "ready"
+        },
+        {
+          "config": {
+            "capabilities": [],
+            "grants": [],
+            "inputs": [
+              {
+                "id": "in",
+                "name": "In",
+                "type": "signal"
+              },
+              {
+                "default": {
+                  "$script": "scripts/value-document-nodes-2-config-inputs-1-default.js"
+                },
+                "id": "script",
+                "name": "script",
+                "type": "t:c0de0c0de0c0de0c0de0c0de0c0de0c0"
+              }
+            ],
+            "op": "script",
+            "origin": "human",
+            "outputs": [],
+            "title": "Script"
+          },
+          "id": "record:ba0a2a3c2637bd24e51cc6c20618d5db",
+          "kind": "function",
+          "label": "Custom",
+          "node_type": "custom",
+          "status": "ready"
+        }
+      ],
+      "port_edges": [
+        {
+          "id": "96e04ae85f5a8955b02765e47a809987",
+          "source": "record:a01eb1fb9d54efd67b38b387a8944558",
+          "source_port": "out",
+          "target": "complex:55f0dd46f0a9fa3b425381436d7d02b9",
+          "target_port": "in"
+        }
+      ],
+      "style": {
+        "record:7cd8a984dd2a06733c1f47309c4143a3": {
+          "color": null,
+          "pinned": false
+        },
+        "record:ba0a2a3c2637bd24e51cc6c20618d5db": {
+          "color": null,
+          "pinned": false
+        }
+      },
+      "types": [
+        {
+          "color": "#8a6fd6",
+          "control": "code",
+          "fields": [],
+          "id": "c0de0c0de0c0de0c0de0c0de0c0de0c0",
+          "name": "test code"
+        }
+      ],
+      "widgets": {}
+    },
+    "kind": "workflow",
+    "name": "Main"
+  }
+}

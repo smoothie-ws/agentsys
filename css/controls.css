@@ -1,0 +1,473 @@
+/* Buttons, fields and small form pieces. Hover and press use colour, shadow and opacity without changing element geometry. */
+
+/* ----- Buttons ----- */
+button,
+.button {
+  font: inherit;
+  display: inline-flex;
+  align-items: center;
+  justify-content: center;
+  gap: 0.45rem;
+  border: 0;
+  border-radius: var(--theme-buttons-radius, var(--radius));
+  padding: 0.45rem 0.9rem;
+  background: var(--theme-buttons-background, var(--field));
+  color: var(--theme-buttons-text, var(--text));
+  box-shadow: inset 0 0 0 1px var(--theme-buttons-outline, transparent);
+  cursor: pointer;
+  text-decoration: none;
+  white-space: nowrap;
+  -webkit-tap-highlight-color: transparent;
+  transition:
+    background-color var(--fast) var(--ease),
+    color var(--fast) var(--ease),
+    opacity var(--fast) var(--ease),
+    box-shadow var(--base) var(--ease),
+    transform var(--fast) var(--ease);
+}
+button:hover:not(:disabled),
+.button:hover {
+  background: var(--theme-buttons-hover, var(--hover));
+  transform: none;
+  box-shadow: inset 0 0 0 1px var(--theme-buttons-outline, transparent), var(--lift);
+}
+button:active:not(:disabled),
+.button:active {
+  background: var(--theme-buttons-pressed, var(--press));
+  transform: none;
+  box-shadow: none;
+}
+/* Icons, ghosts and menu rows respond with tone. */
+button.icon:hover:not(:disabled),
+.side-tabs button:hover:not(:disabled),
+.selection-tools button:hover:not(:disabled) {
+  transform: none;
+  box-shadow: none;
+}
+button.ghost:hover:not(:disabled),
+.button.ghost:hover {
+  transform: none;
+  box-shadow: none;
+}
+button.icon:active:not(:disabled),
+.side-tabs button:active:not(:disabled),
+.selection-tools button:active:not(:disabled),
+button.ghost:active:not(:disabled) {
+  transform: none;
+}
+button.link:hover:not(:disabled),
+.popup button:hover:not(:disabled),
+.subnav-row:hover:not(:disabled) {
+  transform: none;
+  box-shadow: none;
+}
+button:disabled {
+  opacity: 0.4;
+  cursor: default;
+}
+button.primary,
+.button.primary {
+  background: var(--theme-buttons-primary, var(--accent));
+  color: var(--theme-buttons-primary-text, var(--on-accent));
+  font-weight: 600;
+}
+button.primary:hover:not(:disabled),
+.button.primary:hover {
+  background: color-mix(in srgb, var(--theme-buttons-primary, var(--accent)) 80%, white);
+  box-shadow: 0 8px 20px -8px color-mix(in srgb, var(--accent) 70%, transparent);
+}
+button.primary:active:not(:disabled),
+.button.primary:active {
+  background: color-mix(in srgb, var(--theme-buttons-primary, var(--accent)) 84%, black);
+}
+button.ghost,
+.button.ghost,
+button.icon {
+  background: transparent;
+}
+button.ghost:hover:not(:disabled),
+.button.ghost:hover,
+button.icon:hover:not(:disabled) {
+  background: var(--theme-buttons-hover, var(--hover));
+}
+button.ghost:active:not(:disabled),
+.button.ghost:active,
+button.icon:active:not(:disabled) {
+  background: var(--theme-buttons-pressed, var(--press));
+}
+button.icon {
+  display: inline-grid;
+  place-items: center;
+  padding: 0.4rem;
+  color: var(--theme-buttons-text, var(--muted));
+}
+button.icon:hover:not(:disabled) {
+  color: var(--text);
+}
+button.danger {
+  color: var(--bad);
+}
+button.danger:hover:not(:disabled) {
+  background: color-mix(in srgb, var(--bad) 14%, transparent);
+}
+button.primary.danger {
+  background: var(--bad);
+  color: #fff;
+}
+button.primary.danger:hover:not(:disabled) {
+  background: color-mix(in srgb, var(--bad) 86%, white);
+}
+button.link {
+  padding: 0;
+  background: none;
+  color: var(--text);
+  text-decoration: underline;
+  text-decoration-color: var(--idle);
+  text-underline-offset: 3px;
+  white-space: normal;
+  text-align: left;
+}
+button.link:hover:not(:disabled) {
+  background: none;
+  text-decoration-color: var(--accent);
+}
+button.link:active:not(:disabled) {
+  background: none;
+  transform: none;
+}
+button.small {
+  padding: 0.28rem 0.6rem;
+  font-size: 0.85rem;
+}
+
+/* ----- Fields ----- */
+input,
+select,
+textarea {
+  font: inherit;
+  width: 100%;
+  min-width: 0;
+  padding: 0.5rem 0.75rem;
+  color: var(--theme-fields-text, var(--text));
+  background: var(--theme-fields-background, var(--field));
+  border: 0;
+  border-radius: var(--theme-fields-radius, var(--radius));
+  box-shadow: inset 0 0 0 1px var(--theme-fields-outline, transparent);
+  transition:
+    background-color var(--fast) var(--ease),
+    box-shadow var(--base) var(--ease);
+}
+input:hover,
+select:hover,
+textarea:hover {
+  background: var(--theme-fields-hover, var(--hover));
+}
+input:focus,
+select:focus,
+textarea:focus {
+  outline: none;
+  background: var(--theme-fields-focus, color-mix(in srgb, var(--accent) 9%, var(--hover)));
+}
+input::placeholder,
+textarea::placeholder {
+  color: var(--theme-fields-placeholder, var(--muted));
+  opacity: 1;
+}
+textarea {
+  resize: vertical;
+}
+select {
+  appearance: none;
+  padding-right: 2.1rem;
+  cursor: pointer;
+  background-image: url("data:image/svg+xml,%3Csvg xmlns='http://www.w3.org/2000/svg' viewBox='0 0 24 24' fill='none' stroke='%23999' stroke-width='2' stroke-linecap='round' stroke-linejoin='round'%3E%3Cpath d='m6 9 6 6 6-6'/%3E%3C/svg%3E");
+  background-repeat: no-repeat;
+  background-position: right 0.6rem center;
+  background-size: 16px;
+}
+option {
+  background: var(--surface);
+  color: var(--text);
+}
+input[type='color'] {
+  padding: 3px;
+  height: 2.3rem;
+  cursor: pointer;
+}
+input[type='search']::-webkit-search-cancel-button {
+  appearance: none;
+}
+textarea.code,
+pre.code {
+  font: 0.82rem/1.5 var(--mono);
+  tab-size: 2;
+}
+pre.code {
+  background: var(--field);
+  border-radius: var(--radius);
+  padding: 0.7rem 0.8rem;
+  overflow: auto;
+  max-height: 26rem;
+  white-space: pre-wrap;
+  word-break: break-word;
+  margin: 0.3rem 0 0.8rem;
+}
+
+/* Radio: a round well with a dot that grows in. Checkbox: a rounded square with an outline that fills with the accent and shows a tick. */
+input[type='checkbox'],
+input[type='radio'] {
+  appearance: none;
+  display: inline-grid;
+  place-content: center;
+  flex: none;
+  width: 18px;
+  min-width: 18px;
+  max-width: 18px;
+  height: 18px;
+  margin: 0;
+  padding: 0;
+  border-radius: 50%;
+  cursor: pointer;
+}
+input[type='radio']::after {
+  content: '';
+  width: 8px;
+  height: 8px;
+  border-radius: 50%;
+  background: var(--accent);
+  transform: scale(0);
+  transition: transform var(--base) var(--ease);
+}
+input[type='radio']:checked {
+  background: var(--soft);
+}
+input[type='radio']:checked::after {
+  transform: scale(1);
+}
+input[type='radio']:focus {
+  box-shadow: none;
+}
+input[type='checkbox'] {
+  border-radius: 6px;
+  background: transparent;
+  box-shadow: inset 0 0 0 1.5px var(--idle);
+  transition:
+    background-color var(--fast) var(--ease),
+    box-shadow var(--fast) var(--ease);
+}
+input[type='checkbox']:hover:not(:disabled) {
+  background: var(--field);
+  box-shadow: inset 0 0 0 1.5px var(--muted);
+}
+input[type='checkbox']::after {
+  content: '';
+  width: 14px;
+  height: 14px;
+  background: var(--on-accent);
+  -webkit-mask: url("data:image/svg+xml,%3Csvg xmlns='http://www.w3.org/2000/svg' viewBox='0 0 24 24' fill='none' stroke='%23000' stroke-width='3.6' stroke-linecap='round' stroke-linejoin='round'%3E%3Cpath d='m5 12.5 4.5 4.5L19 7'/%3E%3C/svg%3E") center / contain no-repeat;
+  mask: url("data:image/svg+xml,%3Csvg xmlns='http://www.w3.org/2000/svg' viewBox='0 0 24 24' fill='none' stroke='%23000' stroke-width='3.6' stroke-linecap='round' stroke-linejoin='round'%3E%3Cpath d='m5 12.5 4.5 4.5L19 7'/%3E%3C/svg%3E") center / contain no-repeat;
+  opacity: 0;
+  transform: scale(0.5);
+  transition:
+    opacity var(--fast) var(--ease),
+    transform var(--base) var(--ease);
+}
+input[type='checkbox']:checked,
+input[type='checkbox']:checked:hover:not(:disabled),
+input[type='checkbox']:checked:focus {
+  background: var(--accent);
+  box-shadow: none;
+}
+input[type='checkbox']:checked::after {
+  opacity: 1;
+  transform: scale(1);
+}
+input[type='checkbox']:focus-visible {
+  box-shadow: 0 0 0 3px var(--ring);
+}
+input[type='checkbox']:active {
+  transform: none;
+}
+input[type='checkbox']:disabled {
+  cursor: default;
+  opacity: 0.45;
+}
+
+/* ----- Form layout ----- */
+.field {
+  display: grid;
+  gap: 0.3rem;
+  margin: 0 0 0.9rem;
+}
+.field > span {
+  font-size: 0.85rem;
+  font-weight: 560;
+}
+.field small {
+  color: var(--muted);
+  font-size: 0.8rem;
+}
+label.check {
+  display: inline-flex;
+  align-items: center;
+  gap: 0.5rem;
+  cursor: pointer;
+}
+fieldset {
+  border: 0;
+  padding: 0;
+  margin: 0 0 1rem;
+}
+legend {
+  font-size: 0.85rem;
+  font-weight: 560;
+  margin-bottom: 0.4rem;
+}
+details > summary {
+  cursor: pointer;
+  color: var(--muted);
+  margin: 0.4rem 0;
+  transition: color var(--fast) var(--ease);
+}
+details > summary:hover,
+details[open] > summary {
+  color: var(--text);
+}
+.grid2,
+.grid4 {
+  display: grid;
+  gap: 0 1rem;
+}
+.grid2 {
+  grid-template-columns: repeat(auto-fit, minmax(200px, 1fr));
+}
+.provider-keys {
+  align-items: start;
+}
+.input-row {
+  display: flex;
+  gap: 0.4rem;
+}
+.input-row input {
+  flex: 1;
+  min-width: 0;
+}
+.grid4 {
+  grid-template-columns: repeat(auto-fit, minmax(150px, 1fr));
+}
+.button-row {
+  display: flex;
+  flex-wrap: wrap;
+  gap: 0.5rem;
+  margin: 0.6rem 0;
+}
+.form-error {
+  color: var(--bad);
+}
+.stack > * {
+  margin-bottom: 0.6rem;
+}
+kbd {
+  color: var(--muted);
+  background: var(--field);
+  border-radius: 9px;
+  padding: 0.08rem 0.4rem;
+  font-size: 0.75rem;
+}
+.dot {
+  display: inline-block;
+  width: 0.55rem;
+  height: 0.55rem;
+  margin-right: 0.45rem;
+  border-radius: 50%;
+  background: var(--idle);
+  flex: none;
+}
+.dot.busy {
+  background: var(--accent);
+  animation: pulse 1.4s ease-in-out infinite;
+}
+
+/* ----- Colour swatches and icon grid (Library, node colour) ----- */
+.swatch {
+  width: 22px;
+  height: 22px;
+  padding: 0;
+  border-radius: 50%;
+  background: var(--background);
+}
+.swatch:hover:not(:disabled) {
+  transform: none;
+}
+.swatch:active:not(:disabled) {
+  transform: none;
+}
+.swatch.active {
+  box-shadow: 0 0 0 2px var(--surface), 0 0 0 4px var(--accent);
+}
+.icon-grid {
+  display: grid;
+  grid-template-columns: repeat(auto-fill, minmax(36px, 1fr));
+  gap: 0.3rem;
+}
+.custom-icon {
+  width: 16px;
+  height: 16px;
+  object-fit: contain;
+  flex: none;
+}
+.icon-grid button {
+  display: inline-grid;
+  place-items: center;
+  height: 36px;
+  padding: 0;
+}
+.icon-grid button.active {
+  background: var(--current);
+  color: var(--accent);
+}
+/* An action that adds something (Upload your own, Add input): a wide outlined button with its own caption, never mistaken for an icon or a field. */
+button.dashed-action {
+  display: flex;
+  align-items: center;
+  justify-content: center;
+  gap: 0.5rem;
+  width: 100%;
+  height: 36px;
+  padding: 0 0.8rem;
+  background: transparent;
+  color: var(--muted);
+  font-size: 0.85rem;
+  box-shadow: inset 0 0 0 1.5px color-mix(in srgb, var(--text) 26%, transparent);
+}
+button.dashed-action .custom-icon {
+  width: 20px;
+  height: 20px;
+}
+button.dashed-action:hover:not(:disabled) {
+  background: var(--hover);
+  color: var(--text);
+}
+button.dashed-action.active {
+  background: var(--current);
+  color: var(--text);
+  box-shadow: inset 0 0 0 1.5px var(--accent);
+}
+/* In the icon grid it takes the whole last row. */
+.icon-grid button.dashed-action {
+  grid-column: 1 / -1;
+  margin-top: 0.3rem;
+}
+
+/* The open / selected item stays distinct from hover, also while the pointer is on it (`body` outranks the per-page hover rules). */
+body button.active:not(:disabled),
+body button.active:hover:not(:disabled),
+body button[aria-selected='true']:not(:disabled),
+body button[aria-selected='true']:hover:not(:disabled) {
+  background: var(--current);
+}
+body .side-tabs button.active:hover:not(:disabled),
+body .selection-tools button.active:hover:not(:disabled),
+body .icon-grid button.active:not(.dashed-action):hover:not(:disabled) {
+  color: var(--accent);
+}

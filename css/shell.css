@@ -1,0 +1,651 @@
+/* App shell: sidebar, top strip with tabs, page frame, panel resizers. */
+
+/* ----- Sidebar ----- */
+#sidebar {
+  position: relative;
+  z-index: 2;
+  flex: none;
+  width: var(--sidebar-width, 232px);
+  display: flex;
+  flex-direction: column;
+  gap: 0.2rem;
+  padding: 1rem 0.65rem;
+  background: none;
+  overflow: clip;
+  overflow-clip-margin: 8px; /* the resize handle sits just outside */
+  transition:
+    width var(--slow) var(--ease),
+    padding var(--slow) var(--ease),
+    opacity var(--base) var(--ease);
+}
+#sidebar svg {
+  flex-shrink: 0;
+}
+.sidebar-dragging #sidebar,
+.sidebar-dragging #sidebar * {
+  transition: none !important;
+}
+.sidebar-hidden #sidebar {
+  width: 56px;
+  padding: 1rem 0.4rem;
+}
+.sidebar-will-collapse #sidebar {
+  opacity: 0.5;
+}
+.brand {
+  display: flex;
+  align-items: center;
+  gap: 0.65rem;
+  box-sizing: border-box;
+  height: 48px;
+  padding: 0.2rem 0.5rem 1.2rem;
+  font-size: 1.08rem;
+  font-weight: 740;
+  letter-spacing: -0.018em;
+  text-decoration: none;
+  white-space: nowrap;
+  transition: opacity var(--fast) var(--ease);
+}
+.brand:hover {
+  opacity: 0.8;
+}
+.brand-mark {
+  width: 24px;
+  height: 24px;
+  border-radius: 12px;
+  background: linear-gradient(140deg, var(--accent) 0 48%, color-mix(in srgb, var(--accent) 35%, #3f6bff) 48%);
+}
+
+/* Sections: Projects and Library above, Settings and API below; no lists inside, those live in the second panel. */
+.sidebar-top a,
+.sidebar-footer a {
+  display: flex;
+  align-items: center;
+  gap: 0.55rem;
+  height: 36px; /* the same folded and unfolded */
+  padding: 0 0.6rem;
+  border-radius: var(--theme-navigation-radius, 15px);
+  color: var(--theme-navigation-text, color-mix(in srgb, var(--text) 82%, var(--background)));
+  text-decoration: none;
+  white-space: nowrap;
+  overflow: hidden;
+  transition:
+    background-color var(--fast) var(--ease),
+    color var(--fast) var(--ease),
+    transform var(--fast) var(--ease);
+}
+.sidebar-top a:hover,
+.sidebar-footer a:hover {
+  background: var(--theme-navigation-hover, var(--hover));
+  color: var(--text);
+}
+.sidebar-top a:active,
+.sidebar-footer a:active {
+  background: var(--press);
+}
+.sidebar-top a.active,
+.sidebar-footer a.active {
+  background: var(--theme-navigation-selected, var(--current));
+  color: var(--text);
+}
+.sidebar-top,
+.sidebar-footer {
+  display: grid;
+  gap: 1px;
+}
+.sidebar-footer {
+  margin-top: auto;
+  padding-top: 0.6rem;
+}
+.sidebar-hidden .sidebar-top a > span,
+.sidebar-hidden .sidebar-footer a > span,
+.sidebar-hidden .brand > span:last-child {
+  display: none;
+}
+.sidebar-hidden .brand,
+.sidebar-hidden .sidebar-top a,
+.sidebar-hidden .sidebar-footer a {
+  justify-content: center;
+  padding-inline: 0;
+}
+
+/* ----- The second panel: a tree of rows for the open section (projects, Library kinds, settings sections, API calls) ----- */
+#subnav {
+  position: relative;
+  z-index: 1; /* under the sidebar, whose resize handle reaches over this edge */
+  flex: none;
+  display: flex;
+  flex-direction: column;
+  width: var(--subnav-width, 232px);
+  padding: 1rem 0.65rem 0.65rem;
+  background: var(--dither), var(--theme-panels-secondary, var(--glass-card));
+  border-radius: var(--theme-panels-radius, 21px);
+  /* No backdrop blur: the panel lies on the plain page background, where a blur shows nothing, but it would smear the dither away and repaint the whole panel whenever a colour changes. */
+  transition:
+    width var(--slow) var(--ease),
+    padding var(--slow) var(--ease);
+}
+.resizing-panel #subnav {
+  transition: none;
+}
+.subnav-head {
+  display: flex;
+  align-items: center;
+  justify-content: space-between;
+  flex: none;
+  height: 28px;
+  margin: 0.1rem 0 1.1rem;
+  padding: 0 0.1rem 0 0.6rem;
+}
+.subnav-head h2 {
+  margin: 0;
+  color: var(--muted);
+  font-size: 0.72rem;
+  font-weight: 650;
+  letter-spacing: 0.07em;
+  text-transform: uppercase;
+}
+/* The list scrolls in its box; the sliding highlight (.nav-pill) lives in the box too, outside the list, so it survives the list being redrawn. */
+#subnav-body {
+  flex: 1;
+  min-height: 0;
+  overflow: auto;
+}
+#subnav-list {
+  display: grid;
+  align-content: start;
+  gap: 0.6rem;
+}
+#subnav-list.enter {
+  animation: fade-in var(--base) var(--ease);
+}
+.subnav-tree,
+.subnav-branch > div {
+  display: grid;
+  gap: 1px;
+}
+/* One look for every row: a link with its chevron, count and menu; a tab that switches the page in place; a call; a folder of calls. */
+.subnav-row {
+  --muted: var(--theme-navigation-text, color-mix(in srgb, var(--text) 58%, var(--background)));
+  position: relative;
+  display: flex;
+  align-items: center;
+  justify-content: flex-start;
+  width: 100%;
+  min-width: 0;
+  height: 34px;
+  margin: 0;
+  padding: 0 0.3rem 0 0.4rem;
+  border-radius: var(--theme-navigation-radius, 15px);
+  background: transparent;
+  color: var(--muted);
+  font-size: 0.92rem;
+  text-align: left;
+  white-space: nowrap;
+  overflow: hidden;
+  transition:
+    background-color var(--fast) var(--ease),
+    color var(--fast) var(--ease),
+    transform var(--fast) var(--ease);
+}
+.subnav-row svg {
+  flex: none;
+  width: 16px;
+  height: 16px;
+}
+.subnav-row > a,
+.subnav-static,
+.subnav-name {
+  display: flex;
+  flex: 1;
+  align-items: center;
+  justify-content: flex-start;
+  gap: 0.55rem;
+  min-width: 0;
+  min-height: 34px;
+  padding: 0 0.3rem;
+  border-radius: 0;
+  background: none;
+  color: inherit;
+  font: inherit;
+  text-align: left;
+  text-decoration: none;
+}
+.subnav-row > a > span {
+  min-width: 0;
+  overflow: hidden;
+  text-overflow: ellipsis;
+}
+.subnav-static > span {
+  overflow: hidden;
+  text-overflow: ellipsis;
+}
+.subnav-row:hover,
+.subnav-row > button:hover:not(:disabled) {
+  background: var(--theme-navigation-hover, var(--hover));
+  color: var(--text);
+  transform: none;
+  box-shadow: none;
+}
+.subnav-row > button:hover:not(:disabled) {
+  background: none; /* the row itself is lit */
+}
+.subnav-row:active:not(:disabled) {
+  background: var(--theme-navigation-hover, var(--hover));
+  background: var(--press);
+}
+.subnav-row.active,
+.subnav-row.active:hover {
+  background: var(--theme-navigation-selected, var(--current));
+  color: var(--text);
+}
+/* The rows above the open one are lit a little: where it is in the tree. */
+.subnav-group:has(.subnav-row.active) > .subnav-row:not(.active) {
+  color: color-mix(in srgb, var(--text) 78%, var(--muted));
+}
+/* A tab (the sections of Settings) is the row itself. */
+.subnav-row[role='tab'] {
+  gap: 0.55rem;
+  padding: 0 0.6rem;
+  cursor: pointer;
+}
+.subnav-toggle {
+  flex: none;
+  width: 22px;
+  height: 22px;
+  min-width: 0;
+  padding: 0;
+  border-radius: 9px;
+  background: none;
+  color: inherit;
+}
+.subnav-toggle svg {
+  width: 12px;
+  height: 12px;
+  transition: transform var(--base) var(--ease);
+}
+.subnav-group.open > .subnav-row > .subnav-toggle svg {
+  transform: rotate(90deg);
+}
+.subnav-pad {
+  flex: none;
+  width: 22px;
+}
+.subnav-name {
+  cursor: pointer;
+}
+.subnav-name code {
+  color: var(--text);
+}
+/* The "⋯" menu button of a row shows while the row is hovered. */
+.subnav-row .subnav-menu {
+  position: absolute;
+  right: 0.25rem;
+  width: 26px;
+  height: 26px;
+  padding: 0;
+  opacity: 0;
+}
+.subnav-row:hover .subnav-menu,
+.subnav-menu:focus-visible {
+  opacity: 1;
+}
+@media (hover: none) {
+  .subnav-row .subnav-menu {
+    opacity: 1;
+  }
+}
+/* Dropping a Custom Node on a group (or on "Nodes") moves it there. */
+.subnav-row.drop-over {
+  background: var(--soft);
+}
+.subnav-row[draggable='true'] {
+  cursor: grab;
+}
+/* A branch unfolds by growing from zero height (and a closed one cannot be reached by keyboard). */
+.subnav-branch {
+  display: grid;
+  grid-template-rows: 0fr;
+  margin-left: 14px;
+  visibility: hidden;
+  transition:
+    grid-template-rows var(--base) var(--ease),
+    visibility 0s var(--base);
+}
+.subnav-branch > div {
+  min-height: 0;
+  overflow: hidden;
+}
+.subnav-group.open > .subnav-branch {
+  grid-template-rows: 1fr;
+  visibility: visible;
+  transition: grid-template-rows var(--base) var(--ease);
+}
+#subnav p {
+  padding: 0.5rem 0.6rem;
+}
+.subnav-branch p {
+  padding: 0.3rem 0.6rem;
+}
+/* API: the search stays at the top while the tree scrolls; calls hang below their folders. */
+#subnav-list > input[type='search'] {
+  position: sticky;
+  top: 0;
+  z-index: 1;
+}
+.subnav-call {
+  align-items: baseline;
+  gap: 0.4rem;
+  height: auto;
+  min-height: 34px;
+  flex-shrink: 0;
+  padding: 0.35rem 0.6rem;
+  font-size: 0.82rem;
+  white-space: normal;
+}
+.subnav-call .method {
+  width: 2.9rem;
+  font-size: 0.66rem;
+}
+.subnav-call > span:last-child {
+  min-width: 0;
+  overflow-wrap: anywhere;
+}
+.sidebar-top hr {
+  width: 100%;
+  margin: 0.5rem 0;
+  border: 0;
+  border-top: 1px solid var(--line);
+}
+.subnav-tree > .muted {
+  padding: 0 0.6rem;
+}
+
+/* ----- Main area ----- */
+main {
+  background: var(--theme-panels-content, transparent);
+  flex: 1;
+  min-width: 0;
+  display: flex;
+  flex-direction: column;
+  border-radius: var(--theme-panels-radius, 21px);
+  overflow: clip;
+}
+#topstrip {
+  display: flex;
+  align-items: center;
+  flex: none;
+  justify-content: flex-start;
+  min-height: 48px;
+  padding: 0 0.6rem;
+  gap: 0.3rem;
+}
+/* Search sits at the right end of the strip. */
+#topstrip > .search-button {
+  flex: none;
+  margin-left: auto;
+}
+/* The tabs of the open editors sit at the top, left of the search; they scroll when there are many. */
+#topstrip > .tabs-bar {
+  flex: 0 1 auto;
+  min-width: 0;
+}
+.search-results h3 {
+  margin: 0.7rem 0.2rem 0.25rem;
+  color: var(--muted);
+  font-size: 0.72rem;
+  font-weight: 650;
+  letter-spacing: 0.07em;
+  text-transform: uppercase;
+}
+.search-results h3:first-child {
+  margin-top: 0;
+}
+.search-button {
+  color: var(--muted);
+  border-radius: 999px;
+  padding: 0.42rem 0.7rem 0.42rem 0.9rem;
+}
+.search-button:hover:not(:disabled) {
+  color: var(--text);
+}
+.search-button kbd {
+  margin-left: 0.2rem;
+  background: var(--field);
+}
+#view {
+  flex: 1;
+  min-height: 0;
+  overflow: auto;
+  scrollbar-gutter: stable;
+}
+#view.view-workflow {
+  overflow: hidden;
+  scrollbar-gutter: auto;
+}
+
+/* ----- Tabs of open editors ----- */
+.tabs-bar {
+  position: relative;
+  display: flex;
+  align-items: center;
+  flex: 1;
+  min-width: 0;
+  gap: 2px;
+  overflow-x: auto;
+  scrollbar-width: none;
+}
+.tabs-bar::-webkit-scrollbar {
+  display: none;
+}
+.tab {
+  touch-action: pan-y;
+  user-select: none;
+  position: relative;
+  display: flex;
+  align-items: center;
+  flex: none;
+  gap: 0.45rem;
+  max-width: 220px;
+  min-height: 32px;
+  padding: 0 0.8rem;
+  border-radius: 15px;
+  color: var(--muted);
+  text-decoration: none;
+  white-space: nowrap;
+  overflow: hidden;
+  transition:
+    background-color var(--fast) var(--ease),
+    color var(--fast) var(--ease),
+    transform var(--fast) var(--ease),
+    max-width var(--slow) var(--ease),
+    padding var(--slow) var(--ease),
+    margin var(--slow) var(--ease),
+    opacity var(--base) var(--ease);
+}
+.tab.sorting {
+  z-index: 3;
+  cursor: grabbing;
+  background: var(--field);
+  color: var(--text);
+  box-shadow: 0 6px 18px rgb(0 0 0 / 0.35);
+  transition: none;
+}
+/* A tab being closed: transparent, then narrower and narrower, until the neighbours have taken its place. */
+.tab.closing {
+  max-width: 0 !important;
+  padding-inline: 0;
+  margin-right: -2px;
+  opacity: 0;
+}
+.tab:hover {
+  color: var(--text);
+  background: var(--theme-navigation-hover, var(--hover));
+}
+.tab:active {
+  background: var(--press);
+}
+.tab.active {
+  color: var(--text);
+  background: var(--field);
+}
+.tab.active:hover {
+  background: var(--theme-navigation-hover, var(--hover));
+}
+.tab svg {
+  flex: none;
+  width: 14px;
+  height: 14px;
+}
+/* Only the open tab shows the project name; the close / pin button of the others slides in on hover. */
+.tab .tab-sub {
+  max-width: 0;
+  margin-left: -0.45rem;
+  font-size: 0.75rem;
+  opacity: 0;
+  transition:
+    max-width var(--slow) var(--ease),
+    margin var(--slow) var(--ease),
+    opacity var(--base) var(--ease);
+}
+.tab.active .tab-sub {
+  max-width: 140px;
+  margin-left: 0;
+  opacity: 0.6;
+}
+.tab .tab-close,
+.tab .tab-pin {
+  flex: none;
+  width: 20px;
+  min-width: 20px;
+  margin: 0 -0.4rem 0 0;
+  padding: 0;
+  overflow: hidden;
+  opacity: 0;
+  transition:
+    width var(--base) var(--ease),
+    margin var(--base) var(--ease),
+    opacity var(--fast) var(--ease),
+    background-color var(--fast) var(--ease);
+}
+.tab:hover .tab-close,
+.tab:hover .tab-pin,
+.tab.active .tab-close,
+.tab.active .tab-pin,
+.tab .tab-close:focus-visible {
+  width: 20px;
+  margin: 0 -0.4rem 0 0;
+  opacity: 1;
+}
+.tab .tab-close {
+  height: 20px;
+}
+.tab-close svg,
+.tab-pin svg {
+  width: 12px;
+  height: 12px;
+}
+.tab .tab-pin {
+  display: inline-grid;
+  place-items: center;
+  height: 20px;
+}
+.tab:hover .tab-pin,
+.tab.active .tab-pin {
+  opacity: 0.7;
+}
+
+/* ----- Resizable panel boundaries (sidebar and Properties) ----- */
+.panel-resize {
+  position: absolute;
+  top: 0;
+  bottom: 0;
+  width: 8px;
+  z-index: 20;
+  cursor: col-resize;
+  touch-action: none;
+}
+.panel-resize.edge-right {
+  right: -8px;
+}
+.panel-resize.edge-left {
+  left: -8px;
+}
+.panel-resize::after {
+  content: '';
+  position: absolute;
+  top: 0;
+  bottom: 0;
+  left: 50%;
+  width: 2px;
+  margin-left: -1px;
+  border-radius: 1px;
+  background: var(--ring);
+  opacity: 0;
+  transition: opacity var(--fast) var(--ease);
+}
+.panel-resize:hover::after,
+.panel-resize:focus-visible::after,
+.resizing-panel .panel-resize::after {
+  opacity: 1;
+}
+.panel-resize:focus-visible {
+  outline: none;
+}
+.resizing-panel,
+.resizing-panel * {
+  cursor: col-resize !important;
+  user-select: none !important;
+}
+.resizing-panel .editor {
+  transition: none;
+}
+.collapse-ready {
+  opacity: 0.5;
+}
+
+/* Second panel folded to icons: a group shows only its own row (the highlight sits on it when the open row is inside). */
+.subnav-collapsed #subnav {
+  width: 56px;
+  padding-inline: 0.4rem;
+}
+.subnav-collapsed .subnav-head h2,
+.subnav-collapsed #subnav-actions,
+.subnav-collapsed .subnav-row > span,
+.subnav-collapsed .subnav-row > a > span,
+.subnav-collapsed .subnav-static > span,
+.subnav-collapsed .subnav-name > :not(svg),
+.subnav-collapsed .subnav-menu,
+.subnav-collapsed .subnav-toggle,
+.subnav-collapsed .subnav-pad,
+.subnav-collapsed .subnav-branch,
+.subnav-collapsed #subnav-list > input,
+.subnav-collapsed .subnav-tree > .muted,
+.subnav-collapsed #subnav p {
+  display: none;
+}
+.subnav-collapsed .subnav-row {
+  justify-content: center;
+  padding-inline: 0;
+}
+.subnav-collapsed .subnav-row > a,
+.subnav-collapsed .subnav-static,
+.subnav-collapsed .subnav-name {
+  justify-content: center;
+  padding: 0;
+}
+.subnav-collapsed .subnav-head {
+  justify-content: center;
+  padding: 0;
+}
+@media (max-width: 700px) {
+  #subnav {
+    width: 176px;
+  }
+}
+@media (max-width: 900px) {
+  .search-button span,
+  .search-button kbd {
+    display: none;
+  }
+}

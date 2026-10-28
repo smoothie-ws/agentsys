@@ -1,0 +1,1358 @@
+/* The workflow editor: toolbar, canvas, wires, nodes, groups, sockets, minimap, code editor.
+   Positions are inline transforms set by JS, so nothing here may transition `transform` on nodes or frames. */
+
+/* ----- Layout ----- */
+.editor {
+  position: relative;
+  display: grid;
+  grid-template-columns: minmax(0, 1fr) var(--side-width, 380px);
+  grid-template-rows: minmax(0, 1fr);
+  height: 100%;
+  transition: grid-template-columns var(--slow) var(--ease);
+}
+.editor:has(.side[data-collapsed='true']) {
+  grid-template-columns: minmax(0, 1fr) calc(56px + 1.2rem);
+}
+.editor.opening,
+.editor.opening .side,
+.editor.opening .side-content {
+  transition: none;
+}
+.toolbar {
+  position: absolute;
+  top: 12px;
+  left: 12px;
+  z-index: 20;
+  display: flex;
+  align-items: center;
+  gap: 0.25rem;
+  max-width: calc(100% - 24px);
+  padding: 0.3rem;
+  border-radius: 21px;
+  background: var(--float);
+  backdrop-filter: var(--blur);
+  box-shadow: var(--shadow);
+  cursor: default;
+}
+.toolbar button {
+  flex: none;
+  min-height: 32px;
+}
+.toolbar .icon {
+  width: 32px;
+  padding: 0;
+}
+#run-summary {
+  display: flex;
+  align-items: center;
+  gap: 0.4rem;
+  min-width: 0;
+  padding: 0 0.5rem;
+  color: var(--muted);
+  font-size: 0.85rem;
+}
+#run-summary:empty {
+  display: none;
+}
+.toolbar .run {
+  background: var(--theme-buttons-primary, var(--accent));
+  color: var(--theme-buttons-primary-text, var(--on-accent));
+  font-weight: 600;
+}
+.toolbar .run.stop {
+  background: var(--bad);
+  color: #fff;
+}
+.toolbar .run.stop:hover:not(:disabled) {
+  background: color-mix(in srgb, var(--bad) 86%, white);
+}
+.toolbar .run:hover:not(:disabled) {
+  background: color-mix(in srgb, var(--theme-buttons-primary, var(--accent)) 86%, white);
+}
+.toolbar .run:active:not(:disabled) {
+  background: color-mix(in srgb, var(--theme-buttons-primary, var(--accent)) 88%, black);
+}
+
+/* ----- Canvas ----- */
+.canvas {
+  --sw: 1.25px;
+  position: relative;
+  grid-column: 1;
+  grid-row: 1;
+  min-width: 0;
+  margin: 0 0 0.6rem 0.6rem;
+  border-radius: 30px;
+  overflow: hidden;
+  outline: none;
+  background-color: var(--theme-canvas-background, var(--canvas-bg));
+  cursor: grab;
+  touch-action: none;
+}
+.canvas.panning,
+.canvas.panning * {
+  cursor: grabbing;
+}
+.canvas.wiring,
+.canvas.marquee-armed,
+.canvas.marquee-armed * {
+  cursor: crosshair;
+}
+.world {
+  position: absolute;
+  left: 0;
+  top: 0;
+  transform-origin: 0 0;
+}
+.marquee {
+  position: absolute;
+  border-radius: 6px;
+  background: var(--theme-canvas-selection, color-mix(in srgb, var(--accent) 12%, transparent));
+  box-shadow: inset 0 0 0 1px color-mix(in srgb, var(--accent) 45%, transparent);
+  pointer-events: none;
+}
+.canvas-empty {
+  position: absolute;
+  inset: 0;
+  display: grid;
+  place-content: center;
+  max-width: 420px;
+  margin: auto;
+  color: var(--muted);
+  text-align: center;
+  pointer-events: none;
+}
+.canvas-empty h2 {
+  color: var(--text);
+  font-size: 1.3rem;
+}
+.canvas-empty button {
+  justify-self: center;
+  pointer-events: auto;
+}
+.unparent-zone {
+  position: absolute;
+  top: 0;
+  left: 50%;
+  z-index: 30;
+  padding: 0.55rem 1.4rem;
+  border-radius: 999px;
+  background:
+    repeating-linear-gradient(
+      135deg,
+      var(--hatch, color-mix(in srgb, var(--text) 16%, transparent)) 0 1.5px,
+      transparent 1.5px 6px
+    ),
+    var(--float);
+  backdrop-filter: var(--blur);
+  color: var(--text);
+  font-size: 0.82rem;
+  pointer-events: none;
+  opacity: 0;
+  transform: translate(-50%, calc(-100% + 4px));
+  white-space: nowrap;
+  transition:
+    opacity var(--base) var(--ease),
+    transform var(--base) var(--ease),
+    background-color var(--fast) var(--ease),
+    color var(--fast) var(--ease);
+}
+.unparent-zone.show {
+  opacity: 1;
+  transform: translate(-50%, calc(-100% - 8px));
+}
+.unparent-zone.active {
+  --hatch: color-mix(in srgb, var(--accent) 45%, transparent);
+}
+.selection-tools {
+  position: absolute;
+  z-index: 10;
+  display: flex;
+  gap: 0.2rem;
+  padding: 0.25rem;
+  border-radius: 21px;
+  background: var(--float);
+  backdrop-filter: var(--blur);
+  box-shadow: var(--shadow);
+  transform: translateX(-50%);
+}
+.selection-tools button {
+  width: 30px;
+  height: 30px;
+  padding: 0;
+}
+.selection-tools button.active {
+  background: var(--current);
+  color: var(--accent);
+}
+.map {
+  position: absolute;
+  left: 12px;
+  bottom: 12px;
+  padding: 6px;
+  border-radius: 24px;
+  background: var(--float);
+  backdrop-filter: var(--blur);
+  box-shadow: var(--shadow);
+}
+#minimap {
+  display: block;
+  border-radius: 15px;
+  cursor: pointer;
+}
+/* The minimap folds away smoothly (the grid row shrinks to nothing); the zoom row stays. */
+.map-view {
+  display: grid;
+  grid-template-rows: 1fr;
+  transition:
+    grid-template-rows var(--base) var(--ease),
+    opacity var(--base) var(--ease),
+    margin var(--base) var(--ease);
+}
+.map-view > #minimap {
+  min-height: 0;
+  overflow: hidden;
+}
+.map.collapsed .map-view {
+  grid-template-rows: 0fr;
+  opacity: 0;
+  margin-bottom: -2px;
+  pointer-events: none;
+}
+.map-toggle svg {
+  transform: rotate(90deg);
+  transition: transform var(--base) var(--ease);
+}
+.map.collapsed .map-toggle svg {
+  transform: rotate(-90deg);
+}
+.zoom {
+  display: flex;
+  align-items: center;
+  justify-content: space-between;
+  padding-top: 2px;
+  color: var(--muted);
+  font-size: 0.8rem;
+}
+.zoom button {
+  padding: 0.2rem 0.45rem;
+}
+
+/* ----- Wires and sockets ----- */
+.wires {
+  position: absolute;
+  left: 0;
+  top: 0;
+  width: 1px;
+  height: 1px;
+  overflow: visible;
+}
+.wire {
+  fill: none;
+  stroke: var(--tc, var(--theme-canvas-wire, var(--idle)));
+  stroke-width: var(--wire-width, 2);
+  stroke-linecap: round;
+  opacity: 0.8;
+  pointer-events: none;
+  transition:
+    stroke var(--fast) var(--ease),
+    stroke-width var(--fast) var(--ease),
+    opacity var(--fast) var(--ease);
+}
+.wire.satisfied {
+  opacity: 1;
+}
+.wire.related,
+.wire.selected {
+  stroke: var(--accent);
+  stroke-width: calc(var(--wire-width, 2) * 1.2);
+  opacity: 1;
+}
+.wire.invalid {
+  stroke: var(--bad);
+  stroke-dasharray: 4 3;
+}
+.wire.preview,
+.wire.insert {
+  stroke: var(--accent);
+  stroke-dasharray: 5 4;
+  opacity: 1;
+}
+.wire.interface-wire {
+  stroke-width: calc(var(--wire-width, 2) * 0.75);
+  opacity: 0.45;
+}
+.hit {
+  fill: none;
+  stroke: transparent;
+  stroke-width: 14;
+  pointer-events: stroke;
+  cursor: pointer;
+}
+.hit:hover + .wire:not(.preview) {
+  stroke: var(--accent);
+  stroke-width: calc(var(--wire-width, 2) * 1.5);
+  opacity: 1;
+}
+.sock {
+  position: absolute;
+  z-index: 5;
+  width: 12px;
+  height: 12px;
+  border-radius: 50%;
+  background: var(--surface);
+  box-shadow: inset 0 0 0 2px var(--tc, var(--idle));
+  cursor: crosshair;
+  transition:
+    transform var(--fast) var(--ease),
+    background-color var(--fast) var(--ease),
+    box-shadow var(--fast) var(--ease);
+}
+.port.connected .sock {
+  background: var(--tc, var(--idle));
+}
+.sock:hover,
+.drop-target .sock,
+.drop-target.sock {
+  background: var(--accent);
+  box-shadow: inset 0 0 0 2px var(--accent);
+}
+.sock:hover {
+  box-shadow: 0 0 0 3px var(--ring), inset 0 0 0 2px var(--accent);
+}
+.sock:active {
+  background: var(--text);
+}
+/* A signal carries no data, only "now": its sockets are rounded triangles (an input points left, an output right), its wires dashed, all white. */
+.signal {
+  --tc: var(--signal, #fff);
+}
+.port.signal .sock,
+.sock.signal {
+  --tri: url("data:image/svg+xml,%3Csvg xmlns='http://www.w3.org/2000/svg' viewBox='0 0 12 12'%3E%3Cpath d='M9.5 2.2L2 6l7.5 3.8Z' fill='%23000' stroke='%23000' stroke-width='3' stroke-linejoin='round'/%3E%3C/svg%3E");
+  border-radius: 0;
+  box-shadow: none;
+  background: var(--tc);
+  -webkit-mask: var(--tri) center / 100% 100% no-repeat;
+  mask: var(--tri) center / 100% 100% no-repeat;
+}
+.port.signal .sock[data-dir='out'],
+.sock.signal[data-dir='out'] {
+  --tri: url("data:image/svg+xml,%3Csvg xmlns='http://www.w3.org/2000/svg' viewBox='0 0 12 12'%3E%3Cpath d='M2.5 2.2L10 6l-7.5 3.8Z' fill='%23000' stroke='%23000' stroke-width='3' stroke-linejoin='round'/%3E%3C/svg%3E");
+}
+/* Not connected: the triangle is hollow. */
+.port.signal:not(.connected) .sock::after {
+  content: '';
+  position: absolute;
+  inset: 2px 3px;
+  background: var(--surface);
+  -webkit-mask: var(--tri) center / 100% 100% no-repeat;
+  mask: var(--tri) center / 100% 100% no-repeat;
+}
+/* A frame port has one socket for both the outside wire and the inside binding: only the outer one is drawn, so the port has one triangle. */
+.frame-ports .port.signal .sock.internal {
+  background: none;
+  -webkit-mask: none;
+  mask: none;
+}
+.frame-ports .port.signal .sock.internal::after {
+  display: none;
+}
+.wire.signal {
+  stroke-dasharray: 7 4;
+}
+
+/* ----- Nodes ----- */
+.node {
+  color: var(--theme-nodes-text, var(--text));
+  --node-shadow: inset 0 0 0 1px var(--theme-nodes-outline, transparent), var(--card-shadow);
+  position: absolute;
+  left: 0;
+  top: 0;
+  width: 236px;
+  padding: 0.65rem 0.75rem 0.7rem;
+  border-radius: var(--node-radius, 16px);
+  background: var(--theme-nodes-background, color-mix(in srgb, var(--node-color, var(--text)) 6%, var(--glass-card)));
+  backdrop-filter: var(--blur-sm);
+  box-shadow: var(--node-shadow);
+  cursor: default;
+  user-select: none;
+  transition:
+    background-color var(--base) var(--ease),
+    box-shadow var(--base) var(--ease),
+    opacity var(--base) var(--ease);
+}
+.node:hover:not(.selected) {
+  background: var(--theme-nodes-hover, color-mix(in srgb, var(--node-color, var(--text)) 10%, var(--glass-card)));
+}
+.node.k-complex {
+  width: 250px;
+  background: var(--theme-nodes-background, color-mix(in srgb, var(--node-color, var(--accent)) 12%, var(--glass-card)));
+}
+.node.k-complex:hover:not(.selected) {
+  background: var(--theme-nodes-hover, color-mix(in srgb, var(--node-color, var(--accent)) 16%, var(--glass-card)));
+}
+.node.selected,
+.node.reroute.selected {
+  box-shadow:
+    0 0 0 calc(var(--sw) * 1.6) var(--theme-nodes-selected-outline, var(--accent)),
+    var(--node-shadow);
+}
+.node.drop-target {
+  box-shadow:
+    0 0 0 calc(var(--sw) * 2) var(--accent),
+    var(--node-shadow);
+}
+.node.invalid {
+  box-shadow:
+    0 0 0 var(--sw) var(--bad),
+    var(--node-shadow);
+}
+.run-state {
+  flex: none;
+  width: 16px;
+  height: 16px;
+  box-sizing: border-box;
+  display: grid;
+  place-items: center;
+  border-radius: 50%;
+}
+.run-state.running {
+  border: 2px solid color-mix(in srgb, var(--accent) 25%, transparent);
+  border-top-color: var(--accent);
+  animation: run-spin 0.8s linear infinite;
+}
+.run-state.completed,
+.run-state.failed {
+  color: #fff;
+}
+.run-state.skipped {
+  color: var(--muted);
+  background: color-mix(in srgb, var(--muted) 22%, transparent);
+}
+.run-state.completed {
+  background: var(--ok);
+}
+.run-state.failed {
+  background: var(--bad);
+}
+.run-state svg {
+  width: 10px;
+  height: 10px;
+}
+@keyframes run-spin {
+  to {
+    transform: rotate(360deg);
+  }
+}
+/* The graph is read-only while it runs: its fields and the nodes say so. */
+.canvas.busy .node {
+  cursor: not-allowed;
+}
+.editor.running .side :is(input, textarea, select) {
+  opacity: 0.55;
+  pointer-events: none;
+}
+.node header {
+  display: flex;
+  align-items: center;
+  gap: 0.45rem;
+  min-height: 24px;
+  margin-bottom: 0.35rem;
+}
+.node .title {
+  font-weight: 640;
+  flex: 1;
+  overflow: hidden;
+  text-overflow: ellipsis;
+  white-space: nowrap;
+}
+.node .pinned svg,
+.node .switched-off svg,
+.head-icon svg {
+  width: 13px;
+  height: 13px;
+  color: var(--muted);
+}
+.node.off {
+  opacity: 0.5;
+}
+.node.off .title {
+  text-decoration: line-through;
+  text-decoration-thickness: 1px;
+}
+.node .switched-off {
+  display: inline-grid;
+}
+.head-icon {
+  display: inline-grid;
+  place-items: center;
+}
+.node header button {
+  padding: 0.2rem;
+}
+.node .expand svg {
+  transform: rotate(90deg);
+}
+/* A node with a chosen colour: the colour fills only the header and the outline; the body keeps the normal node background. */
+.node.colored {
+  --node-shadow: inset 0 0 0 1.5px var(--node-color), var(--card-shadow);
+  background: var(--theme-nodes-background, color-mix(in srgb, var(--text) 6%, var(--glass-card)));
+}
+.node.colored.k-complex {
+  background: var(--theme-nodes-background, color-mix(in srgb, var(--accent) 12%, var(--glass-card)));
+}
+.node.colored:hover:not(.selected) {
+  background: var(--theme-nodes-hover, color-mix(in srgb, var(--text) 10%, var(--glass-card)));
+}
+.node.colored.k-complex:hover:not(.selected) {
+  background: var(--theme-nodes-hover, color-mix(in srgb, var(--accent) 16%, var(--glass-card)));
+}
+.node.colored > header {
+  --text: var(--node-ink);
+  --muted: color-mix(in srgb, var(--node-ink) 68%, var(--node-color));
+  --hover: color-mix(in srgb, var(--node-ink) 22%, transparent);
+  margin: -0.65rem -0.75rem 0.5rem;
+  padding: 0 0.75rem;
+  /* As high as two radii, so all four corners keep the node's own curve (a lower header would make the browser shrink them). */
+  box-sizing: border-box;
+  min-height: calc(var(--node-radius, 16px) * 2);
+  border-radius: var(--node-radius, 16px);
+  background: var(--node-color);
+  color: var(--node-ink);
+}
+.node.colored.folded > header {
+  margin: 0;
+  padding: 0 1.1rem;
+  border-radius: inherit;
+}
+/* The fold button slides in when the pointer is on the node (and stays on a folded one, pointing right). */
+.node .fold {
+  flex: none;
+  width: 0;
+  min-width: 0;
+  margin-left: -0.45rem;
+  padding: 0;
+  overflow: hidden;
+  opacity: 0;
+  transition:
+    width var(--base) var(--ease),
+    margin var(--base) var(--ease),
+    opacity var(--fast) var(--ease);
+}
+.node:hover .fold,
+.node.selected .fold,
+.node.folded .fold,
+.node .fold:focus-visible {
+  width: 20px;
+  margin-left: 0;
+  opacity: 1;
+}
+.node .fold svg {
+  width: 14px;
+  height: 14px;
+  transform: rotate(90deg);
+  transition: transform var(--base) var(--ease);
+}
+.node.folded .fold svg {
+  transform: none;
+}
+/* A folded node is a capsule: the header and only used contacts on its boundary. */
+.node.folded header {
+  height: 100%;
+  min-height: 0;
+  padding: 0 1.1rem;
+  margin-bottom: 0;
+}
+.node.folded {
+  display: block;
+  height: var(--fold-height, 56px);
+  min-height: 0;
+  padding: 0;
+  border-radius: 72px;
+}
+.node.folded::before {
+  content: '';
+  position: absolute;
+  inset: 0;
+  border: 1px solid color-mix(in srgb, var(--text) 15%, transparent);
+  border-radius: inherit;
+  pointer-events: none;
+}
+.node.folded .head-icon svg {
+  width: 18px;
+  height: 18px;
+}
+.node.folded .title {
+  font-size: 1.1rem;
+}
+.node.folded .folded-socket {
+  margin: 0;
+}
+.folded-socket[data-dir='in'] {
+  background: var(--tc, var(--idle));
+}
+.folded-socket[data-dir='out'] {
+  background: var(--surface);
+}
+.folded-socket:hover {
+  background: var(--accent);
+}
+/* A signal's triangle keeps its colour on a folded node (the output's surface fill would hide it). */
+.folded-socket.signal[data-dir='out'] {
+  background: var(--tc);
+}
+.folded-socket.signal:hover {
+  background: var(--accent);
+}
+.node .inline {
+  margin-top: 0.3rem;
+  font-size: 0.85rem;
+}
+.node textarea {
+  resize: vertical;
+}
+.preview-image {
+  display: block;
+  max-width: 100%;
+  max-height: 320px;
+  margin: 0.5rem 0 0;
+  border-radius: 15px;
+  background: var(--well);
+  object-fit: contain;
+  user-select: none;
+}
+.preview-text {
+  min-height: 2.4em;
+  max-height: 240px;
+  margin: 0.5rem 0 0;
+  padding: 0.5rem 0.65rem;
+  border-radius: 15px;
+  background: var(--well);
+  font: 0.8rem/1.5 var(--mono);
+  white-space: pre-wrap;
+  overflow: auto;
+  overflow-wrap: anywhere;
+  user-select: text;
+}
+
+/* Ports inside a node */
+.ports {
+  display: grid;
+  grid-template-columns: minmax(0, 1fr) minmax(0, 1fr) auto;
+  gap: 2px 0.4rem;
+  margin: 0.4rem -0.7rem 0.3rem;
+}
+.port {
+  position: relative;
+  display: grid;
+  grid-column: 1 / -1;
+  grid-template-columns: subgrid;
+  align-items: center;
+  min-height: 26px;
+  padding: 0 0.7rem;
+  border-radius: 12px;
+  font-size: 0.82rem;
+}
+.port.out {
+  text-align: right;
+}
+.port.out .port-name {
+  grid-column: 1 / -1;
+}
+.port .sock {
+  top: 50%;
+  margin-top: -6px;
+}
+.port.in .sock {
+  left: -7px;
+}
+.port.out .sock {
+  right: -7px;
+}
+.port .port-name {
+  grid-column: 1;
+  min-width: 0;
+  overflow: hidden;
+  text-overflow: ellipsis;
+  color: var(--muted);
+  white-space: nowrap;
+}
+.port.invalid .port-name {
+  color: var(--bad);
+}
+
+/* The control of a free input sits in its slot's row */
+.port.has-field {
+  padding-top: 2px;
+  padding-bottom: 2px;
+}
+.port .slot-field {
+  grid-column: 2 / -1;
+  width: 100%;
+  min-width: 0;
+  padding: 0.1rem 0.4rem;
+  font-size: 0.8rem;
+}
+/* The control sits on its own line under the name and the socket, across the whole row. */
+.port.has-field .port-name {
+  grid-column: 1 / -1;
+  grid-row: 1;
+  min-height: 22px;
+  line-height: 22px;
+}
+.port.has-field .slot-field,
+.port.has-field .code-editor {
+  grid-column: 1 / -1;
+  grid-row: 2;
+}
+.port.has-field .sock {
+  top: 13px;
+  margin-top: -6px;
+}
+.port textarea.slot-field {
+  resize: vertical;
+}
+/* A free input typed in as code: the editor spans the row; its text and its highlighted copy keep exactly the same metrics. */
+.port .code-editor {
+  grid-column: 2 / -1;
+  min-width: 0;
+  margin: 0;
+}
+.port .code-editor textarea.slot-field {
+  padding: 0.55rem 0.65rem;
+  font: 0.8rem/1.5 var(--mono);
+}
+.port input.slot-check {
+  width: auto;
+  justify-self: start;
+}
+
+/* ----- Widgets: what the code of a node put on it ----- */
+.widgets {
+  display: grid;
+  gap: 0.3rem;
+  padding: 0.2rem 0.7rem 0.5rem;
+}
+.widget {
+  display: grid;
+  grid-template-columns: minmax(0, 0.8fr) minmax(0, 1.2fr);
+  align-items: center;
+  gap: 0.4rem;
+  min-width: 0;
+  font-size: 0.8rem;
+}
+.widget.wide,
+.widget.bare {
+  grid-template-columns: minmax(0, 1fr);
+}
+.widget-label {
+  min-width: 0;
+  overflow: hidden;
+  text-overflow: ellipsis;
+  white-space: nowrap;
+  color: var(--muted);
+}
+.widget.wide .widget-label {
+  white-space: normal;
+}
+.widget input:not([type='checkbox']):not([type='range']),
+.widget select,
+.widget textarea {
+  width: 100%;
+  min-width: 0;
+  padding: 0.15rem 0.4rem;
+  font-size: 0.8rem;
+}
+.widget textarea {
+  resize: vertical;
+}
+.widget input[type='checkbox'] {
+  justify-self: start;
+}
+.widget input[type='range'] {
+  width: 100%;
+  height: 16px;
+  padding: 0;
+  background: none;
+  appearance: none;
+  accent-color: var(--accent);
+}
+.widget input[type='range']::-webkit-slider-runnable-track {
+  height: 4px;
+  border-radius: 2px;
+  background: color-mix(in srgb, var(--text) 22%, transparent);
+}
+.widget input[type='range']::-webkit-slider-thumb {
+  appearance: none;
+  width: 14px;
+  height: 14px;
+  margin-top: -5px;
+  border-radius: 50%;
+  border: 0;
+  background: var(--accent);
+}
+.widget input[type='range']::-moz-range-track {
+  height: 4px;
+  border-radius: 2px;
+  background: color-mix(in srgb, var(--text) 22%, transparent);
+}
+.widget input[type='range']::-moz-range-thumb {
+  width: 14px;
+  height: 14px;
+  border-radius: 50%;
+  border: 0;
+  background: var(--accent);
+}
+.range-row {
+  display: flex;
+  align-items: center;
+  gap: 0.4rem;
+  min-width: 0;
+}
+.widget output {
+  min-width: 1.5em;
+  text-align: right;
+  color: var(--muted);
+  font-size: 0.75rem;
+}
+.widget button {
+  width: 100%;
+}
+.widget-text {
+  overflow-wrap: anywhere;
+  white-space: pre-wrap;
+}
+.widget-html {
+  width: 100%;
+  border: 0;
+  border-radius: 9px;
+  background: var(--field);
+}
+
+/* Markdown widget (Note): the rendered text, small enough to sit on a node. */
+.md-view {
+  min-width: 0;
+  max-height: 24rem;
+  overflow: auto;
+  padding: 0.15rem 0.2rem;
+  border-radius: 6px;
+  font-size: 0.8rem;
+  line-height: 1.4;
+  overflow-wrap: anywhere;
+  cursor: text;
+}
+.md-view:focus-visible {
+  outline: 2px solid var(--accent, currentColor);
+}
+.md-view > :first-child {
+  margin-top: 0;
+}
+.md-view > :last-child {
+  margin-bottom: 0;
+}
+.md-view p,
+.md-view ul,
+.md-view ol,
+.md-view blockquote,
+.md-view pre,
+.md-view table {
+  margin: 0.35em 0;
+}
+.md-view h1,
+.md-view h2,
+.md-view h3,
+.md-view h4,
+.md-view h5,
+.md-view h6 {
+  margin: 0.5em 0 0.25em;
+  font-size: 0.9rem;
+  line-height: 1.25;
+}
+.md-view h1 {
+  font-size: 1.1rem;
+}
+.md-view h2 {
+  font-size: 1rem;
+}
+.md-view ul,
+.md-view ol {
+  padding-left: 1.2rem;
+}
+.md-view blockquote {
+  padding-left: 0.6rem;
+  border-left: 3px solid var(--line);
+  color: var(--muted);
+}
+.md-view code {
+  padding: 0 0.25em;
+  border-radius: 4px;
+  background: var(--field);
+  font-size: 0.75rem;
+}
+.md-view pre {
+  padding: 0.4rem 0.5rem;
+  overflow: auto;
+  border-radius: 6px;
+  background: var(--field);
+}
+.md-view pre code {
+  padding: 0;
+  background: none;
+}
+.md-view table {
+  border-collapse: collapse;
+}
+.md-view th,
+.md-view td {
+  padding: 0.15rem 0.4rem;
+  border: 1px solid var(--line);
+}
+.md-view hr {
+  border: 0;
+  border-top: 1px solid var(--line);
+}
+.md-view a {
+  color: inherit;
+  text-decoration: underline;
+}
+.md-view .md-task {
+  font-size: 0.9em;
+}
+.md-view .md-cut {
+  color: var(--muted);
+}
+
+/* Key hints along the bottom of the canvas, and the snap switch. */
+.hints {
+  position: absolute;
+  left: 236px;
+  right: 12px;
+  bottom: 12px;
+  display: flex;
+  align-items: center;
+  gap: 0.4rem;
+  min-width: 0;
+  height: 34px;
+  padding: 0 0.4rem;
+  font-size: 0.75rem;
+  pointer-events: none;
+}
+.hints.collapsed {
+  left: auto;
+}
+.hints > * {
+  pointer-events: auto;
+}
+.hint-list {
+  opacity: 0.55;
+  transition: opacity var(--fast) var(--ease);
+  display: flex;
+  flex: 1;
+  align-items: center;
+  gap: 1rem;
+  min-width: 0;
+  overflow: hidden;
+  white-space: nowrap;
+}
+.hint[hidden] {
+  display: none;
+}
+.hints:hover .hint-list {
+  opacity: 0.9;
+}
+.hint {
+  display: inline-flex;
+  align-items: center;
+  gap: 0.35rem;
+  color: var(--muted);
+}
+.hint.on {
+  color: var(--text);
+}
+.hints kbd {
+  color: var(--text);
+  font-weight: 600;
+}
+.hints .icon {
+  flex: none;
+  width: 26px;
+  height: 26px;
+  min-height: 0;
+  padding: 0;
+  background: none;
+  box-shadow: none;
+  color: var(--muted);
+}
+.hints .icon:hover:not(:disabled) {
+  background: none;
+  color: var(--text);
+}
+.hints .icon[aria-pressed='true'] {
+  color: var(--accent);
+}
+.hints .icon svg {
+  width: 17px;
+  height: 17px;
+}
+@media (max-width: 760px) {
+  .hints {
+    display: none;
+  }
+}
+
+/* Reroute: one dot on a wire. Its edges take incoming and outgoing wires; the middle drags it.
+   Only `scale` and colour may animate, or the point would lag behind its wires. */
+.node.reroute {
+  width: 16px;
+  height: 16px;
+  min-height: 16px;
+  padding: 0;
+  border-radius: 50%;
+  background: color-mix(in srgb, var(--text) 55%, var(--surface));
+  backdrop-filter: none;
+  box-shadow: none;
+  transition:
+    background-color var(--fast) var(--ease),
+    box-shadow var(--fast) var(--ease);
+}
+.node.reroute:hover:not(.selected) {
+  background: var(--accent);
+  box-shadow: 0 0 0 5px var(--soft);
+}
+.node.reroute.selected {
+  background: var(--accent);
+}
+/* A wire being dragged onto the point: it lights up with a ring, so it is clear it will take the connection. */
+.node.reroute.drop-target,
+.node.reroute:has(.sock.drop-target) {
+  background: var(--accent);
+  box-shadow: 0 0 0 7px var(--ring);
+}
+.node.reroute .sock {
+  top: -4px;
+  width: 17px;
+  height: 24px;
+  margin: 0;
+  border-radius: 0;
+  background: transparent;
+  box-shadow: none;
+  transform: none;
+}
+/* Invisible hit areas reaching out of the dot: left unplugs the incoming wire, right starts a new one. The middle of the dot stays free for dragging it. */
+.node.reroute .sock[data-dir='in'] {
+  left: -14px;
+}
+.node.reroute .sock[data-dir='out'] {
+  right: -14px;
+  left: auto;
+}
+
+/* ----- Groups and Complex Nodes ----- */
+.frame {
+  position: absolute;
+  left: 0;
+  top: 0;
+  border-radius: var(--frame-radius, 33px);
+  background: color-mix(in srgb, var(--node-color, var(--text)) 5%, transparent);
+  pointer-events: none;
+  transition:
+    background-color var(--base) var(--ease),
+    box-shadow var(--base) var(--ease);
+}
+.frame:hover:not(.selected) {
+  background: color-mix(in srgb, var(--node-color, var(--text)) 9%, transparent);
+}
+.frame.complex {
+  background: color-mix(in srgb, var(--node-color, var(--accent)) 8%, transparent);
+}
+.frame.selected {
+  box-shadow: 0 0 0 calc(var(--sw) * 1.6) color-mix(in srgb, var(--accent) 80%, transparent);
+}
+.frame.drop-target {
+  background: color-mix(in srgb, var(--accent) 14%, transparent);
+  box-shadow: 0 0 0 calc(var(--sw) * 1.6) var(--ring);
+}
+.frame.colored,
+.frame.colored:hover:not(.selected),
+.frame.colored.complex {
+  background: var(--node-color);
+}
+.frame.colored header,
+.frame.colored header:hover,
+.frame.colored .title {
+  color: var(--node-ink);
+}
+.frame header {
+  display: flex;
+  align-items: center;
+  gap: 0.4rem;
+  padding: 0.4rem 0.7rem;
+  color: var(--muted);
+  cursor: move;
+  pointer-events: auto;
+  transition: color var(--fast) var(--ease);
+}
+.frame header:hover {
+  color: var(--text);
+}
+.frame .title {
+  color: var(--text);
+  font-weight: 640;
+}
+.frame .collapse svg {
+  transform: rotate(-90deg);
+}
+.frame .fold {
+  flex: none;
+  margin-left: auto;
+  padding: 0.2rem;
+  opacity: 0;
+  transition: opacity var(--fast) var(--ease);
+}
+.frame header:hover .fold,
+.frame.selected .fold,
+.frame.folded .fold,
+.frame .fold:focus-visible {
+  opacity: 1;
+}
+.frame .fold svg {
+  width: 14px;
+  height: 14px;
+  transform: rotate(90deg);
+  transition: transform var(--base) var(--ease);
+}
+.frame.folded .fold svg {
+  transform: none;
+}
+.frame .switched-off {
+  display: inline-grid;
+}
+.frame .switched-off svg {
+  width: 13px;
+  height: 13px;
+}
+.frame.off {
+  opacity: 0.5;
+}
+.frame.off .title {
+  text-decoration: line-through;
+  text-decoration-thickness: 1px;
+}
+/* A collapsed group is a bar with its name: what it holds is hidden, and its wires end on the bar. */
+.frame.folded {
+  background: color-mix(in srgb, var(--node-color, var(--text)) 12%, transparent);
+}
+.frame.folded header {
+  height: 100%;
+  box-sizing: border-box;
+}
+.frame-ports {
+  position: absolute;
+  top: 42px;
+  z-index: 4;
+  display: grid;
+  gap: 2px;
+  max-width: 118px;
+  pointer-events: none;
+}
+.frame-ports.inputs {
+  left: 0;
+}
+.frame-ports.outputs {
+  right: 0;
+}
+.frame-ports .port {
+  grid-template-columns: minmax(0, 1fr);
+  min-height: 26px;
+  cursor: crosshair;
+  pointer-events: auto;
+}
+.frame-ports .port-name {
+  max-width: 94px;
+  overflow: hidden;
+  text-overflow: ellipsis;
+}
+/* One socket per interface port: the same dot accepts an outside wire and an inside binding. */
+.frame-ports.inputs .sock,
+.frame-ports.inputs .sock.internal {
+  left: -7px;
+  right: auto;
+}
+.frame-ports.outputs .sock,
+.frame-ports.outputs .sock.internal {
+  right: -7px;
+  left: auto;
+}
+.frame-ports .sock.internal {
+  pointer-events: none;
+}
+/* The Custom Node's main group keeps its slot names outside the frame. */
+.frame.root .frame-ports .port {
+  min-width: 14px;
+  padding: 0;
+}
+.frame.root .frame-ports .port-name {
+  position: absolute;
+  top: 50%;
+  max-width: 180px;
+  overflow: visible;
+  text-overflow: clip;
+  transform: translateY(-50%);
+}
+.frame.root .frame-ports.inputs .port-name {
+  right: calc(100% + 12px);
+  text-align: right;
+}
+.frame.root .frame-ports.outputs .port-name {
+  left: calc(100% + 12px);
+}
+
+/* Resize handles: invisible hit areas on the edges and corners. */
+.resize-handle {
+  position: absolute;
+  z-index: 2;
+  touch-action: none;
+  /* Frames let clicks through to the canvas, but their edges must stay grabbable. */
+  pointer-events: auto;
+}
+.resize-n,
+.resize-s {
+  left: 12px;
+  right: 12px;
+  height: 7px;
+  cursor: ns-resize;
+}
+.resize-e,
+.resize-w {
+  top: 12px;
+  bottom: 12px;
+  width: 7px;
+  cursor: ew-resize;
+}
+.resize-ne,
+.resize-nw,
+.resize-se,
+.resize-sw {
+  z-index: 3;
+  width: 13px;
+  height: 13px;
+}
+.resize-n {
+  top: -4px;
+}
+.resize-s {
+  bottom: -4px;
+}
+.resize-e {
+  right: -4px;
+}
+.resize-w {
+  left: -4px;
+}
+.resize-ne,
+.resize-sw {
+  cursor: nesw-resize;
+}
+.resize-nw,
+.resize-se {
+  cursor: nwse-resize;
+}
+.resize-ne {
+  top: -5px;
+  right: -5px;
+}
+.resize-nw {
+  top: -5px;
+  left: -5px;
+}
+.resize-se {
+  right: -5px;
+  bottom: -5px;
+}
+.resize-sw {
+  bottom: -5px;
+  left: -5px;
+}
+
+/* ----- Code editor: a textarea over a highlighted copy of its text ----- */
+.code-editor {
+  position: relative;
+  margin: 0.5rem 0 0.2rem;
+  border-radius: 15px;
+  background: var(--well);
+  overflow: hidden;
+}
+.code-editor pre,
+.code-editor textarea {
+  margin: 0;
+  padding: 0.55rem 0.65rem;
+  border: 0;
+  border-radius: 0;
+  font: 0.8rem/1.5 var(--mono);
+  letter-spacing: normal;
+  tab-size: 2;
+  white-space: pre;
+  overflow-wrap: normal;
+}
+.code-editor pre {
+  position: absolute;
+  inset: 0;
+  color: var(--text);
+  overflow: hidden;
+  pointer-events: none;
+}
+.code-editor textarea {
+  position: relative;
+  display: block;
+  min-height: 84px;
+  background: transparent;
+  color: transparent;
+  caret-color: var(--text);
+  -webkit-text-fill-color: transparent;
+  resize: vertical;
+}
+.code-editor textarea:hover,
+.code-editor textarea:focus {
+  background: transparent;
+  box-shadow: none;
+}
+.code-editor textarea::selection {
+  background: color-mix(in srgb, var(--accent) 28%, transparent);
+}
+.syntax-keyword {
+  color: #c9a6f5;
+}
+.syntax-string {
+  color: #8fe0a6;
+}
+.syntax-number {
+  color: #f0c285;
+}
+.syntax-comment {
+  color: var(--muted);
+  font-style: italic;
+}
+.syntax-builtin {
+  color: #86c7ea;
+}
+[data-theme='light'] .syntax-keyword {
+  color: #7653aa;
+}
+[data-theme='light'] .syntax-string {
+  color: #397c35;
+}
+[data-theme='light'] .syntax-number {
+  color: #a35e20;
+}
+[data-theme='light'] .syntax-builtin {
+  color: #2a7794;
+}
+
+@media (max-width: 900px) {
+  .editor,
+  .editor:has(.side[data-collapsed='true']) {
+    grid-template-columns: minmax(0, 1fr) calc(56px + 1.2rem);
+  }
+}
+.node.s-waiting { outline: 2px solid var(--accent); }
+.run-state.waiting { color: var(--accent); }
