@@ -75,7 +75,7 @@ async def main():
         await page.evaluate("go('/settings')")
         await page.wait_for_selector('#settings-form')
         assert await page.locator('[name=node_hooks]').count() == 0
-        await page.get_by_role('tab', name='Keyboard shortcuts').click()
+        await page.get_by_role('link', name='Keyboard shortcuts').click()
         assert await page.evaluate("""() => {
           const section=document.querySelector('#section-panel-2'),s=section.getBoundingClientRect(),r=section.querySelector('.shortcuts').getBoundingClientRect();
           return Math.abs(s.left-r.left)<1&&Math.abs(s.right-r.right)<1;

@@ -148,7 +148,7 @@
                   "inputs": [
                     {
                       "id": "in",
-                      "name": "In",
+                      "name": "in",
                       "type": "signal"
                     },
                     {
@@ -292,7 +292,7 @@
                   "inputs": [
                     {
                       "id": "in",
-                      "name": "In",
+                      "name": "in",
                       "type": "signal"
                     },
                     {

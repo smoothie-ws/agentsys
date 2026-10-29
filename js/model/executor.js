@@ -766,7 +766,7 @@ async function executePlan(plan, env) {
         // emit answers "break" or "continue" (else undefined). `failFast`: the first failure in what this emit started cancels the rest of it.
         let emitIndex = 0;
         const emitSignal = async (name, options) => {
-          if (typeof name !== 'string') throw plain('node.emit needs the name of a signal output: node.emit("Out")');
+          if (typeof name !== 'string') throw plain('node.emit needs the name of a signal output: node.emit("out")');
           if (closed) throw plain('The code of this node has ended');
           if (options !== undefined && (options === null || typeof options !== 'object'))
             throw plain('node.emit(name, options): the options are an object {handles, failFast}');
@@ -779,6 +779,11 @@ async function executePlan(plan, env) {
           boundary();
           if (cancelledWave(ctx.wave)) throw control('cancel');
           const current = nodes.get(node.id);
+          // Names of ports start with a small letter now: code written for “Out” still finds “out”.
+          if (!Object.hasOwn(current?.scope_signals ?? {}, name)) {
+            const same = Object.keys(current?.scope_signals ?? {}).find(k => k.toLowerCase() === name.toLowerCase());
+            if (same) name = same;
+          }
           const targets = Object.hasOwn(current?.scope_signals ?? {}, name)
             ? current.scope_signals[name]
             : current

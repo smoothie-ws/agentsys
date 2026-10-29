@@ -7,10 +7,10 @@ function toggleSidebar(expand = document.body.classList.contains('sidebar-hidden
 }
 if (store.get('agentsys-sidebar-collapsed')) toggleSidebar(false);
 const narrowSidebar = matchMedia('(max-width: 900px)');
-if (narrowSidebar.matches) toggleSidebar(false,false);
+if (narrowSidebar.matches) toggleSidebar(false, false);
 narrowSidebar.addEventListener('change', event => {
-  if (event.matches) toggleSidebar(false,false);
-  else toggleSidebar(!store.get('agentsys-sidebar-collapsed',false),false);
+  if (event.matches) toggleSidebar(false, false);
+  else toggleSidebar(!store.get('agentsys-sidebar-collapsed', false), false);
 });
 $('#open-search').onclick = () => openSearch();
 
@@ -45,8 +45,7 @@ function panelResize(panel, {edge, key, initial, min, max, setWidth, collapse, e
     else if (['ArrowLeft', 'ArrowRight'].includes(event.key)) {
       expand();
       commit(width + (event.key === 'ArrowRight' ? STEP : -STEP) * sign);
-    }
-    else return;
+    } else return;
     event.preventDefault();
   });
   handle.setAttribute('aria-valuemin', String(min));
@@ -174,11 +173,24 @@ async function destinations() {
   const found = [
     {label: 'Dashboard', hint: 'Page', href: '/'},
     {label: 'Projects', hint: 'Page', href: '/projects'},
+    {label: 'Plugins', hint: 'Page', href: '/plugins'},
     {label: 'Library', hint: 'Page', href: '/resources'},
     {label: 'Runs', hint: 'Page', href: '/runs'},
     {label: 'API', hint: 'Page', href: '/api'},
     {label: 'Settings', hint: 'Page', href: '/settings'},
   ];
+  for (const p of app.plugins || []) {
+    found.push({label: p.manifest.name, hint: p.enabled ? 'Plugin' : 'Plugin · disabled', href: pluginHref(p.id)});
+    if (!p.enabled) continue;
+    for (const x of p.manifest.contributes.pages)
+      found.push({label: x.title, hint: `Plugin · ${p.manifest.name}`, href: pluginHref(p.id, x.id)});
+    for (const x of p.manifest.contributes.commands)
+      found.push({
+        label: x.title,
+        hint: `Command · ${p.manifest.name}`,
+        href: x.page ? pluginHref(p.id, x.page) : x.path,
+      });
+  }
   const list = await api('projects'); // fresh: a project made a moment ago by a script is not in the sidebar's list yet
   const projects = await Promise.all(list.map(p => api(`projects/${p.id}`).catch(() => null)));
   for (const data of projects.filter(Boolean)) {
@@ -191,6 +203,19 @@ async function destinations() {
     found.push({label: r.name, hint: 'Library · Node', href: resourceHref(r)});
   for (const path of library.node_folders || [])
     found.push({label: baseName(path), hint: 'Library · Nodes group', href: folderHref(path)});
+  for (const section of app.librarySections ?? []) {
+    if (section.id === 'nodes') continue;
+    found.push({label: section.title, hint: 'Library', href: catalogHref(section.id)});
+    const data = collectionSnapshot(section.id);
+    for (const path of data.folders)
+      found.push({label: baseName(path), hint: 'Library · ' + section.title, href: catalogHref(section.id, path)});
+    for (const item of data.items)
+      found.push({
+        label: item.name,
+        hint: 'Library · ' + section.title,
+        href: catalogHref(section.id, item.folder, item.id),
+      });
+  }
   return found;
 }
 
@@ -266,7 +291,9 @@ async function boot() {
   applyStyle(session.preferences.style);
   if (!Backend.persistent)
     setTimeout(() => toast('Storage is unavailable here. Changes will be lost when you close this tab.', true), 500);
-  await Promise.all([loadLibrary(), loadProjects()]);
+  await api('library/builtin', {method: 'POST', body: {}}).catch(() => {}); // the built-in nodes join the Library
+  if (DB.mode !== 'files') await api('plugins/builtin', {method: 'POST', body: {}});
+  await Promise.all([loadLibrary(), loadProjects(), loadPlugins()]);
   await render();
 }
 Backend.subscribe(keys => {
@@ -274,7 +301,19 @@ Backend.subscribe(keys => {
     loadProjects().catch(() => {});
     for (const key of navOpen) if (key.startsWith('p:')) loadProjectWorkflows(key.slice(2), true);
   }
-  if (keys.some(k => k === 'resources' || k.startsWith('node_folder')))
+  if (keys.includes('plugins/index'))
+    Promise.all([loadPlugins(), loadLibrary()])
+      .then(renderSidebar)
+      .catch(() => {});
+  if (
+    keys.some(
+      k =>
+        k === 'resources' ||
+        k.startsWith('node_folder') ||
+        k.startsWith('library/sections/') ||
+        k.startsWith('library/skills/')
+    )
+  )
     loadLibrary()
       .then(renderSidebar)
       .catch(() => {});

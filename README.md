@@ -22,6 +22,8 @@ Environment: `PORT`, `HOST` (default `127.0.0.1`), `DATA_DIR`, `AGENTSYS_TOKEN` 
 | Dashboard | `/editor/` (the logo) | counts of projects, workflows, Library nodes; run metrics; what needs attention; recent runs; the way to the API |
 | API | `/editor/api` | the reference generated from the route table, OpenAPI download; reached from the Dashboard, not from the sidebar |
 | Projects | `/editor/projects` | projects and their workflows |
+| Plugins | `/editor/plugins` | installed plugins: import, enable, disable, remove, permissions, settings; the pages they add |
+| Notifications | the bell beside Search | messages from plugins and workflows (`/api/notifications`); empty until something posts |
 | Library | `/editor/resources` | the Library's sections as cards; today one: **Nodes** (`/editor/resources/nodes`: reusable Custom Nodes and the groups they are kept in) |
 | Runs | `/editor/runs` | workflows' control, activations, versions, permissions, limits |
 | Settings | `/editor/settings` | appearance, shortcuts, developer mode |
@@ -36,4 +38,5 @@ Environment: `PORT`, `HOST` (default `127.0.0.1`), `DATA_DIR`, `AGENTSYS_TOKEN` 
 - [Limits](docs/limits.md) — every limit of the system and whether the UI exposes it
 - [Code guide](docs/code-guide.md) — file map, how to add a route, an op, a page
 - [Testing](docs/testing.md)
+- [Plugins](docs/plugins.md) — package format, rights, pages, endpoints
 - [Roadmap](docs/roadmap.md) — plugins and what is planned

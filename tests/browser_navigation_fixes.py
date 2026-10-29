@@ -14,10 +14,12 @@ async def main():
         page.on('pageerror', lambda e: errors.append(str(e)))
         await page.goto(f'http://127.0.0.1:{sys.argv[1]}/index.html#/settings')
         await page.wait_for_selector('#settings-form')
-        assert await page.locator('#sidebar [data-section]').evaluate_all('(els)=>els.map(el=>el.dataset.section)') == ['home', 'library', 'projects', 'settings']
-        assert await page.locator('.sidebar-top > a:first-child + hr').count() == 1
-        await page.get_by_role('tab', name='Keyboard shortcuts').click()
-        assert await page.get_by_role('button', name='Restore', exact=False).count() == 1
+        assert await page.locator('#sidebar [data-section]').evaluate_all('(els)=>els.map(el=>el.dataset.section)') == ['home', 'plugins', 'library', 'projects', 'runs', 'api', 'settings']
+        assert await page.locator('#sidebar [data-section=library] + hr').count() == 1
+        await page.get_by_role('link', name='Keyboard shortcuts').click()
+        await page.locator('.page-head [data-menu]').click()
+        assert await page.get_by_role('menuitem', name='Restore defaults', exact=True).count() == 1
+        await page.keyboard.press('Escape')
         assert await page.locator('#settings-form .muted.small').count() == 0
         print('PASS navigation order, separator and single Settings restore action')
 
@@ -77,7 +79,7 @@ async def main():
         await page.reload()
         await page.wait_for_selector('[data-upload-icon].active img')
         assert await page.locator('.tab.active .custom-icon').count() == 1
-        await page.evaluate("go('/resources')")
+        await page.evaluate("go('/resources/nodes')")
         await page.wait_for_selector('.card .custom-icon')
         print('PASS icon selection is exclusive; uploaded icon is resized, saved and restored in cards and tabs')
 
@@ -110,12 +112,12 @@ async def main():
         await page.evaluate("go('/')")
         await page.wait_for_selector('.tile')
         assert await page.locator('.api-call').count() == 0
-        await page.locator('#home-api a.card-main').click()
+        await page.locator('#sidebar [data-section=api]').click()
         await page.wait_for_selector('.api-call')
         assert await page.evaluate('location.hash') == '#/api'
         await page.locator('.api-call').nth(3).click()
         assert await page.locator('.api-method-heading').inner_text()
-        assert await page.locator('#sidebar [data-section]:not([data-section=home]).active').count() == 0
+        assert await page.locator('#sidebar [data-section=api].active').count() == 1
         assert await page.locator('#subnav .subnav-row.active').count() == 1
         print('PASS the API is a page of its own, reached from the dashboard')
         assert not errors, errors

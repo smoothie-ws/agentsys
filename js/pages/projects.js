@@ -3,9 +3,10 @@
 
 // ----- projects -----
 const EMPTY_PROJECTS = '<div class="empty"><h2>Start your first project</h2></div>';
-PAGES.projects = async view => {
+PAGES.projects = async (view, route) => {
   await loadProjects();
-  view.innerHTML = `<div class="page">${pageHead({title: 'Projects', actions: `<button class="ghost" id="import-project">${icon('download')}Import project</button><button class="primary" id="create-project">${icon('plus')}New project</button>`})}
+  if (app.route !== route) return;
+  view.innerHTML = `<div class="page">${pageHead({title: 'Projects'})}
     <div class="cards">${app.projects
       .map(p =>
         card({
@@ -20,40 +21,37 @@ PAGES.projects = async view => {
         })
       )
       .join('')}</div>${app.projects.length ? '' : EMPTY_PROJECTS}</div>`;
-  $('#create-project').onclick = () => newProjectDialog();
-  $('#import-project').onclick = () => importProjects().catch(fail);
   loadCardPreviews(view);
 };
 
 /** Menu of a project (card or row of the second panel). `title` is the element showing its name, if it is on the page. */
 function projectActions(project, title = $(`[data-project-title="${CSS.escape(project.id)}"]`)) {
   return [
+    ['New workflow', () => newWorkflowDialog(project), {icon: 'plus'}],
     [
       'Rename',
       () =>
-        inlineRename(
-          title,
-          project.name,
-          async name => {
-            await api(`projects/${project.id}`, {method: 'PATCH', body: {name}});
-            project.name = name;
-            Tabs.renameProject(project.id, name);
-            renderSidebar();
-            if (app.route.project === project.id) await render();
-          }
-        ),
+        inlineRename(title, project.name, async name => {
+          await api(`projects/${project.id}`, {method: 'PATCH', body: {name}});
+          project.name = name;
+          Tabs.renameProject(project.id, name);
+          renderSidebar();
+          if (app.route.project === project.id) await render();
+        }),
     ],
     [
       'Duplicate',
       async () => {
         const copy = await api(`projects/${project.id}/duplicate`, {method: 'POST'});
-        toast(copy?.id ? `Project duplicated. [Open the copy](/p/${encodeURIComponent(copy.id)})` : 'Project duplicated.');
+        toast(
+          copy?.id ? `Project duplicated. [Open the copy](/p/${encodeURIComponent(copy.id)})` : 'Project duplicated.'
+        );
         await loadProjects();
         await render();
       },
     ],
-    ['Export project', () => exportProject(project), {icon:'upload'}],
-    ['Import workflow', () => importWorkflows(project.id), {icon:'download'}],
+    ['Export project', () => exportProject(project), {icon: 'upload'}],
+    ['Import workflow', () => importWorkflows(project.id), {icon: 'download'}],
     ['Settings', () => go(`/p/${project.id}/settings`)],
     null,
     [
@@ -95,9 +93,11 @@ async function newProjectDialog() {
 
 /** Runs a workflow without opening it: the same evaluation as the Run button, result stored as the last run. */
 async function runFromCard(projectId, workflow, button) {
-  if (button.disabled) return;
-  button.disabled = true;
-  button.classList.add('busy');
+  if (button?.disabled) return;
+  if (button) {
+    button.disabled = true;
+    button.classList.add('busy');
+  }
   try {
     const graph = await api(`projects/${projectId}/workflow`, {query: {workflow_id: workflow.id}});
     const starts = startNodes(graph.nodes);
@@ -118,19 +118,21 @@ async function runFromCard(projectId, workflow, button) {
   } catch (error) {
     fail(error);
   } finally {
-    button.disabled = false;
-    button.classList.remove('busy');
+    if (button) {
+      button.disabled = false;
+      button.classList.remove('busy');
+    }
   }
 }
 
 // ----- project -----
 PAGES.project = async (view, route) => {
   const {project, workflows} = await api(`projects/${route.project}`);
+  if (app.route !== route) return;
   view.innerHTML = `<div class="page">${pageHead({
     crumbs: [['Projects', '/projects']],
     title: esc(project.name),
     sub: esc(project.description || ''),
-    actions: `<button class="ghost" id="import-workflow">${icon('download')}Import workflow</button><button class="ghost" id="export-project">${icon('upload')}Export project</button><a class="button ghost" href="/p/${esc(project.id)}/settings" data-link>${icon('settings')}Settings</a><button class="primary" id="new-workflow">${icon('plus')}New workflow</button>`,
   })}
     <div class="cards">${workflows
       .map(w =>
@@ -140,29 +142,27 @@ PAGES.project = async (view, route) => {
           title: w.name,
           attrs: `data-workflow-title="${esc(w.id)}"`,
           previewAttrs: `data-preview-workflow="${esc(w.id)}" aria-label="Workflow preview"`,
-          run: `<button class="icon card-run" data-run="${esc(w.id)}" title="Run the workflow" aria-label="Run the workflow">${icon('play')}</button>`,
+
           menu: `workflow:${project.id}:${w.id}`,
         })
       )
       .join('')}</div></div>`;
   loadCardPreviews(view, project.id);
-  $('#import-workflow').onclick = () => importWorkflows(project.id).catch(fail);
-  $('#export-project').onclick = () => exportProject(project).catch(fail);
-  $('#new-workflow').onclick = () =>
-    dialog(
-      'New workflow',
-      field('Name', '<input name="name" required maxlength="100" autofocus value="Workflow">'),
-      async form => {
-        const created = await api(`projects/${project.id}/workflows`, {method: 'POST', body: {name: form.name.value}});
-        await go(`/p/${project.id}/w/${created.id}`);
-      },
-      'Create'
-    );
-  view.onclick = event => {
-    const run = event.target.closest('.card-run');
-    if (run) runFromCard(project.id, workflows.find(w => w.id === run.dataset.run), run);
-  };
 };
+function newWorkflowDialog(project) {
+  dialog(
+    'New workflow',
+    field('Name', '<input name="name" required maxlength="100" autofocus value="Workflow">'),
+    async form => {
+      const created = await api(`projects/${project.id}/workflows`, {
+        method: 'POST',
+        body: {name: form.elements.name.value},
+      });
+      await go(`/p/${project.id}/w/${created.id}`);
+    },
+    'Create'
+  );
+}
 
 /** Menu of a workflow (its card or its row in the second panel). */
 function workflowActions(projectId, workflow, title) {
@@ -171,19 +171,16 @@ function workflowActions(projectId, workflow, title) {
     await render();
   };
   return [
+    ['Run', () => runFromCard(projectId, workflow), {icon: 'play'}],
     [
       'Rename',
       () =>
-        inlineRename(
-          title,
-          workflow.name,
-          async name => {
-            await api(`projects/${projectId}/workflows/${workflow.id}`, {method: 'PATCH', body: {name}});
-            workflow.name = name;
-            Tabs.rename(workflow.id, name);
-            await refresh();
-          }
-        ),
+        inlineRename(title, workflow.name, async name => {
+          await api(`projects/${projectId}/workflows/${workflow.id}`, {method: 'PATCH', body: {name}});
+          workflow.name = name;
+          Tabs.rename(workflow.id, name);
+          await refresh();
+        }),
     ],
     [
       'Duplicate',
@@ -192,8 +189,8 @@ function workflowActions(projectId, workflow, title) {
         await refresh();
       },
     ],
-    ['Export workflow', () => exportWorkflow(projectId, workflow), {icon:'upload'}],
-    ['Import workflow', () => importWorkflows(projectId), {icon:'download'}],
+    ['Export workflow', () => exportWorkflow(projectId, workflow), {icon: 'upload'}],
+    ['Import workflow', () => importWorkflows(projectId), {icon: 'download'}],
     null,
     [
       'Delete',
@@ -220,7 +217,8 @@ async function exportProject(project) {
   downloadJSON(await api(`projects/${project.id}/export`), `${project.name}.project`);
 }
 async function exportWorkflow(projectId, workflow) {
-  if (W.project === projectId && W.workflow === workflow.id && document.querySelector('#canvas')) await flushNodeEdits();
+  if (W.project === projectId && W.workflow === workflow.id && document.querySelector('#canvas'))
+    await flushNodeEdits();
   downloadJSON(await api(`projects/${projectId}/workflows/${workflow.id}/export`), `${workflow.name}.workflow`);
 }
 async function importProjects() {
@@ -229,9 +227,12 @@ async function importProjects() {
   for (const file of files) {
     const data = JSON.parse(await file.text());
     if (TextGraph.decode(data).kind !== 'project') throw new Error(`${file.name}: choose an exported project.`);
-    last = await api('projects/import', {method:'POST',body:data});
+    last = await api('projects/import', {method: 'POST', body: data});
   }
-  if (last) { await loadProjects(); await go(`/p/${last.id}`); }
+  if (last) {
+    await loadProjects();
+    await go(`/p/${last.id}`);
+  }
 }
 async function importWorkflows(projectId) {
   const files = await pickFiles();
@@ -239,10 +240,10 @@ async function importWorkflows(projectId) {
   for (const file of files) {
     const data = JSON.parse(await file.text());
     if (TextGraph.decode(data).kind !== 'workflow') throw new Error(`${file.name}: choose an exported workflow.`);
-    last = await api(`projects/${projectId}/workflows/import`, {method:'POST',body:data});
+    last = await api(`projects/${projectId}/workflows/import`, {method: 'POST', body: data});
   }
   if (last) {
-    await Promise.all([loadProjects(),loadProjectWorkflows(projectId,true)]);
+    await Promise.all([loadProjects(), loadProjectWorkflows(projectId, true)]);
     await go(`/p/${projectId}/w/${last.id}`);
   }
 }

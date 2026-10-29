@@ -2,30 +2,9 @@
 
 Status of the core: signal engine, live plan, durable waits, state and queues, supervision, human intervention, permissions, versions and replay are done (see [Runtime](runtime.md)). The next stage is **extensibility**: everything AI-, team- or service-specific becomes a plugin, and the core stays small ([Decisions](decisions.md)).
 
-## 1. Plugins (VS Code style)
+## 1. Plugins: done
 
-A plugin is a folder `plugins/<id>/` (in the data folder, or installed from a URL/archive) with a `plugin.json` manifest. It *contributes* things to extension points and is activated by events; it never gets more rights than a person grants it (same capabilities, grants and quarantine as Scripts).
-
-```jsonc
-{
-  "id": "ai-controller", "name": "AI Controller", "version": "1.0.0", "engine": ">=1",
-  "capabilities": ["graph.read", "graph.write", "net.fetch:api.example.com", "secrets.use:llm"],
-  "activation": ["onStartup", "onCommand:ai.ask", "onTrigger:telegram"],
-  "contributes": {
-    "nodes": ["nodes/*.json"],          // Library catalogs
-    "routes": "server.js",              // /api/plugins/<id>/…  (runs in a Worker through the bridge)
-    "pages":  [{"id": "providers", "section": "library", "entry": "ui/providers.html"}],
-    "tiles":  [{"id": "spend", "entry": "ui/spend.html"}],   // dashboard
-    "commands": [{"id": "ai.ask", "title": "Ask AI…"}],       // Ctrl+K
-    "triggers": [{"type": "telegram"}],
-    "settings": "settings.schema.json", "secrets": ["llm"]
-  }
-}
-```
-
-Extension points that already exist in the core and only need to be opened: the route table (`route()`), `PAGES` / `NAV_TREES` / `sectionOf`, Library catalogs (Custom Nodes), `TRIGGER_TYPES`, the bridge (`agentsys()` + quotas + journal), dashboard tiles, Ctrl+K destinations, settings tabs.
-
-Rules: plugin UI runs in a sandboxed iframe with a `postMessage` bridge to `agentsys()` (no access to the page); plugin server code runs in the same Worker sandbox as Scripts; install, enable and disable per workspace; every capability is shown to the person before it is granted; plugin data lives under `data/plugins/<id>/`. Needed in the core first: a manifest loader, a contribution registry, the iframe bridge, a Plugins page (list, enable, permissions, settings), plugin-scoped secrets.
+The plugin infrastructure exists: packages, install/enable/disable/remove, grants, Library nodes, templates, pages, tiles, commands, endpoints, settings, private data and a sandboxed UI ([Plugins](plugins.md)). Still open: plugin **secrets page** (today `PUT secrets/{name}` and the Secrets block of a plugin's page), **triggers contributed by plugins** (a plugin starts work through a workflow with an interval or queue trigger), install from a URL, signed packages, a plugin gallery.
 
 ## 2. AI Controller (plugin)
 

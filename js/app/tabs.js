@@ -1,13 +1,13 @@
 // Tabs of the open graph editors (workflows and Custom Nodes), like files in a code editor; persisted in this browser.
 // Every other page (Dashboard, Projects, a project, Library, Runs, Settings) is reached through the sidebar and the second panel;
-// it has no tab, but remembers where it was left (`Tabs.pages`): Settings reopens on its section, a project page where it was scrolled.
+// it has no tab; Tabs.pages remembers scroll and local filters, while the URL selects the page and subsection.
 'use strict';
 
 const Tabs = {
   items: [],
   /** Editors shown during this page session: reopening one keeps its camera, a fresh open fits the view. */
   seen: new Set(),
-  /** What each non-editor page remembers: {href, scroll, section}, by page key. */
+  /** Scroll and local filters of non-editor pages, by page key. */
   pages: {},
   /** An editor tab is told apart by project/workflow. */
   key: tab => tab.project + '/' + tab.workflow,
@@ -26,18 +26,10 @@ const Tabs = {
           .join(':'),
         runs: 'runs',
         api: 'api',
+        'not-found': 'missing',
+        plugins: ['plugins', route.id, route.view].filter(Boolean).join(':'),
       }[route.page] || 'home'
     );
-  },
-  /** Opening a page that was visited before (from the sidebar, a link) brings it back as it was left. */
-  resolve(path) {
-    const [bare, search = ''] = path.split('?'),
-      route = parseRoute(bare, new URLSearchParams(search));
-    if (search) return path;
-    if (route.workflow) return path;
-    const key = this.pageKey(route);
-    if (key === this.pageKey(app.route || {})) return path;
-    return this.pages[key]?.href || path;
   },
   /** What the open page remembers: the Settings section, the scroll position. An editor tab holds its own. */
   stateOf(key = this.keyOf(app.route || {})) {
@@ -46,12 +38,6 @@ const Tabs = {
   },
   keyOf(route) {
     return route.workflow ? this.key(route) : this.pageKey(route);
-  },
-  /** Notes where a page is now; called after it opened. */
-  visit(route, href = routeTarget()) {
-    if (route.workflow) return;
-    this.stateOf(this.pageKey(route)).href = href;
-    this.save();
   },
   load() {
     const saved = store.get('agentsys-tabs', []);
@@ -121,25 +107,27 @@ const Tabs = {
     const index = this.items.findIndex(t => this.key(t) === key);
     if (index < 0 || this.items[index].pinned) return;
     const active = this.keyOf(app.route || {}) === key;
+    const fallback = parentPage(app.route || {})[1];
     if (active && !(await leaveView())) return;
     this.items.splice(index, 1);
     this.save();
     if (!active) return this.render();
     const next = this.items[index] || this.items[index - 1];
     if (next) await go(this.href(next));
-    else await go('/');
+    else await go(fallback);
   },
   /** Closes several tabs at once (never the pinned ones); `stay` is the tab to show if the open one goes. */
   async closeMany(keys, stay) {
     const gone = new Set(keys.filter(k => !this.items.find(t => this.key(t) === k)?.pinned));
     if (!gone.size) return;
     const active = gone.has(this.keyOf(app.route || {}));
+    const fallback = parentPage(app.route || {})[1];
     if (active && !(await leaveView())) return;
     this.items = this.items.filter(t => !gone.has(this.key(t)));
     this.save();
     if (!active) return this.render();
     const next = this.items.find(t => this.key(t) === stay) || this.items[0];
-    await go(next ? this.href(next) : '/');
+    await go(next ? this.href(next) : fallback);
   },
   menu(key, x, y) {
     const index = this.items.findIndex(t => this.key(t) === key),
@@ -195,6 +183,8 @@ const Tabs = {
         el.title = (tab.sub ? tab.sub + ' / ' : '') + tab.title;
         el.className = 'tab' + (key === current ? ' active' : '') + (tab.pinned ? ' is-pinned' : '');
         el.setAttribute('aria-selected', String(key === current));
+        el.tabIndex =
+          key === current || (!this.items.some(t => this.key(t) === current) && tab === this.items[0]) ? 0 : -1;
         if (el.dataset.html !== html) el.innerHTML = el.dataset.html = html;
         return el;
       });
@@ -230,6 +220,24 @@ $('#tabs').addEventListener('auxclick', event => {
   if (event.button !== 1 || !tab) return;
   event.preventDefault();
   Tabs.close(tab.dataset.tab).catch(fail);
+});
+$('#tabs').addEventListener('keydown', event => {
+  if (event.ctrlKey || event.metaKey || event.altKey || event.target.closest('button')) return;
+  const tab = event.target.closest('.tab:not(.closing)');
+  if (!tab || !['ArrowLeft', 'ArrowRight', 'Home', 'End', 'Delete'].includes(event.key)) return;
+  event.preventDefault();
+  event.stopPropagation();
+  if (event.key === 'Delete') return Tabs.close(tab.dataset.tab).catch(fail);
+  const tabs = $$('#tabs > .tab:not(.closing)'),
+    index = tabs.indexOf(tab);
+  const next =
+    event.key === 'Home'
+      ? 0
+      : event.key === 'End'
+        ? tabs.length - 1
+        : (index + (event.key === 'ArrowRight' ? 1 : -1) + tabs.length) % tabs.length;
+  tabs[next].focus();
+  go(tabs[next].dataset.path).catch(fail);
 });
 $('#tabs').addEventListener(
   'wheel',

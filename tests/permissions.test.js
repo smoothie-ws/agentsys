@@ -110,3 +110,26 @@ test('what a script writes into the Library is stripped of grants', async () => 
   assert.deepEqual(item.payload.grants, ['graph.read']);
   assert.deepEqual(item.payload.capabilities, ['graph.write']);
 });
+
+test('permissions are set on the placed node and limit everything inside it', async () => {
+  const {app, p} = await fakeApp();
+  const n = await fn(
+    app,
+    p.id,
+    {},
+    {
+      capabilities: ['graph.write'],
+      grants: ['graph.write'],
+      code: 'await agentsys("PUT","workflows/"+context.workflow_id+"/state/x",{value:1});',
+    }
+  );
+  const run = () => app.api('POST', `projects/${p.id}/runs`, {node_ids: [n.id], wait: 1});
+  assert.equal((await run()).status, 'completed');
+  await app.api('PUT', `projects/${p.id}/complex/${n.group}`, {grants: []});
+  const denied = await run();
+  assert.equal(denied.status, 'failed');
+  assert.match(JSON.stringify(denied.errors), /Permission denied/);
+  await assert.rejects(app.api('PUT', `projects/${p.id}/complex/${n.group}`, {grants: ['bogus']}), /Invalid grants/);
+  await app.api('PUT', `projects/${p.id}/complex/${n.group}`, {grants: ['graph.write']});
+  assert.equal((await run()).status, 'completed');
+});

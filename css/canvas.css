@@ -42,6 +42,9 @@
   width: 32px;
   padding: 0;
 }
+.editor-parent svg {
+  transform: rotate(180deg);
+}
 #run-summary {
   display: flex;
   align-items: center;

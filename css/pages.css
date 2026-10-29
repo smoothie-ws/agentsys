@@ -21,6 +21,13 @@
   flex-wrap: wrap;
   justify-content: flex-end;
 }
+.page-head > :first-child {
+  min-width: 0;
+  overflow-wrap: anywhere;
+}
+.page-head > .actions {
+  flex: none;
+}
 .page-head h1 + .muted {
   margin: 0.35rem 0 0;
 }
@@ -69,7 +76,9 @@
   color: var(--theme-cards-text, var(--text));
   background: var(--theme-cards-background, color-mix(in srgb, var(--text) 6%, var(--glass-card)));
   backdrop-filter: var(--blur-sm);
-  box-shadow: inset 0 0 0 1px var(--theme-cards-outline, transparent), var(--card-shadow);
+  box-shadow:
+    inset 0 0 0 1px var(--theme-cards-outline, transparent),
+    var(--card-shadow);
   overflow: hidden;
   transition:
     background-color var(--base) var(--ease),
@@ -109,10 +118,7 @@
   min-height: 24px;
   padding-right: 2.4rem; /* the menu button */
 }
-.card:has(.card-run) .card-head {
-  padding-right: 4.6rem;
-}
-.card .head-icon svg {
+.card .head-icon :is(svg, img) {
   width: 13px;
   height: 13px;
   color: var(--muted);
@@ -142,24 +148,6 @@
 .card-actions button.icon {
   padding: 0.22rem;
 }
-.card-run {
-  color: var(--accent);
-}
-/* Enabled: a Custom Node or group that is off stays in the Library but is not offered in the Add menu. */
-.card-enable {
-  display: grid;
-  place-items: center;
-  padding: 0.22rem;
-}
-.card-enable input {
-  margin: 0;
-}
-.card.off .card-main {
-  opacity: 0.55;
-}
-.card-run.busy {
-  animation: pulse 0.9s ease-in-out infinite;
-}
 .card-facts {
   margin: 0;
   padding: 0 0.15rem;
@@ -183,7 +171,8 @@
   overflow: hidden;
   isolation: isolate;
   border-radius: max(12px, calc(var(--node-radius, 16px) - 11px));
-  background: radial-gradient(circle, color-mix(in srgb, var(--text) 10%, transparent) 0.7px, transparent 1px) 0 0 / 13px 13px,
+  background:
+    radial-gradient(circle, color-mix(in srgb, var(--text) 10%, transparent) 0.7px, transparent 1px) 0 0 / 13px 13px,
     var(--background);
 }
 /* What is inside, as text: the first lines of a note, the rows of a list. */
@@ -400,18 +389,247 @@
     padding: 1.2rem 1rem 3rem;
   }
 }
-@media (max-width: 600px) {
-  .page-head {
-    flex-wrap: wrap;
+/* Dashboard and Runs share compact, readable tables. */
+.data-table {
+  width: 100%;
+  border-collapse: collapse;
+  text-align: left;
+  font-size: 0.85rem;
+}
+.data-table th {
+  color: var(--muted);
+  font-size: 0.75rem;
+  font-weight: 560;
+}
+.data-table th,
+.data-table td {
+  padding: 0.8rem 0.65rem;
+  border-bottom: 1px solid var(--line);
+  vertical-align: middle;
+}
+.data-table th:first-child,
+.data-table td:first-child {
+  padding-left: 0;
+}
+.data-table th:last-child,
+.data-table td:last-child {
+  padding-right: 0;
+}
+.data-table td small {
+  display: block;
+  margin-top: 0.2rem;
+  color: var(--muted);
+  font-size: 0.75rem;
+}
+.status-badge {
+  display: inline-flex;
+  align-items: center;
+  gap: 0.4rem;
+  font-size: 0.78rem;
+  white-space: nowrap;
+}
+.status-badge::before {
+  content: '';
+  width: 6px;
+  height: 6px;
+  border-radius: 50%;
+  background: var(--idle);
+}
+.status-badge[data-status='completed']::before,
+.status-badge[data-status='enabled']::before {
+  background: var(--ok);
+}
+.status-badge[data-status='failed']::before,
+.status-badge[data-status='interrupted']::before {
+  background: var(--bad);
+}
+.status-badge[data-status='running']::before {
+  background: var(--accent);
+}
+.status-badge[data-status='waiting']::before,
+.status-badge[data-status='paused']::before {
+  background: var(--warn);
+}
+.runs-page > section {
+  margin-top: 1.5rem;
+}
+.runs-page h2 {
+  margin-bottom: 1rem;
+}
+.runs-page pre {
+  white-space: pre-wrap;
+  overflow-wrap: anywhere;
+  max-height: 480px;
+  overflow: auto;
+  padding: 1rem;
+  background: var(--well);
+  border-radius: 12px;
+  font-size: 0.78rem;
+}
+.runs-page .section-head {
+  gap: 1rem;
+  flex-wrap: wrap;
+  margin-bottom: 0.5rem;
+}
+.runs-page .section-head h2 {
+  margin: 0;
+}
+.runs-page .section-head h2 small {
+  font-size: 0.8rem;
+  font-weight: 400;
+  margin-left: 0.4rem;
+}
+.runs-filter {
+  display: flex;
+  align-items: center;
+  gap: 0.6rem;
+  color: var(--muted);
+  font-size: 0.8rem;
+}
+.runs-filter select {
+  width: auto;
+  min-width: 9rem;
+}
+.runs-table {
+  min-width: 520px;
+}
+.runs-table .button-row {
+  margin: 0;
+  flex-wrap: nowrap;
+  gap: 0.3rem;
+}
+.runs-table button {
+  padding: 0.35rem 0.65rem;
+  font-size: 0.78rem;
+}
+.runs-empty {
+  padding-block: 2rem;
+}
+.runs-form {
+  max-width: 640px;
+}
+.workflow-policies {
+  display: grid;
+  gap: 1rem;
+}
+.workflow-policy {
+  padding: 1rem;
+  background: var(--field);
+  border-radius: 16px;
+}
+.workflow-policy-head {
+  display: flex;
+  align-items: center;
+  flex-wrap: wrap;
+  gap: 0.7rem 1rem;
+}
+.workflow-policy-head > div:first-child {
+  flex: 1;
+  min-width: 160px;
+}
+.workflow-policy-head h3 {
+  margin: 0 0 0.3rem;
+  font-size: 0.9rem;
+}
+.workflow-policy-head p,
+.workflow-policy-head .button-row {
+  margin: 0;
+}
+.workflow-policy-details > summary {
+  margin: 0.8rem 0 0;
+  font-size: 0.8rem;
+}
+.workflow-policy-details[open] > summary {
+  margin-bottom: 1rem;
+}
+.workflow-policy-details .field > span {
+  font-size: 0.78rem;
+}
+.dashboard {
+  max-width: 1040px;
+}
+.dashboard-metrics {
+  display: grid;
+  grid-template-columns: repeat(4, minmax(0, 1fr));
+  gap: 0.8rem;
+  margin: 1.5rem 0 2rem;
+}
+.dashboard .tile-label {
+  font-size: 0.8rem;
+  color: var(--muted);
+}
+.dashboard .tile-value {
+  font-size: 1.8rem;
+}
+.dashboard-columns {
+  display: grid;
+  grid-template-columns: minmax(0, 0.9fr) minmax(0, 1.1fr);
+  gap: 2rem;
+}
+.dashboard .section-head {
+  gap: 0.7rem;
+  margin-bottom: 0.6rem;
+}
+.dashboard .section-head h2 {
+  margin: 0;
+  font-size: 0.95rem;
+}
+.dashboard .section-head a {
+  font-size: 0.78rem;
+  color: var(--muted);
+  white-space: nowrap;
+}
+.dashboard-projects {
+  padding: 0;
+  margin: 0;
+  list-style: none;
+}
+.dashboard-projects li {
+  border-bottom: 1px solid var(--line);
+}
+.dashboard-projects a {
+  display: flex;
+  align-items: center;
+  gap: 0.65rem;
+  padding: 1rem 0;
+  color: inherit;
+  text-decoration: none;
+}
+.dashboard-projects a > span {
+  flex: 1;
+  min-width: 0;
+  overflow-wrap: anywhere;
+}
+.dashboard-projects small {
+  color: var(--muted);
+  white-space: nowrap;
+}
+.dashboard-projects svg {
+  width: 16px;
+  height: 16px;
+  color: var(--muted);
+}
+.dashboard-notice {
+  padding: 0.8rem 1rem;
+  margin: -0.5rem 0 1.5rem;
+  border-left: 2px solid var(--warn);
+  background: var(--field);
+  font-size: 0.85rem;
+}
+.dashboard-plugins {
+  margin-top: 2rem;
+}
+@media (max-width: 1050px) {
+  .dashboard-columns {
+    grid-template-columns: minmax(0, 1fr);
+    gap: 1.8rem;
   }
 }
-/* Runs page. */
-.runs-page section { margin: 24px 0; }
-.runs-page table { width: 100%; border-collapse: collapse; }
-.runs-page th, .runs-page td { text-align: left; padding: 10px; border-bottom: 1px solid var(--border); }
-.runs-page pre { white-space: pre-wrap; overflow-wrap: anywhere; max-height: 480px; overflow: auto; }
-.runs-page form > label { display: block; margin: 12px 0; }
-.runs-page form textarea { width: 100%; }
+@media (max-width: 600px) {
+  .dashboard-metrics {
+    grid-template-columns: repeat(2, minmax(0, 1fr));
+  }
+}
 
 /* ----- Dashboard: counters, the list of what needs attention, the API reference ----- */
 .tiles {
@@ -503,4 +721,163 @@ a.tile:hover {
   padding: 0.4rem 0.75rem;
   color: inherit;
   text-decoration: none;
+}
+
+/* ----- Plugins ----- */
+.card.plugin-off {
+  opacity: 0.62;
+}
+.card.plugin-off:hover {
+  opacity: 0.9;
+}
+.plugin-about {
+  margin: 0 0 0.4rem;
+  font-size: 0.82rem;
+  line-height: 1.35;
+  color: var(--muted);
+}
+.plugin-secret {
+  display: flex;
+  align-items: center;
+  gap: 0.7rem;
+  margin: 0.3rem 0;
+}
+.plugin-manifest h3 {
+  display: flex;
+  align-items: center;
+  gap: 0.5rem;
+  margin: 0 0 0.3rem;
+  color: inherit;
+  font-size: 1.05rem;
+}
+.plugin-manifest h3 svg {
+  width: 20px;
+  height: 20px;
+}
+.plugin-host {
+  min-height: 80px;
+}
+.plugin-frame {
+  display: block;
+  width: 100%;
+  height: 480px;
+  border: 0;
+  background: transparent;
+  color-scheme: normal;
+}
+.plugin-tiles {
+  display: grid;
+  grid-template-columns: repeat(auto-fill, minmax(260px, 1fr));
+  gap: 0.75rem;
+}
+.plugin-tile {
+  border-radius: var(--theme-cards-radius, var(--node-radius, 16px));
+  padding: 0.4rem 0.6rem 0.6rem;
+  background: var(--theme-cards-background, color-mix(in srgb, var(--text) 6%, var(--glass-card)));
+  overflow: hidden;
+}
+.plugin-tile h3 {
+  font-size: 0.85rem;
+  margin: 0.3rem 0;
+}
+
+/* Native collection editors and extension details share the page and card primitives. */
+.catalog-form {
+  max-width: 46rem;
+}
+.resource-description {
+  color: var(--muted);
+  margin: 0;
+  line-height: 1.5;
+  overflow-wrap: anywhere;
+}
+.card .resource-description,
+.card .plugin-about {
+  display: -webkit-box;
+  -webkit-line-clamp: 3;
+  -webkit-box-orient: vertical;
+  overflow: hidden;
+}
+.plugin-title,
+.plugin-meta {
+  display: flex;
+  align-items: center;
+  gap: 1rem;
+}
+.plugin-title > :is(svg, img) {
+  width: 56px;
+  height: 56px;
+  flex: none;
+}
+.plugin-meta {
+  flex-wrap: wrap;
+  color: var(--muted);
+  font-size: 0.85rem;
+  margin: 0 0 1.5rem;
+}
+.content-tabs {
+  display: flex;
+  gap: 1.25rem;
+  border-bottom: 1px solid var(--line);
+  overflow-x: auto;
+}
+.content-tabs a {
+  padding: 0.7rem 0;
+  color: var(--muted);
+  text-decoration: none;
+  white-space: nowrap;
+  border-bottom: 2px solid transparent;
+}
+.content-tabs a[aria-current] {
+  color: var(--text);
+  border-bottom-color: var(--accent);
+}
+.plugin-layout {
+  display: grid;
+  grid-template-columns: minmax(0, 1fr) 210px;
+  gap: 2.5rem;
+  margin-top: 1.5rem;
+}
+.plugin-readme {
+  min-width: 0;
+  line-height: 1.65;
+  overflow-wrap: anywhere;
+}
+.plugin-readme > :first-child {
+  margin-top: 0;
+}
+.plugin-readme pre {
+  overflow: auto;
+}
+.plugin-facts {
+  min-width: 0;
+  font-size: 0.85rem;
+}
+.plugin-facts h2 {
+  font-size: 1rem;
+}
+.plugin-facts dl {
+  margin: 0;
+}
+.plugin-facts dt {
+  color: var(--muted);
+  margin-top: 1rem;
+}
+.plugin-facts dd {
+  margin: 0.25rem 0 0;
+  overflow-wrap: anywhere;
+}
+@media (max-width: 1000px) {
+  .plugin-layout {
+    grid-template-columns: 1fr;
+    gap: 1rem;
+  }
+  .plugin-facts dl {
+    display: grid;
+    grid-template-columns: minmax(90px, auto) 1fr;
+    gap: 0.6rem 1rem;
+  }
+  .plugin-facts :is(dt, dd) {
+    margin: 0;
+  }
 }

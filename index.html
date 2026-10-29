@@ -42,6 +42,13 @@
   <script defer src="js/backend/accounting.js"></script>
   <script defer src="js/backend/routes-permissions.js"></script>
   <script defer src="js/backend/routes-exchange.js"></script>
+  <script defer src="js/backend/plugins.js"></script>
+  <script defer src="js/backend/library-catalog.js"></script>
+  <script defer src="js/backend/builtin-plugins.js"></script>
+  <script defer src="js/backend/routes-plugins.js"></script>
+  <script defer src="js/backend/routes-notifications.js"></script>
+  <script defer src="js/backend/builtin-nodes.js"></script>
+  <script defer src="js/backend/routes-builtin.js"></script>
   <script defer src="js/backend/versions.js"></script>
   <script defer src="js/backend/live-plan.js"></script>
   <script defer src="js/backend/replay.js"></script>
@@ -58,6 +65,7 @@
   <script defer src="js/app/router.js"></script>
   <script defer src="js/app/tabs.js"></script>
   <script defer src="js/app/nav.js"></script>
+  <script defer src="js/app/notifications.js"></script>
   <script defer src="js/app/shell.js"></script>
   <script defer src="js/app/mobile.js"></script>
   <script defer src="js/pages/shared.js"></script>
@@ -66,6 +74,8 @@
   <script defer src="js/pages/theme-editor.js"></script>
   <script defer src="js/pages/settings.js"></script>
   <script defer src="js/pages/library.js"></script>
+  <script defer src="js/pages/catalog.js"></script>
+  <script defer src="js/pages/plugins.js"></script>
   <script defer src="js/pages/api.js"></script>
   <script defer src="js/pages/runs.js"></script>
   <script defer src="js/pages/home.js"></script>
@@ -164,9 +174,12 @@
   <aside id="sidebar">
     <a class="brand" href="#/" data-link data-section="home" id="brand" title="Dashboard" aria-label="AgentSys home"><span class="brand-mark"></span><span>AgentSys</span></a>
     <nav class="sidebar-top" aria-label="Sections">
+      <a href="#/plugins" data-link data-section="plugins" title="Plugins"><svg><use href="#i-plug"/></svg><span>Plugins</span></a>
       <a href="#/resources" data-link data-section="library" title="Library"><svg><use href="#i-library"/></svg><span>Library</span></a>
       <hr>
       <a href="#/projects" data-link data-section="projects" title="Projects"><svg><use href="#i-folder"/></svg><span>Projects</span></a>
+      <a href="#/runs" data-link data-section="runs" title="Runs"><svg><use href="#i-activity"/></svg><span>Runs</span></a>
+      <a href="#/api" data-link data-section="api" title="API reference"><svg><use href="#i-code"/></svg><span>API reference</span></a>
     </nav>
     <nav class="sidebar-footer" aria-label="Application">
       <a href="#/settings" data-link data-section="settings" title="Settings"><svg><use href="#i-settings"/></svg><span>Settings</span></a>
@@ -180,10 +193,15 @@
     <div id="topstrip">
       <div id="tabs" class="tabs-bar" role="tablist" aria-label="Open graph editors"></div>
       <button class="search-button" id="open-search" title="Search (Ctrl K)"><svg><use href="#i-search"/></svg><span>Search</span><kbd>Ctrl K</kbd></button>
+      <button class="notif-button" id="open-notifications" title="Notifications" aria-label="Notifications" aria-haspopup="true" aria-expanded="false" aria-controls="notifications-panel"><svg><use href="#i-bell"/></svg></button>
+      <div id="notifications-panel" class="notif-panel" role="dialog" aria-label="Notifications" inert>
+        <header><h2>Notifications</h2><button type="button" class="small ghost" id="notifications-clear">Clear</button></header>
+        <div id="notifications-list"></div>
+      </div>
     </div>
     <div id="view"></div>
   </main>
-  <div id="mobile-secondary"><button type="button" id="mobile-browse" aria-controls="subnav" aria-expanded="false"><svg><use href="#i-folder"/></svg><span id="mobile-browse-label">Browse</span><svg><use href="#i-chevron"/></svg></button><nav id="mobile-section-tabs" role="tablist" aria-label="Section tabs"></nav></div>
+  <div id="mobile-secondary"><button type="button" id="mobile-browse" aria-controls="subnav" aria-expanded="false"><svg><use href="#i-folder"/></svg><span id="mobile-browse-label">Browse</span><svg><use href="#i-chevron"/></svg></button></div>
   <button type="button" id="mobile-nav-backdrop" tabindex="-1" aria-label="Close navigation" hidden></button>
   <dialog id="modal"><form method="dialog" id="modal-form"><header><h2 id="modal-title"></h2><button type="button" class="icon" value="cancel" aria-label="Close"><svg><use href="#i-x"/></svg></button></header><div id="modal-body"></div><p class="form-error" id="modal-error" hidden></p><footer id="modal-actions"></footer></form></dialog>
   <div id="toasts" aria-live="polite"></div>

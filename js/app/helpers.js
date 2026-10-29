@@ -8,7 +8,7 @@ const esc = value =>
     /[&<>"']/g,
     c => ({'&': '&amp;', '<': '&lt;', '>': '&gt;', '"': '&quot;', "'": '&#39;'})[c]
   );
-const isUploadedIcon = value => /^data:image\/png;base64,[a-z0-9+/]+=*$/i.test(value || '');
+const isUploadedIcon = value => /^(?:data:image\/png;base64,[a-z0-9+/]+=*|data:image\/svg\+xml,%3C.*)$/i.test(value || '');
 const icon = name =>
   isUploadedIcon(name)
     ? `<img class="custom-icon" src="${esc(name)}" alt="" aria-hidden="true">`

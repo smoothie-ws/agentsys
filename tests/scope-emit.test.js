@@ -58,7 +58,7 @@ test('a Script outside a Library node has no data: setting an output or firing a
   const app = createApp(),
     p = await project(app);
   const bare = await p.node(nodes.script('node.output.x = 1')),
-    firing = await p.node(nodes.script('await node.emit("Out")'));
+    firing = await p.node(nodes.script('await node.emit("out")'));
   const r = await p.evaluate([bare.id, firing.id]);
   assert.match(r.errors[bare.id], /not in a Library node/);
   assert.match(r.errors[firing.id], /not in a Library node/);

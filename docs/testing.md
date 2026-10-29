@@ -30,10 +30,17 @@ python3 tests/browser_ui.py 8101
 node server.js &                         # real server: path routes (set PORT/DATA_DIR)
 python3 tests/browser_available_nodes.py http://127.0.0.1:8080
 python3 tests/browser_runs.py http://127.0.0.1:8080
+python3 tests/browser_navigation_audit.py  # starts its own server and disposable DATA_DIR
 ```
 
-All browser tests pass: `navigation`, `navigation_fixes` (panels, Developer-mode URL gating, the API page reached from the Dashboard), `ui` (menus, search, redraw, a paused run showing its running nodes as paused), `smoke` (canvas, editors, Library, tabs, types, widgets, search), `custom_node`, `appearance`, `mobile_theme`, `snap_hints`, `exchange_themes` (static server, hash routes) and `available_nodes`, `runs` (real server). Run them one at a time against a fresh `DATA_DIR`. Set `PLAYWRIGHT_CHROMIUM_EXECUTABLE` to use an existing Chromium.
+Browser checks include `navigation`, `navigation_fixes` (panels, Developer-mode URL gating, the API page reached from the Dashboard), `ui` (menus, search, redraw, a paused run showing its running nodes as paused), `smoke` (canvas, editors, Library, tabs, types, widgets, search), `custom_node`, `appearance`, `mobile_theme`, `snap_hints`, `exchange_themes` (static server, hash routes) and `available_nodes`, `runs` (real server). Run them one at a time against a fresh `DATA_DIR`. Set `PLAYWRIGHT_CHROMIUM_EXECUTABLE` to use an existing Chromium.
+
+`browser_navigation_audit.py` checks desktop and phone navigation, parent links from both editors, nested Library and plugin breadcrumbs, API opening/download, native link URLs and middle-click, Back/Forward between settings sections, direct links with trailing slashes and dotted IDs, stale async responses, search and notification destinations, keyboard editor tabs and section links, closing all editors, contextual error exits, modal navigation sheets, and hash routing. `browser_workspace_layout.py` checks the compact pages, field heights through reopening/reload and case-sensitive port labels.
+
+`tests/builtin.test.js` covers the built-in catalog (added once, edits and deletions respected, restore). `tests/plugins.test.js` covers packages, install/update/remove, Library ownership, grants and quarantine, settings, data, endpoints (inline and Worker), templates and the admin-only management routes. The plugin UI (import, enable, the sandboxed page and its bridge) is checked in a browser against a real server with a fresh `DATA_DIR`.
 
 ## Before a release
 
 Create a project → add nodes → connect → Run; make a Custom Node in the Library; place it and confirm it is locked; edit it in the Library and confirm the copy updates; reload and confirm state persisted; run `node examples/stream-workflow/setup.cjs http://127.0.0.1:8080` against a running server and follow its printed instructions (webhook → queue → state counter, an event wait).
+
+`browser_catalog.py` uses a disposable server to check the shared navigation/header format in all seven sections, native Library menus and forms, SKILL.md persistence, credential isolation, custom plugin icons, default and explicitly overridden plugin navigation, API download and mobile destinations. `catalog.test.js` covers resource CRUD, schemas, hierarchy, actions, grants, migration and cleanup; `catalog-storage.test.js` checks actual Markdown files, separate credentials and a server restart. Disposable browser servers share `tests/browser_server.py`.

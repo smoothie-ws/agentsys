@@ -11,7 +11,7 @@ async function setup() {
     call = (method, path, body = {}) => app.api(method, `projects/${id}/${path}`, {...q, ...body}, q);
   const add = config => call('POST', 'typed-nodes', {node_type: 'custom', config, position: {x: 0, y: 0}});
   const source = await add(nodes.value('text', 'hi')),
-    inner = await fn(app, id, q, {code: 'node.output.result = input + "!"; await node.emit("Out")', inputs: ['input'], outputs: ['result'], signals: ['Out']}),
+    inner = await fn(app, id, q, {code: 'node.output.result = input + "!"; await node.emit("out")', inputs: ['input'], outputs: ['result'], signals: ['out']}),
     outer = await fn(app, id, q, {code: 'node.display(String(input) + "?");', inputs: ['input']});
   const start = await flow(app, id, q, [inner.step, outer.step]);
   await call('POST', 'port-connections', {add: [{source: source.id, source_port: 'value', target: inner.wrapper, target_port: 'input'}]});

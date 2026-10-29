@@ -29,7 +29,9 @@ button:hover:not(:disabled),
 .button:hover {
   background: var(--theme-buttons-hover, var(--hover));
   transform: none;
-  box-shadow: inset 0 0 0 1px var(--theme-buttons-outline, transparent), var(--lift);
+  box-shadow:
+    inset 0 0 0 1px var(--theme-buttons-outline, transparent),
+    var(--lift);
 }
 button:active:not(:disabled),
 .button:active {
@@ -264,8 +266,10 @@ input[type='checkbox']::after {
   width: 14px;
   height: 14px;
   background: var(--on-accent);
-  -webkit-mask: url("data:image/svg+xml,%3Csvg xmlns='http://www.w3.org/2000/svg' viewBox='0 0 24 24' fill='none' stroke='%23000' stroke-width='3.6' stroke-linecap='round' stroke-linejoin='round'%3E%3Cpath d='m5 12.5 4.5 4.5L19 7'/%3E%3C/svg%3E") center / contain no-repeat;
-  mask: url("data:image/svg+xml,%3Csvg xmlns='http://www.w3.org/2000/svg' viewBox='0 0 24 24' fill='none' stroke='%23000' stroke-width='3.6' stroke-linecap='round' stroke-linejoin='round'%3E%3Cpath d='m5 12.5 4.5 4.5L19 7'/%3E%3C/svg%3E") center / contain no-repeat;
+  -webkit-mask: url("data:image/svg+xml,%3Csvg xmlns='http://www.w3.org/2000/svg' viewBox='0 0 24 24' fill='none' stroke='%23000' stroke-width='3.6' stroke-linecap='round' stroke-linejoin='round'%3E%3Cpath d='m5 12.5 4.5 4.5L19 7'/%3E%3C/svg%3E")
+    center / contain no-repeat;
+  mask: url("data:image/svg+xml,%3Csvg xmlns='http://www.w3.org/2000/svg' viewBox='0 0 24 24' fill='none' stroke='%23000' stroke-width='3.6' stroke-linecap='round' stroke-linejoin='round'%3E%3Cpath d='m5 12.5 4.5 4.5L19 7'/%3E%3C/svg%3E")
+    center / contain no-repeat;
   opacity: 0;
   transform: scale(0.5);
   transition:
@@ -322,6 +326,68 @@ legend {
   font-size: 0.85rem;
   font-weight: 560;
   margin-bottom: 0.4rem;
+}
+/* Keep permission choices separate from the free-form field, even in a narrow inspector. */
+.permission-controls {
+  min-width: 0;
+}
+.permission-controls > legend {
+  margin-bottom: 0.65rem;
+}
+.permission-fields {
+  display: grid;
+  gap: 0.85rem;
+  min-width: 0;
+}
+.permission-fields > .field {
+  min-width: 0;
+  margin: 0;
+}
+.permission-fields input:not([type='checkbox']) {
+  width: 100%;
+  min-width: 0;
+}
+.permission-table {
+  width: 100%;
+  table-layout: fixed;
+  border-collapse: collapse;
+  font-size: 0.85rem;
+}
+.permission-table th,
+.permission-table td {
+  padding: 0.25rem;
+  border-bottom: 1px solid var(--line);
+}
+.permission-table th {
+  text-align: left;
+  font-weight: 400;
+  overflow-wrap: anywhere;
+}
+.permission-table thead th {
+  padding-block: 0 0.5rem;
+  color: var(--muted);
+  font-size: 0.8rem;
+  font-weight: 560;
+}
+.permission-table th:not(:first-child) {
+  width: 4rem;
+  text-align: center;
+}
+.permission-choice {
+  display: flex;
+  align-items: center;
+  justify-content: center;
+  min-height: 2rem;
+  cursor: pointer;
+}
+.permission-fields .permission-choice input {
+  width: 18px;
+  min-width: 18px;
+}
+.permission-hint {
+  margin: -0.35rem 0 0;
+  font-size: 0.8rem;
+  line-height: 1.5;
 }
 details > summary {
   cursor: pointer;
@@ -400,7 +466,9 @@ kbd {
   transform: none;
 }
 .swatch.active {
-  box-shadow: 0 0 0 2px var(--surface), 0 0 0 4px var(--accent);
+  box-shadow:
+    0 0 0 2px var(--surface),
+    0 0 0 4px var(--accent);
 }
 .icon-grid {
   display: grid;

@@ -34,7 +34,7 @@ async def main():
           await go(`/p/${project.id}/w/${project.id}`);
           return {project:project.id,second:second.id,alpha:alpha.id,beta:beta.id};
         }""")
-        assert await page.locator('#sidebar [data-section=runs]').count() == 0
+        assert await page.locator('#sidebar [data-section=runs]').count() == 1
         assert await page.evaluate('W.snapshot.library_nodes.length') == 0
         await page.locator('[data-empty-add]:visible').click()
         menu = page.locator('.popup:not(.closing)')
@@ -48,7 +48,7 @@ async def main():
         await search.fill('Availability Alpha')
         await menu.get_by_role('menuitem', name='Checks / Availability Alpha', exact=True).click()
         await page.wait_for_function('id => W.snapshot.library_nodes.includes(id) && W.snapshot.complex.length === 1', arg=ids['alpha'])
-        await page.locator('[data-side-tab=nodes]').click()
+        await page.locator('[data-side-tab=workflow]').click()
         alpha = page.locator(f'[data-library-node="{ids["alpha"]}"]')
         beta = page.locator(f'[data-library-node="{ids["beta"]}"]')
         group = page.locator('[data-library-group="Checks"]')
@@ -84,9 +84,9 @@ async def main():
         await page.wait_for_function('W.snapshot.library_nodes.length === 0')
         await page.goto(BASE + '/editor/p/' + ids['project'] + '/w/' + ids['project'])
         await page.wait_for_function('id => W.snapshot?.library_nodes.includes(id)', arg=ids['alpha'])
-        await page.locator('[data-side-tab=nodes]').click()
+        await page.locator('[data-side-tab=workflow]').click()
         assert await page.locator(f'[data-library-node="{ids["alpha"]}"]').is_checked()
-        assert await page.locator('[data-side-tab=nodes]').get_attribute('aria-pressed') == 'true'
+        assert await page.locator('[data-side-tab=workflow]').get_attribute('aria-pressed') == 'true'
         assert await page.locator('.available-group-items').evaluate_all("""groups => groups.every(group => {
           const rows = [...group.children].filter(el => el.matches('.available-node'));
           return rows.every((row, i) => !i || row.getBoundingClientRect().top >= rows[i-1].getBoundingClientRect().bottom);
@@ -96,7 +96,7 @@ async def main():
             await page.screenshot(path=os.environ['AGENTSYS_UI_SCREENSHOT'])
         # A narrow layout still exposes and opens the section.
         await page.set_viewport_size({'width': 390, 'height': 844})
-        await page.locator('[data-side-tab=nodes]').click()
+        await page.locator('[data-side-tab=workflow]').click()
         assert await page.locator(f'[data-library-node="{ids["alpha"]}"]').is_visible()
         await page.set_viewport_size({'width': 1500, 'height': 1000})
         await page.evaluate("go('/resources/nodes?folder=Checks')")

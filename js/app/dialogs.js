@@ -13,7 +13,11 @@ function linkedText(parent, message) {
     }
     const [, label, target] = match;
     if (target.startsWith('node:')) {
-      const button = Object.assign(document.createElement('button'), {type: 'button', className: 'link', textContent: label});
+      const button = Object.assign(document.createElement('button'), {
+        type: 'button',
+        className: 'link',
+        textContent: label,
+      });
       button.onclick = () => reveal(target.slice(5));
       parent.append(button);
     } else {
@@ -119,13 +123,14 @@ function autoForm(form, read, write) {
     let data;
     try {
       if (!form.checkValidity()) {
+        if (!flush.isDirty()) return chain;
         status.textContent = 'Complete the highlighted fields';
-        return chain;
+        return Promise.resolve(false);
       }
       data = read();
     } catch (error) {
       status.textContent = error.message;
-      return chain;
+      return Promise.resolve(false);
     }
     const key = JSON.stringify(data);
     if (key === saved) return chain;
@@ -139,6 +144,7 @@ function autoForm(form, read, write) {
         () => {
           inflight--;
           status.textContent = 'Saved';
+          return true;
         },
         error => {
           inflight--;
@@ -146,6 +152,7 @@ function autoForm(form, read, write) {
           status.textContent = error.message;
           status.classList.add('bad');
           fail(error);
+          return false;
         }
       );
     return chain;
@@ -173,5 +180,19 @@ function autoForm(form, read, write) {
         return true;
       }
     },
+  });
+}
+/** An invalid field or failed save offers a visible choice instead of silently losing edits or trapping navigation. */
+async function leaveAutosave(save) {
+  if ((await save()) !== false) return true;
+  return new Promise(resolve => {
+    dialog(
+      'Unsaved changes',
+      '<p>Some changes could not be saved. Stay here to correct them, or discard them and leave.</p>',
+      () => resolve(true),
+      'Discard changes',
+      true
+    );
+    $('#modal').addEventListener('close', () => resolve(false), {once: true});
   });
 }

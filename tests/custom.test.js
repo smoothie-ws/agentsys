@@ -52,7 +52,7 @@ test('a Script runs when its signal arrives; it sends Out only with emit, and wh
       app,
       p.id,
       {},
-      {code: 'node.output.result = 1 + 1; await node.emit("Out")', outputs: ['result'], signals: ['Out']}
+      {code: 'node.output.result = 1 + 1; await node.emit("out")', outputs: ['result'], signals: ['out']}
     ),
     show = await fn(app, p.id, {}, {code: 'node.display(String(v))', inputs: ['v']});
   await p.connect(a.wrapper, 'result', show.wrapper, 'v');
@@ -115,7 +115,7 @@ test('a node can have several outputs of any kind; one it does not set is undefi
     app,
     p.id,
     {},
-    {code: 'node.output.a = 2; node.output.b = "y"; await node.emit("Out")', outputs: ['a', 'b'], signals: ['Out']}
+    {code: 'node.output.a = 2; node.output.b = "y"; await node.emit("out")', outputs: ['a', 'b'], signals: ['out']}
   );
   const second = await fn(app, p.id, {}, {code: 'node.display(String(v))', inputs: ['v']});
   await p.connect(ok.wrapper, 'b', second.wrapper, 'v');
@@ -124,7 +124,7 @@ test('a node can have several outputs of any kind; one it does not set is undefi
   const r = await p.evaluate([loose.id]);
   assert.deepEqual(r.errors, {});
   assert.deepEqual(r.outputs[loose.id], {a: {any: ['thing', 1]}});
-  const silent = await fn(app, p.id, {}, {code: '', outputs: ['result'], signals: ['Out']});
+  const silent = await fn(app, p.id, {}, {code: '', outputs: ['result'], signals: ['out']});
   const shows = await fn(app, p.id, {}, {code: 'node.display(String(v))', inputs: ['v']});
   await p.connect(silent.wrapper, 'result', shows.wrapper, 'v');
   const none = await p.run(silent.step, shows.step);
@@ -331,10 +331,10 @@ test('a Script reads its inputs as variables; code can change the nodes of the g
     p.id,
     {},
     {
-      code: 'node.output.sum = a + b; node.output.twice = (a + b) * 2; await node.emit("Out")',
+      code: 'node.output.sum = a + b; node.output.twice = (a + b) * 2; await node.emit("out")',
       inputs: ['a', 'b'],
       outputs: ['sum', 'twice'],
-      signals: ['Out'],
+      signals: ['out'],
     }
   );
   await p.connect(two.id, 'value', n.wrapper, 'a');

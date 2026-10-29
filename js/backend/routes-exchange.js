@@ -138,45 +138,46 @@ route(
   },
   {returns: '{format: "agentsys.text/1", files: canonical project files}'}
 );
+/** Creates a project from a decoded project document (`projects/import`, and the templates of plugins). */
+async function importProjectDocument(c, body) {
+  if (!Array.isArray(body.workflows) || !body.workflows.length || body.workflows.length > 100)
+    throw bad('Pass {name, workflows: [{name, document}]} as exported by the export route');
+  const projects = await c.projects(),
+    id = uid(),
+    project = {
+      id,
+      name: freeName(
+        new Set(projects.map(p => p.name)),
+        String(body.name ?? 'Imported project').trim() || 'Imported project'
+      ),
+      description: typeof body.description === 'string' ? body.description.slice(0, 2000) : '',
+      created: Date.now() / 1000,
+      workflows: [],
+    };
+  const docs = [];
+  for (const item of body.workflows) {
+    if (!isObject(item)) throw bad('Every workflow needs a name and a document');
+    const doc = importedDocument(project, item.document),
+      name = freeName(
+        new Set(project.workflows.map(w => w.name)),
+        String(item.name ?? 'Workflow').trim() || 'Workflow'
+      ),
+      wid = project.workflows.length ? uid() : id;
+    project.workflows.push({id: wid, name, created: Date.now() / 1000});
+    docs.push([wid, doc]);
+  }
+  for (const [wid, doc] of docs) {
+    c.ctx.set('wf:' + wid, doc);
+    await c.collectHooks(id, wid, doc, JSON.stringify(stateOf(emptyDoc())));
+  }
+  projects.push(project);
+  c.ctx.set('projects', projects);
+  return {id, name: project.name, workflows: project.workflows.map(w => ({id: w.id, name: w.name}))};
+}
 route(
   'POST',
   'projects/import',
   'Create a project from an exported document',
-  async c => {
-    const body = decodeExchange(c.body);
-    if (!Array.isArray(body.workflows) || !body.workflows.length || body.workflows.length > 100)
-      throw bad('Pass {name, workflows: [{name, document}]} as exported by the export route');
-    const projects = await c.projects(),
-      id = uid(),
-      project = {
-        id,
-        name: freeName(
-          new Set(projects.map(p => p.name)),
-          String(body.name ?? 'Imported project').trim() || 'Imported project'
-        ),
-        description: typeof body.description === 'string' ? body.description.slice(0, 2000) : '',
-        created: Date.now() / 1000,
-        workflows: [],
-      };
-    const docs = [];
-    for (const item of body.workflows) {
-      if (!isObject(item)) throw bad('Every workflow needs a name and a document');
-      const doc = importedDocument(project, item.document),
-        name = freeName(
-          new Set(project.workflows.map(w => w.name)),
-          String(item.name ?? 'Workflow').trim() || 'Workflow'
-        ),
-        wid = project.workflows.length ? uid() : id;
-      project.workflows.push({id: wid, name, created: Date.now() / 1000});
-      docs.push([wid, doc]);
-    }
-    for (const [wid, doc] of docs) {
-      c.ctx.set('wf:' + wid, doc);
-      await c.collectHooks(id, wid, doc, JSON.stringify(stateOf(emptyDoc())));
-    }
-    projects.push(project);
-    c.ctx.set('projects', projects);
-    return {id, name: project.name, workflows: project.workflows.map(w => ({id: w.id, name: w.name}))};
-  },
+  async c => importProjectDocument(c, decodeExchange(c.body)),
   {body: TextGraph.encode({kind:'project',name: 'My project', workflows: [{name: 'Main', document: {}}]})}
 );

@@ -44,7 +44,7 @@ test('Custom nodes evaluate through wires: a value, some code, and a node that d
   const app = createApp(),
     p = await newProject(app);
   const text = await p.node('custom', nodes.value('text', 'hi'));
-  const code = await p.fn({code: 'node.output.result = v + "!"; await node.emit("Out")', inputs: ['v'], outputs: ['result'], signals: ['Out']});
+  const code = await p.fn({code: 'node.output.result = v + "!"; await node.emit("out")', inputs: ['v'], outputs: ['result'], signals: ['out']});
   const preview = await p.show();
   await p.connect(text.id, 'value', code.wrapper, 'v');
   await p.connect(code.wrapper, 'result', preview.wrapper, 'input');
@@ -68,7 +68,7 @@ test('Complex Nodes are built in the Library editor and behave as plain nodes in
   const lib = {id: opened.project_id, workflow: {workflow_id: opened.workflow_id}};
   const add = (node_type, config) =>
     app.api('POST', `projects/${lib.id}/typed-nodes`, {...lib.workflow, node_type, config, position: {x: 40, y: 80}});
-  const inner = await add('custom', script('node.output.out = "A:" + node.input.text; await node.emit("Out")'));
+  const inner = await add('custom', script('node.output.out = "A:" + node.input.text; await node.emit("done")'));
   let snap = await app.api('GET', `projects/${lib.id}/workflow`, {}, lib.workflow);
   const root = snap.groups.find(g => g.id === snap.root);
   assert.ok(root.members.includes(inner.id), 'new nodes are adopted into the main group');
@@ -82,11 +82,11 @@ test('Complex Nodes are built in the Library editor and behave as plain nodes in
     interface: {
       inputs: [
         {id: 'text', name: 'text'},
-        {id: 'go', name: 'In', type: 'signal', bound: [{node_id: inner.id, port_id: 'in'}]},
+        {id: 'go', name: 'in', type: 'signal', bound: [{node_id: inner.id, port_id: 'in'}]},
       ],
       outputs: [
         {id: 'out', name: 'out'},
-        {id: 'done', name: 'Out', type: 'signal'},
+        {id: 'done', name: 'done', type: 'signal'},
       ],
     },
   });
@@ -128,7 +128,7 @@ test('Complex Nodes are built in the Library editor and behave as plain nodes in
   await app.api('PUT', `projects/${again.project_id}/typed-nodes/${encodeURIComponent(script2.id)}`, {
     ...lib2,
     node_type: 'custom',
-    config: {...script2.config, inputs: script2.config.inputs.map(i => (i.name === 'script' ? {...i, default: 'node.output.out = "B:" + node.input.text; await node.emit("Out")'} : i))},
+    config: {...script2.config, inputs: script2.config.inputs.map(i => (i.name === 'script' ? {...i, default: 'node.output.out = "B:" + node.input.text; await node.emit("done")'} : i))},
   });
   psnap = await p.snapshot();
   assert.equal(psnap.edges.length, 4, 'wires survive the refresh');
@@ -220,7 +220,7 @@ test('the code of a Custom node can be a bare expression, and it can run code th
   const app = createApp(),
     p = await newProject(app);
   const flag = await p.node('custom', nodes.value('boolean', false));
-  const expr = await p.fn({code: 'node.output.result = condition ? "yes" : "no"; await node.emit("Out")', inputs: ['condition'], outputs: ['result'], signals: ['Out']});
+  const expr = await p.fn({code: 'node.output.result = condition ? "yes" : "no"; await node.emit("out")', inputs: ['condition'], outputs: ['result'], signals: ['out']});
   const preview = await p.show();
   await p.connect(flag.id, 'value', expr.wrapper, 'condition');
   await p.connect(expr.wrapper, 'result', preview.wrapper, 'input');
@@ -229,10 +229,10 @@ test('the code of a Custom node can be a bare expression, and it can run code th
   // Code arriving as text is just a text input and `new AsyncFunction`: nothing special is needed for it.
   const source = await p.node('custom', nodes.value('text', '40 + 2'));
   const dynamic = await p.fn({
-    code: 'node.output.result = await new (Object.getPrototypeOf(async function () {}).constructor)("return (" + code + ")")(); await node.emit("Out")',
+    code: 'node.output.result = await new (Object.getPrototypeOf(async function () {}).constructor)("return (" + code + ")")(); await node.emit("out")',
     inputs: ['code'],
     outputs: ['result'],
-    signals: ['Out'],
+    signals: ['out'],
   });
   const out = await p.show();
   await p.connect(source.id, 'value', dynamic.wrapper, 'code');

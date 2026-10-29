@@ -120,6 +120,8 @@ function saveResource(c, items, id, name, payload, newId = null) {
   name = name.trim();
   validateResource(payload);
   if (items.some(r => r.name === name && r.id !== id)) throw bad('A node with that name already exists.');
+  if (payload?.plugin !== undefined)
+    throw bad('Only a plugin can make a node that belongs to a plugin.');
   c.libraryTouched = true; // the Library's types follow its nodes
   const now = Date.now() / 1000;
   let item = items.find(r => r.id === id);
@@ -141,6 +143,7 @@ route(
       item = items.find(r => r.id === resource_id);
     if (!item) throw missing('Record not found');
     if (c.method === 'GET') return item;
+    if (pluginOwned(item)) throw pluginManaged(item);
     if (c.method === 'DELETE') {
       c.ctx.set(
         'resources',

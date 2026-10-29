@@ -2,8 +2,7 @@
 'use strict';
 
 /** Fills `box` with the reference. Returns nothing; everything it needs is the route table (`Backend.openapi()`). */
-function mountApiReference(box) {
-  const spec = Backend.openapi();
+function mountApiReference(box, spec = Backend.openapi()) {
   const rows = Object.entries(spec.paths).flatMap(([path, methods]) =>
     Object.entries(methods)
       .filter(([method]) => ['get', 'post', 'put', 'patch', 'delete'].includes(method))
@@ -41,6 +40,7 @@ function mountApiReference(box) {
       b.hidden = !`${path} ${method} ${op.summary}`.toLocaleLowerCase().includes(q);
     });
   };
+  if (rows.length) select(0);
   return {
     rows,
     spec,
@@ -54,17 +54,11 @@ function mountApiReference(box) {
   };
 }
 
-PAGES.api = async view => {
-  Subnav.mount({
-    title: 'API',
-    body: sectionRows('api', [
-      ['reference', 'Reference', 'code'],
-      ['dashboard', 'Dashboard', 'chart', '/'],
-    ]),
-  });
-  view.innerHTML = `<div class="page api-page">${pageHead({title: 'API', sub: 'Every action of the app is an API call.', actions: '<button id="download-spec">Download OpenAPI</button>'})}
-    <section id="api-reference"><p class="muted">With the server running: <code>${esc(location.origin)}${pathMode ? PATH_BASE : ''}/api/…</code>. In scripts: <code>agentsys(method, path, body)</code>.</p><div id="api-box"></div></section></div>`;
-  const reference = mountApiReference($('#api-box'));
-  $('#download-spec').onclick = () => reference.download();
-  followSections(view, 'api');
+PAGES.api = async (view, route) => {
+  const spec = DB.mode === 'files' ? await api('openapi.json') : Backend.openapi();
+  if (app.route !== route) return;
+  view.innerHTML = `<div class="page api-page">${pageHead({title: 'API reference', crumbs: [['Dashboard', '/']], sub: 'Every action of the app is an API call.'})}
+    <section id="api-reference"><p class="muted">With the server running: <code>${esc(location.origin)}/api/…</code>. In scripts: <code>agentsys(method, path, body)</code>.</p><div id="api-box"></div></section></div>`;
+  const reference = mountApiReference($('#api-box'), spec);
+  app.apiReference = reference;
 };

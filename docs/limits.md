@@ -51,3 +51,19 @@ The single source of the defaults of the Run limits is the `LIMITS` table in `js
 - Custom Node editing is gated by Developer mode.
 - Redirects in `net` are refused.
 - The server notices files edited on disk within 1 s when a page is open, ≈ 5 s otherwise.
+
+## Notifications
+
+| Limit | Value | Where |
+|---|---|---|
+| Notifications kept | 200 (title 200, text 2000 characters) | `NOTIFICATION` in `routes-notifications.js` |
+
+## Plugins
+
+| Limit | Value | Where |
+|---|---|---|
+| Files per package / bytes per file / per package | 200 / 2 MB / 8 MB | `PLUGIN` in `plugins.js` |
+| Plugin data | 2 MB total, 500 KB per value, 500 keys | `PLUGIN` |
+| Endpoint time / at once / result | 30 s / 4 / 1 MB | `PLUGIN` |
+| Activity log | 100 entries per plugin, in memory | `PLUGIN` |
+| Plugin API version | 1 | `PLUGIN_API` |

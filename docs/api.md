@@ -171,6 +171,7 @@ Generated from the route table (the API page, `/editor/api`, shows the same with
 |---|---|---|
 | GET | `library/node-folders` | List, create, rename or delete Library groups |
 | POST | `library/node-folders` | List, create, rename or delete Library groups |
+| GET POST | `library/builtin` | List the built-in nodes, or add the ones the Library lacks (`{restore: true}` also those deleted before) |
 | POST | `library/custom-nodes/{resource_id}/move` | Move a Custom Node into a group |
 | POST | `library/node-editor` | Open the graph editor for a new or existing Custom Node |
 | POST | `library/custom-nodes/{resource_id}/duplicate` | Duplicate a Custom Node |
@@ -235,6 +236,41 @@ Generated from the route table (the API page, `/editor/api`, shows the same with
 | GET | `workflows/{workflow_id}/control` | Read or configure workflow supervision |
 | PUT | `workflows/{workflow_id}/control` | Read or configure workflow supervision |
 | GET | `workflows/{workflow_id}/usage` | Read workflow bridge accounting |
+
+### notifications
+
+The bell at the top right of the editor shows these. The core posts nothing yet; plugins and workflows will. A Script or plugin posts with `notifications.write` (a plugin's `source` is always `plugin:<id>`) and reads with `notifications.read`; everything else is `system.admin`. There is no "read" state: a notification is there until it is deleted. At most 200 are kept (the oldest drop); title ≤ 200, text ≤ 2000 characters; `level` is `info|success|warn|error`; `href` is a page of the app.
+
+| | path | |
+|---|---|---|
+| GET POST DELETE | `notifications` | List (newest first; `?limit=`), post one, or clear all |
+| DELETE | `notifications/{id}` | Delete one |
+
+### plugins
+
+Management is `system.admin`; see [Plugins](plugins.md).
+
+| | path | |
+|---|---|---|
+| GET POST | `plugins` | List installed plugins, or install one from a package |
+| GET PUT DELETE | `plugins/{id}` | Read, enable, disable, change the grants of, or remove a plugin |
+| GET | `plugins/{id}/ui?path=`, `plugins/{id}/file?path=`, `plugins/{id}/log` | Declared UI assets, one file, recent activity |
+| GET PUT | `plugins/{id}/settings` | Settings checked against the declared schema |
+| GET PUT DELETE | `plugins/{id}/data[/{key}]` | Private data with compare-and-set |
+| POST | `plugins/{id}/bridge` | An API call as the plugin, with the rights it was granted |
+| GET POST PUT DELETE | `plugins/{id}/call/{name}` | An endpoint of the plugin |
+| POST | `plugins/{id}/templates/{template}/instantiate` | Create a project from a template |
+
+### native Library collections
+
+See [the collection contract](plugins.md#native-library-collections) for schemas, actions, secrets and SKILL.md.
+
+| Method | Path | Purpose |
+|---|---|---|
+| GET | `library/sections` | Enabled Library section declarations |
+| GET POST | `library/sections/{section}/items` | List or create typed resources; GET `?summary=1` omits values/content |
+| GET PUT DELETE | `library/sections/{section}/items/{id}` | Read, partially update or delete one resource |
+| POST | `library/sections/{section}/folders` | Create, rename or delete a folder |
 
 ### secrets
 

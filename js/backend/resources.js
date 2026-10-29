@@ -6,10 +6,11 @@ function validateIcon(value = '') {
     typeof value !== 'string' ||
     !(
       (value.length <= 30 && /^[a-z0-9_-]*$/i.test(value)) ||
-      (value.length <= 100000 && /^data:image\/png;base64,[a-z0-9+/]+=*$/i.test(value))
+      (value.length <= 100000 && /^data:image\/png;base64,[a-z0-9+/]+=*$/i.test(value)) ||
+      (value.length <= 150000 && /^data:image\/svg\+xml,%3C/i.test(value))
     )
   )
-    throw bad('The icon must be a name or a PNG image of at most 100000 characters.');
+    throw bad('The icon must be a name, a PNG image (100000 characters) or an encoded SVG image (150000 characters).');
 }
 function validateResource(payload) {
   if (!isObject(payload)) throw bad('Invalid payload.');

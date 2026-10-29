@@ -2,6 +2,16 @@
 'use strict';
 
 const PAGES = {};
+/** A common save lifecycle for settings pages and Library resource editors. */
+function pageAutosave(form, read, write) {
+  const save = autoForm(form, read, write),
+    status = $('.save-status', form);
+  $('#save-slot', $('#view'))?.replaceWith(status);
+  app.pageSave = save;
+  leaveGuards.push(() => leaveAutosave(save));
+  return save;
+}
+const statusBadge = status => `<span class="status-badge" data-status="${esc(status)}">${esc(status)}</span>`;
 const COMMON_CAPABILITIES = [
   'graph.read',
   'graph.write',
@@ -11,101 +21,53 @@ const COMMON_CAPABILITIES = [
   'run.read',
   'run.start',
 ];
-function manifestControls(payload = {}) {
-  const list = (field, attr) =>
-    COMMON_CAPABILITIES.map(
-      cap =>
-        `<label class="check"><input type="checkbox" ${attr}="${esc(cap)}" ${(payload[field] ?? []).includes(cap) ? 'checked' : ''}>${esc(cap)}</label>`
-    ).join('');
-  const extra = field => (payload[field] ?? []).filter(v => !COMMON_CAPABILITIES.includes(v)).join(', ');
-  return `<fieldset><legend>Declared capabilities</legend>${list('capabilities', 'data-capability')}<label>Specific capabilities<input name="extra_capabilities" value="${esc(extra('capabilities'))}" placeholder="net.fetch:example.com, secrets.use:service"></label></fieldset><fieldset><legend>Explicit user grants</legend>${list('grants', 'data-grant')}<label>Specific grants<input name="extra_grants" value="${esc(extra('grants'))}"></label></fieldset>`;
+function permissionChoices(capabilities, grants, attr = 'data-grant', prefix = 'grant') {
+  return `<table class="permission-table"><thead><tr><th scope="col">Permission</th><th scope="col">Allow</th><th scope="col">Disallow</th></tr></thead><tbody>${capabilities.map(cap => `<tr><th scope="row">${esc(cap)}</th><td><label class="permission-choice"><input type="radio" name="${prefix}:${esc(cap)}" value="allow" ${attr}="${esc(cap)}" aria-label="Allow ${esc(cap)}" ${grants.includes(cap) ? 'checked' : ''}></label></td><td><label class="permission-choice"><input type="radio" name="${prefix}:${esc(cap)}" value="disallow" aria-label="Disallow ${esc(cap)}" ${grants.includes(cap) ? '' : 'checked'}></label></td></tr>`).join('')}</tbody></table>`;
 }
-function readManifestControls(form) {
-  const read = (attr, name) => [
+function grantControls(grants = []) {
+  const extra = grants.filter(v => !COMMON_CAPABILITIES.includes(v)).join(', ');
+  return `<fieldset class="permission-controls" data-grants><legend>Permissions</legend><div class="permission-fields">${permissionChoices(COMMON_CAPABILITIES, grants)}<label class="field"><span>Specific permissions</span><input name="extra_grants" value="${esc(extra)}" placeholder="net.fetch:example.com"></label><p class="permission-hint muted">Permissions are limited by the parent node.</p></div></fieldset>`;
+}
+function readGrantControls(root) {
+  const box = $('[data-grants]', root);
+  return [
     ...new Set([
-      ...$$(`input[${attr}]:checked`, form).map(el => el.getAttribute(attr)),
-      ...(form.elements[name]?.value ?? '')
+      ...$$('input[data-grant]:checked', box).map(el => el.getAttribute('data-grant')),
+      ...(box.querySelector('[name=extra_grants]').value || '')
         .split(',')
         .map(v => v.trim())
         .filter(Boolean),
     ]),
   ];
-  return {capabilities: read('data-capability', 'extra_capabilities'), grants: read('data-grant', 'extra_grants')};
 }
-
 /**
  * Splits a settings form into sections shown one at a time. The list of sections lives in the second panel
  * (a form with one section needs none); the open one is remembered by the page's tab.
  */
-function sectionTabs(form, definitions, title = 'Settings') {
-  if (definitions.length < 2) return;
+function showSectionPanel(form, section = sectionOf(app.route)) {
+  const definitions = SECTION_PANELS[section];
   const sections = [...form.children].filter(el => el.tagName === 'SECTION');
-  const requested = definitions.findIndex(([label]) => markdownSlug(label) === routeQuery().get('section'));
-  const start = requested >= 0 ? requested : Math.min(Tabs.stateOf()?.section ?? 0, definitions.length - 1);
-  Subnav.mount({
-    title,
-    body: `<nav class="subnav-tree" role="tablist" aria-label="${esc(title)} sections">${definitions
-      .map(([label, glyph], i) => navTab(label, glyph, i === start))
-      .join('')}</nav>`,
-  });
-  const nav = $('#subnav-list .subnav-tree'),
-    tabs = $$('[role=tab]', nav);
+  if (!definitions || definitions.length < 2) return;
+  const index = definitions.findIndex(([key]) => key === selectedPanel(section));
   sections.forEach((section, i) => {
-    section.id = 'section-panel-' + i;
-    section.setAttribute('role', 'tabpanel');
-    tabs[i].id = 'section-tab-' + i;
-    tabs[i].setAttribute('aria-controls', section.id);
-    section.setAttribute('aria-labelledby', tabs[i].id);
-    section.hidden = i !== start;
-  });
-  const activate = index => {
-    const tab = Tabs.stateOf();
-    if (tab && tab.section !== index) {
-      tab.section = index;
-      Tabs.save();
-    }
-    const params = routeQuery();
-    if (params.has('section')) {
-      params.set('section', markdownSlug(definitions[index][0]));
-      history.replaceState({}, '', urlOf(routePath() + '?' + params));
-      const state = Tabs.stateOf();
-      if (state) {
-        state.href = routeTarget();
-        Tabs.save();
-      }
-    }
-    selectNavTab(nav, index);
-    placePills();
-    sections.forEach((section, i) => (section.hidden = i !== index));
-  };
-  tabs.forEach((tab, i) => {
-    tab.onclick = () => activate(i);
-    tab.onkeydown = event => {
-      if (!['ArrowDown', 'ArrowUp', 'Home', 'End'].includes(event.key)) return;
-      event.preventDefault();
-      const index =
-        event.key === 'Home'
-          ? 0
-          : event.key === 'End'
-            ? tabs.length - 1
-            : (i + (event.key === 'ArrowDown' ? 1 : -1) + tabs.length) % tabs.length;
-      activate(index);
-      tabs[index].focus();
-    };
+    section.id ||= 'section-panel-' + i;
+    section.hidden = i !== index;
   });
   form.addEventListener(
     'invalid',
     event => {
-      const i = sections.findIndex(section => section.contains(event.target));
-      if (i >= 0) activate(i);
+      const i = sections.findIndex(s => s.contains(event.target));
+      if (i >= 0 && sections[i].hidden) go(sectionHref(section, definitions[i][0])).catch(fail);
     },
     true
   );
 }
+const actionButton = (menu, label = 'Actions') =>
+  `<button type="button" class="icon" data-menu="${esc(menu)}" title="${esc(label)}" aria-label="${esc(label)}">${icon('dots')}</button>`;
 
 /** The header of a page: where it is (links up the tree), its name, a line about it, and its buttons. `title` and `sub` are HTML. */
-const pageHead = ({crumbs = [], title, sub = '', actions = ''}) =>
-  `<div class="page-head"><div>${crumbs.length ? `<nav class="crumbs" aria-label="Path">${crumbs.map(([label, href]) => `<a href="${esc(href)}" data-link>${esc(label)}</a>`).join('<span aria-hidden="true">/</span>')}</nav>` : ''}<h1>${title}</h1>${sub ? `<p class="muted">${sub}</p>` : ''}</div><div class="actions">${actions}</div></div>`;
+const pageHead = ({crumbs = [], title, sub = '', actions = '', menu = pageMenu()}) =>
+  `<div class="page-head"><div>${crumbs.length ? `<nav class="crumbs" aria-label="Path">${crumbs.map(([label, href]) => `<a href="${esc(href)}" data-link>${esc(label)}</a>`).join('<span aria-hidden="true">/</span>')}</nav>` : ''}<h1>${title}</h1>${sub ? `<p class="muted">${sub}</p>` : ''}</div><div class="actions">${actions}${actionButton(menu)}</div></div>`;
 
 /**
  * The card of every page (projects, workflows, Library nodes and groups), built like a node of the canvas: a header with an icon
@@ -122,12 +84,11 @@ function card({
   previewClass = '',
   facts = '',
   menu = '',
-  run = '',
   tint = '',
   extra = '',
 }) {
   const tag = href ? 'a' : 'div';
-  return `<article class="card ${tint}" ${extra}><${tag} class="card-main" ${href ? `href="${esc(href)}" data-link` : ''}><header class="card-head"><span class="head-icon">${icon(glyph)}</span><h3><span ${attrs}>${esc(title)}</span></h3></header><div class="card-preview ${previewClass}" ${previewAttrs}>${preview}</div>${facts ? `<p class="card-facts">${facts}</p>` : ''}</${tag}><span class="card-actions">${run}${menu ? `<button class="icon" data-menu="${esc(menu)}" aria-label="Actions of ${esc(title)}">${icon('dots')}</button>` : ''}</span></article>`;
+  return `<article class="card ${tint}" ${extra}><${tag} class="card-main" ${href ? `href="${esc(href)}" data-link` : ''}><header class="card-head"><span class="head-icon">${icon(glyph)}</span><h3><span ${attrs}>${esc(title)}</span></h3></header><div class="card-preview ${previewClass}" ${previewAttrs}>${preview}</div>${facts ? `<p class="card-facts">${facts}</p>` : ''}</${tag}><span class="card-actions">${menu ? `<button class="icon" data-menu="${esc(menu)}" aria-label="Actions of ${esc(title)}">${icon('dots')}</button>` : ''}</span></article>`;
 }
 
 function inlineRename(title, value, save, {maxLength = 100, pattern = ''} = {}) {
@@ -189,39 +150,6 @@ function inlineRename(title, value, save, {maxLength = 100, pattern = ''} = {}) 
   };
   input.focus();
   input.select();
-}
-
-/** Existing name fields stage changes until Enter; unrelated autosaves read the committed name. */
-const nameValue = input => input.dataset.committedName ?? input.value;
-function bindNameField(input, commit = () => input.dispatchEvent(new Event('change', {bubbles: true}))) {
-  input.dataset.committedName = input.value;
-  let committing = false;
-  input.addEventListener('input', event => event.stopPropagation());
-  input.addEventListener('change', event => {
-    if (!committing) event.stopPropagation();
-  });
-  input.addEventListener('blur', () => {
-    input.value = nameValue(input);
-  });
-  input.addEventListener('keydown', event => {
-    event.stopPropagation();
-    if (event.key === 'Escape') {
-      event.preventDefault();
-      input.value = nameValue(input);
-      input.blur();
-    }
-    if (event.key !== 'Enter' || event.isComposing) return;
-    event.preventDefault();
-    input.value = input.value.trim();
-    if (!input.reportValidity()) return;
-    input.dataset.committedName = input.value;
-    committing = true;
-    try {
-      commit();
-    } finally {
-      committing = false;
-    }
-  });
 }
 
 function menuTitle(spec, owner) {
@@ -398,11 +326,19 @@ function loadCardPreviews(view, projectId = null) {
 }
 
 async function loadLibrary() {
-  const settings = await api('settings');
+  const [settings, sections] = await Promise.all([api('settings'), api('library/sections')]);
   app.resources = settings.resources;
   app.nodeFolders = settings.node_folders || [];
   app.nodeFolderIcons = settings.node_folder_icons || {};
   app.preferences = settings.preferences;
+  app.librarySections = sections;
+  app.catalogCollections = new Map(
+    await Promise.all(
+      sections
+        .filter(s => s.id !== 'nodes' && s.item)
+        .map(async s => [s.id, await api(`library/sections/${s.id}/items`, {query: {summary: 1}})])
+    )
+  );
   return settings;
 }
 const baseName = path => path.slice(path.lastIndexOf('/') + 1);

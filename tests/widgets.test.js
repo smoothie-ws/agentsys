@@ -251,11 +251,11 @@ test('nothing in the engine insists on a behaviour: no code, no outputs, odd res
   assert.deepEqual(r.errors, {});
   // An output the node does not have, a signal output and a function are mistakes, not values that go nowhere.
   const stray = await fn(app, p.id, q, {code: 'node.output.zzz = 5;'}),
-    signalled = await fn(app, p.id, q, {code: 'node.output.Out = 1;', signals: ['Out']}),
+    signalled = await fn(app, p.id, q, {code: 'node.output.out = 1;', signals: ['out']}),
     func = await fn(app, p.id, q, {code: 'node.output.o = () => 1;', outputs: ['o']});
   const bad = await p.evaluate([stray.id, signalled.id, func.id]);
   assert.match(bad.errors[stray.id], /no free output “zzz”/);
-  assert.match(bad.errors[signalled.id], /signal output.*emit\("Out"\)/);
+  assert.match(bad.errors[signalled.id], /signal output.*emit\("out"\)/);
   assert.match(bad.errors[func.id], /output\.o cannot be sent/);
   assert.deepEqual(r.outputs[quiet.id], {});
   assert.deepEqual(r.outputs[weird.id], {});
@@ -270,14 +270,14 @@ test('a Custom node placed in a library node shows its widgets through the Compl
       'Widgeted',
       {
         Body: {inputs: [], outputs: []},
-        S: titled('S', `node.output.out = context.widgets.w + ${JSON.stringify(suffix)}; await node.emit("Out")`),
+        S: titled('S', `node.output.out = context.widgets.w + ${JSON.stringify(suffix)}; await node.emit("done")`),
       },
       {
         widgets: {Body: [{id: 'w', kind: 'text', value}]},
-        inputs: [{id: 'go', name: 'In', type: 'signal', node: 'S', port: 'in'}],
+        inputs: [{id: 'go', name: 'in', type: 'signal', node: 'S', port: 'in'}],
         outputs: [
           {id: 'out', name: 'out', node: false},
-          {id: 'done', name: 'Out', type: 'signal', node: false},
+          {id: 'done', name: 'done', type: 'signal', node: false},
         ],
       }
     );

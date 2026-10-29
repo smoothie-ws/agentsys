@@ -37,8 +37,10 @@
   align-items: center;
   gap: 0.65rem;
   box-sizing: border-box;
-  height: 48px;
-  padding: 0.2rem 0.5rem 1.2rem;
+  height: 44px;
+  margin-bottom: 0.6rem;
+  padding: 0 0.6rem 0 calc(0.6rem - 3px); /* the mark's centre sits over the icons of the rows below */
+  border-radius: var(--theme-navigation-radius, 15px);
   font-size: 1.08rem;
   font-weight: 740;
   letter-spacing: -0.018em;
@@ -133,8 +135,8 @@
   align-items: center;
   justify-content: space-between;
   flex: none;
-  height: 28px;
-  margin: 0.1rem 0 1.1rem;
+  height: 44px; /* centred on the logo's row in the sidebar */
+  margin: 0 0 0.2rem;
   padding: 0 0.1rem 0 0.6rem;
 }
 .subnav-head h2 {
@@ -625,3 +627,28 @@ main {
     display: none;
   }
 }
+
+/* ----- Notifications: the bell beside Search, and the list it opens ----- */
+#topstrip { position: relative; }
+.notif-button { position: relative; flex: none; color: var(--muted); border-radius: 999px; padding: 0.42rem 0.55rem; }
+.notif-button:hover:not(:disabled), .notif-button[aria-expanded='true'] { color: var(--text); }
+.notif-button svg { width: 18px; height: 18px; }
+.notif-button.has::after { content: ''; position: absolute; top: 5px; right: 6px; width: 8px; height: 8px; border-radius: 50%; background: var(--accent); box-shadow: 0 0 0 2px var(--panel); }
+.notif-panel { position: absolute; top: calc(100% - 2px); right: 0.6rem; z-index: 40; width: min(400px, calc(100vw - 16px)); max-height: min(70vh, 560px); display: flex; flex-direction: column; border-radius: var(--radius, 14px); background: var(--panel); box-shadow: var(--shadow-lg, 0 12px 40px #0006); overflow: hidden; }
+.notif-panel { transform-origin: top right; opacity: 0; transform: translateY(-8px) scale(0.97); visibility: hidden; pointer-events: none; transition: opacity var(--base) var(--ease), transform var(--base) var(--ease), visibility 0s linear var(--base); }
+.notif-panel.open { opacity: 1; transform: none; visibility: visible; pointer-events: auto; transition-delay: 0s; }
+@media (prefers-reduced-motion: reduce) { .notif-panel { transition: none; } }
+.notif-panel header { display: flex; align-items: center; gap: 0.3rem; padding: 0.6rem 0.8rem; }
+.notif-panel h2 { flex: 1; margin: 0; font-size: 0.95rem; }
+#notifications-list { overflow: auto; padding: 0 0.4rem 0.5rem; }
+.notif { display: flex; align-items: flex-start; gap: 0.5rem; padding: 0.5rem 0.4rem; border-radius: 10px; }
+.notif:hover { background: var(--hover, color-mix(in srgb, var(--text) 7%, transparent)); }
+.notif-dot { flex: none; width: 8px; height: 8px; margin-top: 0.45rem; border-radius: 50%; background: var(--accent); }
+.notif.lvl-success .notif-dot { background: var(--ok); }
+.notif.lvl-warn .notif-dot { background: var(--warn); }
+.notif.lvl-error .notif-dot { background: var(--bad); }
+.notif-main { flex: 1; min-width: 0; display: grid; gap: 0.1rem; color: inherit; text-decoration: none; cursor: pointer; }
+.notif-body { color: var(--muted); font-size: 0.85rem; overflow-wrap: anywhere; }
+.notif .icon { flex: none; opacity: 0; }
+.notif:hover .icon, .notif .icon:focus-visible { opacity: 1; }
+.notif-empty { padding: 1.5rem 1rem; text-align: center; }

@@ -35,9 +35,9 @@ function annotate(nodes, groups, complexes, stored) {
   );
   for (const node of all.values()) {
     const spec = schema(node),
-      inputs = spec.inputs.map(p => ({...p}));
+      inputs = signalsFirst(spec.inputs.map(p => ({...p})));
     node.inputs = inputs;
-    node.outputs = spec.outputs.map(p => ({...p}));
+    node.outputs = signalsFirst(spec.outputs.map(p => ({...p})));
     // A slot fed by a wire, or exposed on a group's interface (its value then comes from outside), is connected.
     for (const p of inputs) p.connected = occupied.inputs.has(key(node.id, p.id)) || exposed.has(key(node.id, p.id));
     for (const p of node.outputs) p.connected = occupied.outputs.has(key(node.id, p.id));
@@ -288,6 +288,7 @@ function buildSnapshot(project, workflow, doc, structure = false) {
         position: doc.layout['complex:' + c.id],
         locked,
         source: c.source ?? null,
+        grants: c.source && c.grants ? [...c.grants] : null,
         ...(c.refresh_error ? {refresh_error: c.refresh_error} : {}),
         // The nodes inside that have widgets: a node placed from the Library shows them on itself.
         widget_nodes: c.source ? g.all_members.filter(id => doc.widgets?.[id]?.length) : [],

@@ -46,7 +46,7 @@ test('a wait frees the worker and resumes with its input snapshot after a backen
 test('parallel branch finishes during a delay and nested emit continues after resume', async () => {
   const app = createApp();
   const p = await app.api('POST', 'projects', {name: 'Nested'});
-  const a = await fn(app, p.id, {}, {code: 'await node.emit("Out"); node.display("parent done");', signals: ['Out']});
+  const a = await fn(app, p.id, {}, {code: 'await node.emit("out"); node.display("parent done");', signals: ['out']});
   const b = await fn(
     app,
     p.id,
@@ -55,7 +55,7 @@ test('parallel branch finishes during a delay and nested emit continues after re
   );
   const c = await fn(app, p.id, {}, {code: 'node.display("parallel done");'});
   await app.api('POST', `projects/${p.id}/port-connections`, {
-    add: [b, c].map(n => ({source: a.wrapper, source_port: 'Out', target: n.wrapper, target_port: 'in'})),
+    add: [b, c].map(n => ({source: a.wrapper, source_port: 'out', target: n.wrapper, target_port: 'in'})),
   });
   const run = await app.api('POST', `projects/${p.id}/runs`, {node_ids: [a.id], wait: 1});
   assert.equal(run.status, 'waiting');
@@ -86,8 +86,8 @@ test('break and failFast cancel sibling waits without leaving an orphan checkpoi
       p.id,
       {},
       {
-        signals: ['Out'],
-        code: `const r=await node.emit("Out",{handles:["break"],failFast:true});node.display(r??"finished");`,
+        signals: ['out'],
+        code: `const r=await node.emit("out",{handles:["break"],failFast:true});node.display(r??"finished");`,
       }
     );
     const waiting = await fn(app, p.id, {}, {code: 'await node.wait({event:"never"});'});
@@ -100,7 +100,7 @@ test('break and failFast cancel sibling waits without leaving an orphan checkpoi
     await app.api('POST', `projects/${p.id}/port-connections`, {
       add: [waiting, stop].map(n => ({
         source: parent.wrapper,
-        source_port: 'Out',
+        source_port: 'out',
         target: n.wrapper,
         target_port: 'in',
       })),

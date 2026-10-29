@@ -2,7 +2,7 @@
 
 A Script has only the capabilities that (1) its Library node's payload (or its own `config`) **declares** in `capabilities`, (2) a person **grants** in `grants`, and (3) the workspace policy **allows** (`GET/PUT projects/{id}/policy {allow: [...]}`). Effective rights are the intersection; missing fields mean none. `x:*` grants a family; hostnames match exactly, port included.
 
-Names: `graph.read`, `graph.write`, `library.read`, `library.write`, `net.fetch:<host>`, `run.read`, `run.start`, `secrets.use:<name>`.
+Names: `graph.read`, `graph.write`, `library.read`, `library.write`, `net.fetch:<host>`, `run.read`, `run.start`, `notifications.read`, `notifications.write`, `secrets.use:<name>`.
 
 - Every route has method-specific `needs` (OpenAPI `x-needs`). Admin and unknown routes are denied to scripts.
 - Rights are checked **at node start** against the current policy and the version's grants; a denied version is `blocked` with a reason and runs no code. Every bridge call checks again, hook calls included.

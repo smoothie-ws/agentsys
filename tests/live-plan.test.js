@@ -56,9 +56,9 @@ test('a running Worker keeps its version and grants; the next signal uses the co
       code: 'await agentsys("POST","net",{url:"https://hold.test"});await node.state.update("seen",x=>[...(x??[]),"old"]);node.display("old");',
     }
   );
-  const driver = await fn(app, p.id, {}, {code: 'await node.emit("Out");await node.emit("Out");', signals: ['Out']});
+  const driver = await fn(app, p.id, {}, {code: 'await node.emit("out");await node.emit("out");', signals: ['out']});
   await app.api('POST', base + '/port-connections', {
-    add: [{source: driver.wrapper, source_port: 'Out', target: target.wrapper, target_port: 'in'}],
+    add: [{source: driver.wrapper, source_port: 'out', target: target.wrapper, target_port: 'in'}],
   });
   const started = app.api('POST', base + '/runs', {node_ids: [driver.id]});
   const r = await started;
@@ -142,7 +142,7 @@ test('one batch publishes one patch; an invalid batch commits nothing', async ()
     app,
     p.id,
     {},
-    {code: 'await agentsys("POST","net",{url:"https://hold.test"});await node.emit("Out");', signals: ['Out']}
+    {code: 'await agentsys("POST","net",{url:"https://hold.test"});await node.emit("out");', signals: ['out']}
   );
   const target = await fn(app, p.id, {}, {code: 'node.display("before");'});
   const r = await app.api('POST', base + '/runs', {node_ids: [n.id]});
@@ -156,7 +156,7 @@ test('one batch publishes one patch; an invalid batch commits nothing', async ()
         {
           method: 'POST',
           path: 'port-connections',
-          body: {add: [{source: n.wrapper, source_port: 'Out', target: target.wrapper, target_port: 'in'}]},
+          body: {add: [{source: n.wrapper, source_port: 'out', target: target.wrapper, target_port: 'in'}]},
         },
         {path: 'nonsense'},
       ],
@@ -170,7 +170,7 @@ test('one batch publishes one patch; an invalid batch commits nothing', async ()
       {
         method: 'POST',
         path: 'port-connections',
-        body: {add: [{source: n.wrapper, source_port: 'Out', target: target.wrapper, target_port: 'in'}]},
+        body: {add: [{source: n.wrapper, source_port: 'out', target: target.wrapper, target_port: 'in'}]},
       },
     ],
   });
@@ -347,15 +347,16 @@ test('a Library save publishes new members without opening the graph; a running 
       code: 'await agentsys("POST","net",{url:"https://hold.test"});await node.state.set("old-finished",true);',
     }
   );
-  const driver = await fn(app, p.id, {}, {code: 'await node.emit("Out");await node.emit("Out");', signals: ['Out']});
+  const driver = await fn(app, p.id, {}, {code: 'await node.emit("out");await node.emit("out");', signals: ['out']});
   await app.api('POST', base + '/port-connections', {
-    add: [{source: driver.wrapper, source_port: 'Out', target: target.wrapper, target_port: 'in'}],
+    add: [{source: driver.wrapper, source_port: 'out', target: target.wrapper, target_port: 'in'}],
   });
   const r = await app.api('POST', base + '/runs', {node_ids: [driver.id]});
   await eventually(() => release);
   const resource = await app.api('GET', 'resources/' + target.resource);
   resource.payload.grants = [];
   await app.api('PUT', 'resources/' + target.resource, {name: resource.name, payload: resource.payload, replace: true});
+  await app.api('PUT', `projects/${p.id}/complex/${target.group}`, {grants: []});
   release();
   await app.eval(`RUNS.byId.get('${r.id}').done`);
   const detail = await app.api('GET', 'runs/' + r.id);
@@ -374,11 +375,11 @@ test('external store notifications publish edits through the backend without a b
     app,
     p.id,
     {},
-    {code: 'await agentsys("POST","net",{url:"https://hold.test"});await node.emit("Out");', signals: ['Out']}
+    {code: 'await agentsys("POST","net",{url:"https://hold.test"});await node.emit("out");', signals: ['out']}
   );
   const target = await fn(app, p.id, {}, {code: 'node.display("old");'});
   await app.api('POST', base + '/port-connections', {
-    add: [{source: n.wrapper, source_port: 'Out', target: target.wrapper, target_port: 'in'}],
+    add: [{source: n.wrapper, source_port: 'out', target: target.wrapper, target_port: 'in'}],
   });
   const r = await app.api('POST', base + '/runs', {node_ids: [n.id]});
   await eventually(() => release);
@@ -400,11 +401,11 @@ test('a paused activation accepts a code patch and starts its target on the new 
     app,
     p.id,
     {},
-    {code: 'await agentsys("POST","net",{url:"https://hold.test"});await node.emit("Out");', signals: ['Out']}
+    {code: 'await agentsys("POST","net",{url:"https://hold.test"});await node.emit("out");', signals: ['out']}
   );
   const target = await fn(app, p.id, {}, {code: 'node.display("old");'});
   await app.api('POST', base + '/port-connections', {
-    add: [{source: driver.wrapper, source_port: 'Out', target: target.wrapper, target_port: 'in'}],
+    add: [{source: driver.wrapper, source_port: 'out', target: target.wrapper, target_port: 'in'}],
   });
   const r = await app.api('POST', base + '/runs', {node_ids: [driver.id]});
   await eventually(() => release);
@@ -461,11 +462,11 @@ test('bounded plan recording disables exact replay while live patches continue t
     app,
     p.id,
     {},
-    {code: 'await agentsys("POST","net",{url:"https://hold.test"});await node.emit("Out");', signals: ['Out']}
+    {code: 'await agentsys("POST","net",{url:"https://hold.test"});await node.emit("out");', signals: ['out']}
   );
   const target = await fn(app, p.id, {}, {code: 'node.display("old");'});
   await app.api('POST', base + '/port-connections', {
-    add: [{source: driver.wrapper, source_port: 'Out', target: target.wrapper, target_port: 'in'}],
+    add: [{source: driver.wrapper, source_port: 'out', target: target.wrapper, target_port: 'in'}],
   });
   await app.api('PUT', 'settings', {max_trace_bytes: 500});
   const r = await app.api('POST', base + '/runs', {node_ids: [driver.id]});

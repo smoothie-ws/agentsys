@@ -152,8 +152,7 @@ const Inspector = {
     root.hidden = false;
     root.dataset.collapsed = String(sideHidden());
     root.innerHTML = `<nav class="side-tabs" aria-label="Canvas panel sections">${[
-      ['workflow', 'Workflow', 'settings'],
-      ['nodes', 'Available nodes', 'library'],
+      ['workflow', 'Workflow settings', 'settings'],
       ['properties', 'Properties', 'node'],
       ['activity', 'Activity', 'activity'],
     ]
@@ -265,7 +264,11 @@ const Inspector = {
   refresh() {
     if (this.root.dataset.collapsed === 'true') return;
     if (this.tab === 'workflow') return this.workflow();
-    if (this.tab === 'nodes') return this.availableNodes();
+    // A completed permission save must not replace a radio during the next pointer click.
+    if ($('#placed-grants', this.body())?.contains(document.activeElement)) {
+      this.connections();
+      return;
+    }
     if (this.editing?.isConnected) {
       if (
         !this.editing.contains(document.activeElement) &&
@@ -305,11 +308,12 @@ const Inspector = {
     const footer = $('#side-actions', this.root);
     footer.replaceChildren();
     footer.hidden = true;
-    $('#side-heading').textContent = {workflow: 'Workflow', nodes: 'Available nodes', properties: 'Properties', activity: 'Activity'}[this.tab];
+    $('#side-heading').textContent = {workflow: 'Workflow settings', properties: 'Properties', activity: 'Activity'}[
+      this.tab
+    ];
     $('#side-workflow').hidden = this.tab !== 'workflow';
     $('#side-selection').hidden = this.tab === 'workflow';
     if (this.tab === 'workflow') return this.workflow();
-    if (this.tab === 'nodes') return this.availableNodes();
     if (this.tab === 'activity') return this.activity();
     const nodes = selectedNodes(),
       frames = selectedFrames();
@@ -348,14 +352,14 @@ const Inspector = {
   },
 
   /** Each workflow keeps its own opt-in set. Group checkboxes toggle all current descendants. */
-  availableNodes() {
-    const body = this.body(),
-      previous = new Map($$('[data-library-folder]', body).map(el => [el.dataset.libraryFolder, el.open])),
+  availableNodes(body) {
+    const previous = (this.availableOpen ??= new Map()),
       items = (app.resources || []).filter(r => r.id !== W.library),
       available = new Set(W.snapshot.library_nodes ?? []),
       tree = {nodes: [], groups: new Map()};
     const levelAt = path => {
-      let level = tree, parent = '';
+      let level = tree,
+        parent = '';
       for (const part of path.split('/').filter(Boolean)) {
         parent = parent ? parent + '/' + part : part;
         if (!level.groups.has(part)) level.groups.set(part, {nodes: [], groups: new Map(), path: parent});
@@ -367,26 +371,47 @@ const Inspector = {
     for (const item of items) levelAt(String(item.payload.folder || '')).nodes.push(item);
     const descendants = level => [...level.nodes, ...[...level.groups.values()].flatMap(descendants)];
     const render = level =>
-      level.nodes.map(item => `<label class="available-node check"><input type="checkbox" data-library-node="${esc(item.id)}" aria-label="Include node: ${esc(item.name)}" ${available.has(item.id) ? 'checked' : ''}>${icon(resourceIcon(item))}<span>${esc(item.name)}</span></label>`).join('') +
-      [...level.groups].map(([name, sub]) => {
-        const nodes = descendants(sub), count = nodes.filter(item => available.has(item.id)).length;
-        return `<details class="available-group" data-library-folder="${esc(sub.path)}" ${previous.get(sub.path) !== false ? 'open' : ''}><summary><label class="check"><input type="checkbox" data-library-group="${esc(sub.path)}" aria-label="Include group: ${esc(sub.path)}" ${nodes.length && count === nodes.length ? 'checked' : ''} ${count && count < nodes.length ? 'data-partial' : ''} ${nodes.length ? '' : 'disabled'}>${icon((app.nodeFolderIcons || {})[sub.path] || 'folder')}<span>${esc(name)}</span></label><small class="muted">${count}/${nodes.length}</small></summary><div class="available-group-items">${render(sub)}</div></details>`;
-      }).join('');
-    body.innerHTML = `<p class="muted small">Choose which Library nodes appear in this workflow’s Add menu. Search in Add finds all Library nodes; placing one includes it here automatically.</p><div class="available-nodes">${render(tree) || '<p class="muted small">No Library nodes yet.</p>'}</div>`;
+      level.nodes
+        .map(
+          item =>
+            `<label class="available-node check"><input type="checkbox" data-library-node="${esc(item.id)}" aria-label="Include node: ${esc(item.name)}" ${available.has(item.id) ? 'checked' : ''}>${icon(resourceIcon(item))}<span>${esc(item.name)}</span></label>`
+        )
+        .join('') +
+      [...level.groups]
+        .map(([name, sub]) => {
+          const nodes = descendants(sub),
+            count = nodes.filter(item => available.has(item.id)).length;
+          return `<details class="available-group" data-library-folder="${esc(sub.path)}" ${previous.get(sub.path) !== false ? 'open' : ''}><summary><label class="check"><input type="checkbox" data-library-group="${esc(sub.path)}" aria-label="Include group: ${esc(sub.path)}" ${nodes.length && count === nodes.length ? 'checked' : ''} ${count && count < nodes.length ? 'data-partial' : ''} ${nodes.length ? '' : 'disabled'}>${icon((app.nodeFolderIcons || {})[sub.path] || 'folder')}<span>${esc(name)}</span></label></summary><div class="available-group-items">${render(sub)}</div></details>`;
+        })
+        .join('');
+    body.innerHTML = `<div class="available-nodes">${render(tree) || '<p class="muted small">No Library nodes yet.</p>'}</div>`;
     for (const box of $$('[data-partial]', body)) box.indeterminate = true;
+    body.addEventListener(
+      'toggle',
+      event => {
+        if (event.target.matches('.available-group'))
+          previous.set(event.target.dataset.libraryFolder, event.target.open);
+      },
+      true
+    );
     body.onchange = async event => {
       const box = event.target.closest('[data-library-node], [data-library-group]');
       if (!box) return;
-      const project = W.project, workflow = W.workflow;
-      const target = box.hasAttribute('data-library-node') ? {resource_id: box.dataset.libraryNode} : {folder: box.dataset.libraryGroup};
+      const project = W.project,
+        workflow = W.workflow;
+      const target = box.hasAttribute('data-library-node')
+        ? {resource_id: box.dataset.libraryNode}
+        : {folder: box.dataset.libraryGroup};
       for (const input of $$('input', body)) input.disabled = true;
       try {
         await api(`projects/${project}/available-nodes`, {
-          method: 'PUT', body: {workflow_id: workflow, ...target, enabled: box.checked}, edit: editToken(),
+          method: 'PUT',
+          body: {workflow_id: workflow, ...target, enabled: box.checked},
+          edit: editToken(),
         });
         if (W.project === project && W.workflow === workflow) await reload();
       } catch (error) {
-        if (W.project === project && W.workflow === workflow && this.tab === 'nodes') this.availableNodes();
+        if (W.project === project && W.workflow === workflow && this.tab === 'workflow') this.availableNodes(body);
         fail(error);
       }
     };
@@ -398,6 +423,7 @@ const Inspector = {
       host = $('#side-workflow');
     host.innerHTML = `<h2>${esc(W.snapshot.workflow_name)}</h2>
       ${this.typesSection()}
+      <section class="workflow-available"><h3>Available nodes</h3><div data-available-nodes></div></section>
       ${
         issues.length
           ? `<h3>Graph problems</h3><ul class="links">${issues
@@ -409,6 +435,7 @@ const Inspector = {
 `;
     this.wireReveal();
     this.wireTypes();
+    this.availableNodes($('[data-available-nodes]', host));
   },
 
   /** The types of the workflow: what they are made of, where they came from, and (in developer mode) how to change them. */
@@ -723,7 +750,7 @@ const Inspector = {
       cx.arbitrary.inputs || cx.arbitrary.outputs
         ? `<form id="own-slots" class="stack">${section('inputs')}${section('outputs')}</form>`
         : '';
-    this.body().innerHTML = `${this.nameHeading(group.name)}<div class="stack" id="placed">${description ? `<p class="muted">${esc(description)}</p>` : ''}${slots}
+    this.body().innerHTML = `${this.nameHeading(group.name)}<div class="stack" id="placed">${description ? `<p class="muted">${esc(description)}</p>` : ''}${slots}${cx.source ? `<div id="placed-grants">${grantControls(cx.grants ?? [])}</div>` : ''}
       <div class="button-row" data-node-actions>${cx.source && developerMode() ? `<button type="button" data-act="edit">${icon('pencil')}Edit graph</button>` : ''}<button type="button" class="danger" data-act="delete">${icon('trash')}Delete</button></div></div>`;
     this.wireName(async name => {
       await saveGroups(
@@ -745,6 +772,15 @@ const Inspector = {
         deleteSelection().catch(fail);
       }
     };
+    $('#placed-grants')?.addEventListener('change', () =>
+      api(`projects/${W.project}/complex/${encodeURIComponent(group.id)}`, {
+        method: 'PUT',
+        body: wf({grants: readGrantControls($('#placed-grants'))}),
+        edit: editToken(),
+      })
+        .then(() => reload())
+        .catch(fail)
+    );
     this.editing = null;
     this.pending = null;
     const form = $('#own-slots');
@@ -815,7 +851,6 @@ const Inspector = {
       : ``;
     this.body().innerHTML = `${this.nameHeading(group.name, main ? '' : cx ? 'Complex Node' : 'Group')}<form id="group-form" class="stack"><input type="hidden" name="name" value="${esc(group.name)}">
       ${main ? field('Description', `<textarea name="description" rows="3" maxlength="2000" placeholder="What does this node do?">${esc(item?.payload.description || '')}</textarea>`) + field('Icon', iconGrid(item?.payload.icon, 'complex')) : ''}
-      ${main ? manifestControls(item?.payload) : ''}
       ${complexPart}
       ${main ? '' : `<div class="button-row" data-node-actions><button type="button" data-act="ungroup">${icon('ungroup')}Ungroup</button><button type="button" class="danger" data-act="delete">${icon('trash')}Delete with contents</button></div>`}</form>`;
     const form = $('#group-form');
@@ -895,7 +930,7 @@ const Inspector = {
         return {
           name: form.name.value.trim(),
           members,
-          ...(main ? {description: form.description.value, icon: form.icon.value, ...readManifestControls(form)} : {}),
+          ...(main ? {description: form.description.value, icon: form.icon.value} : {}),
           ...(cx ? {interface: {inputs: read('inputs'), outputs: read('outputs')}} : {}),
           ...(main
             ? {
@@ -937,10 +972,7 @@ const Inspector = {
         }
         if (
           main &&
-          (data.description !== (item?.payload.description || '') ||
-            data.icon !== (item?.payload.icon || '') ||
-            JSON.stringify(data.capabilities) !== JSON.stringify(item?.payload.capabilities ?? []) ||
-            JSON.stringify(data.grants) !== JSON.stringify(item?.payload.grants ?? []))
+          (data.description !== (item?.payload.description || '') || data.icon !== (item?.payload.icon || ''))
         ) {
           // description and icon belong to the Library item, not to the graph
           const saved = await api(`resources/${W.library}`);
@@ -952,8 +984,6 @@ const Inspector = {
                 ...saved.payload,
                 description: data.description,
                 icon: data.icon,
-                capabilities: data.capabilities,
-                grants: data.grants,
               },
             },
           });
@@ -1070,8 +1100,8 @@ const Inspector = {
     const sections = {inputs: section('Inputs', 'inputs'), outputs: section('Outputs', 'outputs')};
     for (const host of hosts) host.innerHTML = sections[host.dataset.connHost];
     root.innerHTML = `${hosts.length ? '' : sections.inputs + sections.outputs}${bindings.length ? `<h4>Group bindings</h4><ul class="links">${bindings.join('')}</ul>` : ''}<small class="connection-status muted" role="status"></small>`;
-    const actions = $('[data-node-actions]', body);
-    if (actions) actions.before(root);
+    const tail = $('#placed-grants', body) || $('[data-node-actions]', body);
+    if (tail) tail.before(root);
     else body.append(root);
     wireCodeEditors(body);
     this.flushConnections = () => Promise.resolve();

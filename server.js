@@ -41,7 +41,9 @@ const FIXED = {
 const VALID_KEY = /^(?!.*(?:^|\/)\.\.?($|\/))[A-Za-z0-9:._/-]{1,500}$/;
 const storagePath = key => key.split('/').map(encodeURIComponent).join('/');
 const journalKey = key => /^(workflows\/[^/]+\/queues\/[^/]+\/journal|runs\/[^/]+\/events)$/.test(key);
+const markdownKey = key => /^library\/skills\/[a-z0-9.-]+\/[a-z0-9-]+\/SKILL\.md$/.test(key);
 const fileOf = key => {
+  if (markdownKey(key)) return storagePath(key);
   if (journalKey(key)) return storagePath(key) + '.jsonl';
   if (key.includes('/')) return storagePath(key) + '.json';
   if (FIXED[key]) return FIXED[key];
@@ -55,10 +57,14 @@ const fileOf = key => {
 };
 const keyOf = file => {
   const rel = file.split(path.sep).map(decodeURIComponent).join('/');
+  if (markdownKey(rel)) return rel;
   if (rel.endsWith('.jsonl') && journalKey(rel.slice(0, -6))) return rel.slice(0, -6);
   const sidecar = /^(.*)\.files\/(?:layout\.json|scripts\/[A-Za-z0-9_-]+\.js)$/.exec(rel);
   if (sidecar) return keyOf(sidecar[1] + '.json');
-  if ((/^(runs|versions|secrets)\//.test(rel) && rel.endsWith('.json')) || /^workflows\/[^/]+\/.+\.json$/.test(rel))
+  if (
+    (/^(runs|versions|secrets|plugins|library\/(?:sections|credentials))\//.test(rel) && rel.endsWith('.json')) ||
+    /^workflows\/[^/]+\/.+\.json$/.test(rel)
+  )
     return rel.slice(0, -5);
   for (const [key, f] of Object.entries(FIXED)) if (f === rel) return key;
   let m = /^library\/editors\/(.+)\.json$/.exec(rel);
@@ -153,6 +159,7 @@ function createServer(options = {}) {
   function readKey(key) {
     let value;
     try {
+      if (markdownKey(key)) return fs.readFileSync(abs(key), 'utf8');
       if (journalKey(key)) {
         const text = fs.readFileSync(abs(key), 'utf8'),
           lines = text.split('\n'),
@@ -293,7 +300,7 @@ function createServer(options = {}) {
         }
       return;
     }
-    atomicText(file, JSON.stringify(value, null, 2) + '\n');
+    atomicText(file, markdownKey(key) ? String(value) : JSON.stringify(value, null, 2) + '\n');
   }
   function removeKey(key) {
     const file = abs(key),
@@ -567,6 +574,7 @@ function createServer(options = {}) {
 
   function handleStatic(req, res, url, editor = false) {
     let rel = decodeURIComponent(url.pathname);
+    const pageRoute = editor && (!path.extname(rel) || /^\/(?:p|resources|plugins)\//.test(rel));
     if (rel.endsWith('/')) rel += 'index.html';
     let file = path.join(ROOT, rel);
     if (
@@ -576,7 +584,7 @@ function createServer(options = {}) {
     )
       return send(res, 404, 'Not found', 'text/plain');
     // A page of the editor (/editor/p/…, /editor/settings): no such file, so the editor opens and shows it.
-    if (editor && !path.extname(rel) && !fs.existsSync(file)) file = path.join(ROOT, 'index.html');
+    if (pageRoute && !fs.existsSync(file)) file = path.join(ROOT, 'index.html');
     fs.readFile(file, (err, data) => {
       if (err) return send(res, 404, 'Not found', 'text/plain');
       // The page names its files without a leading path; under /editor/ (at any depth) they are found there.
@@ -600,13 +608,16 @@ function createServer(options = {}) {
         editor = true;
         url.pathname = url.pathname.slice('/editor'.length);
       }
-      run = url.pathname.startsWith('/__data')
-        ? handleData(req, res, url)
-        : url.pathname.startsWith('/api/')
-          ? handleApi(req, res, url)
-          : url.pathname.startsWith('/hooks/')
-            ? handleHook(req, res, url)
-            : handleStatic(req, res, url, editor);
+      run =
+        editor && /^\/api\/?$/.test(url.pathname)
+          ? handleStatic(req, res, url, true)
+          : url.pathname.startsWith('/__data')
+            ? handleData(req, res, url)
+            : url.pathname.startsWith('/api/')
+              ? handleApi(req, res, url)
+              : url.pathname.startsWith('/hooks/')
+                ? handleHook(req, res, url)
+                : handleStatic(req, res, url, editor);
     } catch (error) {
       run = Promise.reject(error);
     }
@@ -618,7 +629,8 @@ function createServer(options = {}) {
     dataDir: DATA,
     host: HOST,
     /** Resolves with the base URL once listening (port 0 picks a free one). */
-    listen(port = 8080) {
+    async listen(port = 8080) {
+      if (backend) await backend.Backend.request('POST', 'plugins/builtin', {body: {}});
       return new Promise((resolve, reject) => {
         server.once('error', reject);
         server.listen(port, HOST, () => {

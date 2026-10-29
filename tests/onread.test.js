@@ -55,12 +55,12 @@ test('the first read computes the copy; later reads give the same value without 
 
 test('when what the copy reads changes, it is computed again on the next read; when the new value is the same, it is not', async () => {
   const p = await setup();
-  const source = await p.fn({code: 'node.output.result = 1; await node.emit("Out"); node.output.result = 2; await node.emit("Out"); node.output.result = 2; await node.emit("Out");', outputs: ['result'], signals: ['Out']});
+  const source = await p.fn({code: 'node.output.result = 1; await node.emit("out"); node.output.result = 2; await node.emit("out"); node.output.result = 2; await node.emit("out");', outputs: ['result'], signals: ['out']});
   const copy = await p.put(calc('Double', 'node.output.out = x * 2'));
   await p.wire(source.wrapper, 'result', copy, 'x');
   const reader = await p.fn({code: 'globalThis.log.push("saw " + node.input.v)', inputs: ['v']});
   await p.wire(copy, 'out', reader.wrapper, 'v');
-  await p.wire(source.wrapper, 'Out', reader.wrapper, 'in');
+  await p.wire(source.wrapper, 'out', reader.wrapper, 'in');
   const r = await p.run(source.step);
   assert.deepEqual(r.errors, {});
   // The source signals three times (1, 2, 2): the reader runs three times; the copy is computed for 1 and for 2, not for the second 2.
@@ -69,14 +69,14 @@ test('when what the copy reads changes, it is computed again on the next read; w
 
 test('a copy that reads another copy brings it up to date first: the order follows the data', async () => {
   const p = await setup();
-  const source = await p.fn({code: 'node.output.result = 5; await node.emit("Out"); node.output.result = 6; await node.emit("Out");', outputs: ['result'], signals: ['Out']});
+  const source = await p.fn({code: 'node.output.result = 5; await node.emit("out"); node.output.result = 6; await node.emit("out");', outputs: ['result'], signals: ['out']});
   const first = await p.put(calc('Plus one', 'node.output.out = x + 1'));
   const second = await p.put(calc('Times two', 'node.output.out = x * 2'));
   await p.wire(source.wrapper, 'result', first, 'x');
   await p.wire(first, 'out', second, 'x');
   const reader = await p.fn({code: 'globalThis.log.push(node.input.v)', inputs: ['v']});
   await p.wire(second, 'out', reader.wrapper, 'v');
-  await p.wire(source.wrapper, 'Out', reader.wrapper, 'in');
+  await p.wire(source.wrapper, 'out', reader.wrapper, 'in');
   const r = await p.run(source.step);
   assert.deepEqual(r.errors, {});
   // Computing "Times two" asks for "Plus one" while it runs, so "Times two" starts first; each is computed once per value.
@@ -88,15 +88,15 @@ test('a copy that reads another copy brings it up to date first: the order follo
 test('an error in what the on_read starts is thrown to the reader, and stays until something changes', async () => {
   const p = await setup();
   const source = await p.fn({
-    code: 'node.output.result = 0; try { await node.emit("Out"); } catch (e) { globalThis.log.push("error " + e.message); } node.output.result = 1; await node.emit("Out");',
+    code: 'node.output.result = 0; try { await node.emit("out"); } catch (e) { globalThis.log.push("error " + e.message); } node.output.result = 1; await node.emit("out");',
     outputs: ['result'],
-    signals: ['Out'],
+    signals: ['out'],
   });
   const copy = await p.put(calc('Check', 'if (x === 0) throw new Error("zero"); node.output.out = x'));
   await p.wire(source.wrapper, 'result', copy, 'x');
   const reader = await p.fn({code: 'globalThis.log.push("ok " + node.input.v)', inputs: ['v']});
   await p.wire(copy, 'out', reader.wrapper, 'v');
-  await p.wire(source.wrapper, 'Out', reader.wrapper, 'in');
+  await p.wire(source.wrapper, 'out', reader.wrapper, 'in');
   await p.run(source.step);
   assert.deepEqual(p.log().filter(x => typeof x === 'string' && x !== 'Check'), ['error Node code: zero', 'ok 1']);
 });

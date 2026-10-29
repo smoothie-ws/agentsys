@@ -346,7 +346,7 @@ test('the site itself is still served, without the data folder or dotfiles', asy
 });
 
 test('the app is at /editor/ (/ goes there) and everything it loads is under /editor/', async () => {
-  await withServer({}, async ({url}) => {
+  await withServer({}, async ({url, app}) => {
     const front = await fetch(url + '/', {redirect: 'manual'});
     assert.equal(front.status, 301);
     assert.equal(front.headers.get('location'), '/editor/');
@@ -367,6 +367,15 @@ test('the app is at /editor/ (/ goes there) and everything it loads is under /ed
     assert.match(page, /id="brand"/);
     assert.match(page, /src="\/editor\/js\/app\/router\.js"/);
     assert.equal((await fetch(url + '/editor/js/nothing.js')).status, 404);
+    for (const page of ['api', 'api/', 'settings/', 'runs/', 'projects/', 'p/lib-builtin.delay/w/lib-builtin.delay/']) {
+      const response = await fetch(url + '/editor/' + page);
+      assert.equal(response.status, 200, page);
+      assert.match(response.headers.get('content-type'), /text\/html/, page);
+      assert.match(await response.text(), /id="brand"/, page);
+    }
+    const plugins = (await call(url, 'GET', 'plugins')).body.plugins;
+    assert.ok(plugins.some(p => p.id === 'ai' && p.enabled));
+    assert.ok(fs.existsSync(path.join(app.dataDir, 'plugins', 'ai', 'package.json')));
   });
 });
 

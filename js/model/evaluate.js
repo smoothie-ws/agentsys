@@ -131,6 +131,8 @@ function instanceScopes(snapshot) {
         outputs: c.interface.outputs.filter(p => !isSignal(p.type) && !p.bound?.length),
         signals: c.interface.outputs.filter(p => isSignal(p.type) && !p.bound?.length),
         resource_id: c.source.resource_id,
+        // The permissions of every placed node around it, the closest first: it can do only what all of them allow.
+        grant_chain: composites.filter(cx => cx.members.includes(node.id)).map(cx => cx.grants ?? null),
       });
   }
   return scopes;
@@ -331,6 +333,7 @@ function compilePlan(snapshot, roots, {context = {}, events = {}, cache = new Ma
           node_id: nid,
           instance_id: scope?.instance_id ?? null,
           resource_id: scope?.resource_id ?? null,
+          grant_chain: scope?.grant_chain ?? null,
           // The widgets of the Library node (its nodes' together), or the node's own if it is not part of one.
           widgets: Object.assign(
             {},

@@ -14,30 +14,75 @@ PAGES.runs = async view => {
   );
   const controls = await Promise.all(workflowItems.map(w => api(`workflows/${w.id}/control`)));
   if (!current()) return;
-  Subnav.mount({
-    title: 'Runs',
-    body: sectionRows('runs', [
-      ['workflows', 'Workflows', 'play'],
-      ['runs', 'Activations', 'activity'],
-      ['versions', 'Versions', 'file'],
-      ['permissions', 'Permissions', 'lock'],
-      ['settings', 'Run limits', 'settings'],
-    ]),
-  });
-  view.innerHTML = `<div class="page runs-page">${pageHead({title: 'Runs', actions: '<button id="runs-refresh">Refresh</button>'})}
-    <section id="runs-workflows"><h2>Workflows</h2>${workflowItems.length ? workflowItems.map((w, i) => `<form data-workflow-control="${esc(w.id)}"><h3>${esc(w.name)}</h3><p data-workflow-status>${esc(controls[i].status)}${controls[i].reason ? ' ? ' + esc(controls[i].reason) : ''}</p><div class="button-row"><button type="button" data-workflow-status-action="${controls[i].status === 'enabled' ? 'paused' : 'enabled'}">${controls[i].status === 'enabled' ? 'Pause' : 'Enable'}</button><button type="button" data-workflow-status-action="disabled">Disable</button></div><label>Attempts<input name="max_attempts" type="number" min="1" value="${controls[i].max_attempts}"></label><label>Retry delay (ms)<input name="backoff_ms" type="number" min="1" value="${controls[i].backoff_ms}"></label><label>Pause after consecutive failures<input name="pause_after" type="number" min="1" value="${controls[i].pause_after}"></label><label>Event/activation dedupe window (ms)<input name="dedupe_ms" type="number" min="1" value="${controls[i].dedupe_ms}"></label><label>Queued activations at most<input name="pending_limit" type="number" min="1" value="${controls[i].pending_limit}"></label><label>Bridge quotas (JSON)<textarea name="quotas" rows="3">${esc(pretty(controls[i].quotas))}</textarea></label><p>Pending activations: ${controls[i].pending.length}. Consecutive failures: ${controls[i].failures}.</p><button>Save policy</button><button type="button" data-workflow-inspect>State, queues and usage</button><pre data-workflow-data hidden></pre></form>`).join('') : '<p class="muted">Create a workflow to enable autonomous processing.</p>'}</section>
-    <section id="runs-runs"><h2>Runs</h2>${runs.length ? `<table><thead><tr><th>Started</th><th>Attempt</th><th>Status</th><th>Waiting for</th><th>Actions</th></tr></thead><tbody>${runs.map(r => `<tr data-run="${esc(r.id)}"><td>${esc(when(r.started))}</td><td>${esc(r.attempt ?? 1)}</td><td>${esc(r.status)}</td><td>${esc((r.waits ?? []).map(w => w.wait_spec.event ?? new Date(w.due).toLocaleString()).join(', '))}</td><td><div class="button-row">${['waiting', 'interrupted'].includes(r.status) ? '<button data-run-action="resume">Resume</button><button data-run-action="cancel">Cancel</button>' : r.status === 'running' ? `<button data-run-action="${r.paused ? 'resume' : 'pause'}">${r.paused ? 'Resume' : 'Pause'}</button><button data-run-action="cancel">Cancel</button>` : '<button data-run-action="replay">Replay</button>'}<button data-run-action="trace">Trace</button></div></td></tr>`).join('')}</tbody></table>` : '<p class="muted">No runs yet.</p>'}<div id="runs-intervention" hidden></div><div id="runs-nodes" hidden></div><pre id="runs-trace" hidden></pre></section>
-    <section id="runs-versions"><h2>Versions</h2><label>Workflow<select id="version-workflow"><option value="">Select a workflow</option></select></label><div id="runs-history"></div><pre id="runs-diff"></pre></section>
-    <section id="runs-permissions"><h2>Permissions</h2><form id="runs-policy"><label>Workspace<select name="project_id">${projects.map(p => `<option value="${esc(p.id)}">${esc(p.name)}</option>`).join('')}</select></label><label>Allowed capabilities (comma separated)<textarea name="allow" rows="3"></textarea></label><button>Save policy</button></form></section>
-    <section id="runs-settings"><h2>Run limits</h2><p class="muted">Every limit of runs, state and queues. Empty a field to go back to its default.</p><form id="runs-settings-form">${Object.entries(limits).map(([key, l]) => `<label>${esc(l.label)} (${esc(l.unit)})<input name="${esc(key)}" type="number" min="1" step="1" placeholder="${esc(l.default)}" value="${esc(app.preferences[key] ?? '')}"></label>`).join('')}<button>Save limits</button></form></section></div>`;
-  $('#runs-refresh').onclick = () => render().catch(fail);
+  const workflowForm = (w, c) => `<form class="workflow-policy" data-workflow-control="${esc(w.id)}">
+    <div class="workflow-policy-head"><div><h3>${esc(w.name)}</h3><p class="muted small">${plural(c.pending.length, 'queued activation')} &middot; ${plural(c.failures, 'consecutive failure')}</p></div><span data-workflow-status>${statusBadge(c.status)}${c.reason ? `<small class="muted"> ${esc(c.reason)}</small>` : ''}</span><div class="button-row"><button type="button" data-workflow-status-action="${c.status === 'enabled' ? 'paused' : 'enabled'}">${c.status === 'enabled' ? 'Pause' : 'Enable'}</button><button type="button" data-workflow-status-action="disabled" ${c.status === 'disabled' ? 'disabled' : ''}>Disable</button></div></div>
+    <details class="workflow-policy-details"><summary>Retry policy and diagnostics</summary><div class="grid2">${[
+      ['max_attempts', 'Attempts', c.max_attempts],
+      ['backoff_ms', 'Retry delay (ms)', c.backoff_ms],
+      ['pause_after', 'Pause after failures', c.pause_after],
+      ['dedupe_ms', 'Dedupe window (ms)', c.dedupe_ms],
+      ['pending_limit', 'Queue limit', c.pending_limit],
+    ]
+      .map(([name, label, value]) => field(label, `<input name="${name}" type="number" min="1" value="${value}">`))
+      .join('')}</div>
+    ${field('Bridge quotas (JSON)', `<textarea name="quotas" rows="3">${esc(pretty(c.quotas))}</textarea>`)}
+    <div class="button-row"><button type="submit">Save policy</button><button type="button" data-workflow-inspect>State, queues and usage</button></div><pre data-workflow-data hidden></pre></details></form>`;
+  view.innerHTML = `<div class="page runs-page">${pageHead({title: 'Runs'})}
+    <section id="runs-runs"><div class="section-head"><h2>Activations <small class="muted" data-run-count>${runs.length}</small></h2><label class="runs-filter"><span>Status</span><select id="runs-filter"><option value="">All statuses</option>${[
+      ...new Set(runs.map(r => r.status)),
+    ]
+      .sort()
+      .map(status => `<option value="${esc(status)}">${esc(status)}</option>`)
+      .join('')}</select></label></div>
+    ${runs.length ? `<div class="table-scroll"><table class="data-table runs-table"><thead><tr><th>Workflow / started</th><th>Status</th><th>Waiting for</th><th>Actions</th></tr></thead><tbody>${runs.map(r => `<tr data-run="${esc(r.id)}" data-status="${esc(r.status)}"><td><strong>${esc(workflowItems.find(w => w.id === r.workflow_id)?.name || 'Workflow')}</strong><small>${esc(when(r.started))} &middot; attempt ${r.attempt ?? 1}</small></td><td>${statusBadge(r.paused ? 'paused' : r.status)}</td><td>${esc((r.waits ?? []).map(w => w.wait_spec.event ?? (w.due ? new Date(w.due).toLocaleString() : '')).join(', ') || '-')}</td><td><div class="button-row">${['waiting', 'interrupted'].includes(r.status) ? '<button data-run-action="resume">Resume</button><button data-run-action="cancel">Cancel</button>' : r.status === 'running' ? `<button data-run-action="${r.paused ? 'resume' : 'pause'}">${r.paused ? 'Resume' : 'Pause'}</button><button data-run-action="cancel">Cancel</button>` : '<button data-run-action="replay">Replay</button>'}<button data-run-action="trace">Trace</button></div></td></tr>`).join('')}</tbody></table></div>` : '<p class="muted runs-empty">No runs yet.</p>'}
+    <p id="runs-filter-empty" class="muted" hidden>No runs match this status.</p><div id="runs-intervention" hidden></div><div id="runs-nodes" class="table-scroll" hidden></div><details id="runs-trace-panel" hidden><summary>Raw trace</summary><pre id="runs-trace"></pre></details></section>
+    <section id="runs-workflows"><h2>Workflows</h2><div class="workflow-policies">${workflowItems.map((w, i) => workflowForm(w, controls[i])).join('') || '<p class="muted">No workflows yet.</p>'}</div></section>
+    <section id="runs-versions"><h2>Versions</h2>${field('Workflow', '<select id="version-workflow"><option value="">Select a workflow</option></select>')}<div id="runs-history"></div><pre id="runs-diff"></pre></section>
+    <section id="runs-permissions"><h2>Permissions</h2><form id="runs-policy" class="runs-form">${field('Workspace', `<select name="project_id">${projects.map(p => `<option value="${esc(p.id)}">${esc(p.name)}</option>`).join('')}</select>`)}${field('Allowed capabilities (comma separated)', '<textarea name="allow" rows="3"></textarea>')}<button ${projects.length ? '' : 'disabled'}>Save policy</button></form></section>
+    <section id="runs-settings"><h2>Run limits</h2><p class="muted">Leave a field empty to use its default.</p><form id="runs-settings-form"><div class="grid2">${Object.entries(
+      limits
+    )
+      .map(([key, l]) =>
+        field(
+          `${l.label} (${l.unit})`,
+          `<input name="${esc(key)}" type="number" min="1" step="1" placeholder="${esc(l.default)}" value="${esc(app.preferences[key] ?? '')}">`
+        )
+      )
+      .join('')}</div><button>Save limits</button></form></section></div>`;
+  showSectionPanel($('.runs-page', view));
+  const filter = $('#runs-filter');
+  filter.value = Tabs.stateOf()?.runsFilter ?? '';
+  if (filter.selectedIndex < 0) filter.value = '';
+  filter.onchange = () => {
+    let visible = 0;
+    for (const row of $$('[data-run]', view)) {
+      row.hidden = !!filter.value && row.dataset.status !== filter.value;
+      if (!row.hidden) visible++;
+    }
+    $('[data-run-count]', view).textContent = String(visible);
+    $('#runs-filter-empty').hidden = !runs.length || visible > 0;
+    const state = Tabs.stateOf();
+    if (state) {
+      state.runsFilter = filter.value;
+      Tabs.save();
+    }
+  };
+  filter.onchange();
   for (const form of $$('[data-workflow-control]', view)) {
     const id = form.dataset.workflowControl;
     for (const button of $$('[data-workflow-status-action]', form))
       button.onclick = async () => {
         try {
-          await api(`workflows/${id}/control`, {method: 'PUT', body: {status: button.dataset.workflowStatusAction}});
-          await render();
+          const state = await api(`workflows/${id}/control`, {
+            method: 'PUT',
+            body: {status: button.dataset.workflowStatusAction},
+          });
+          $('[data-workflow-status]', form).innerHTML =
+            statusBadge(state.status) + (state.reason ? `<small class="muted"> ${esc(state.reason)}</small>` : '');
+          const toggle = $('[data-workflow-status-action]', form);
+          toggle.dataset.workflowStatusAction = state.status === 'enabled' ? 'paused' : 'enabled';
+          toggle.textContent = state.status === 'enabled' ? 'Pause' : 'Enable';
+          $('[data-workflow-status-action="disabled"]', form).disabled = state.status === 'disabled';
         } catch (error) {
           fail(error);
         }
@@ -56,7 +101,6 @@ PAGES.runs = async view => {
             quotas: JSON.parse(form.quotas.value),
           },
         });
-        await render();
         toast('Workflow policy saved.');
       } catch (error) {
         fail(error);
@@ -76,7 +120,6 @@ PAGES.runs = async view => {
     };
   }
 
-  followSections(view, 'runs');
   $('#runs-settings-form').onsubmit = async event => {
     event.preventDefault();
     const form = event.currentTarget;
@@ -123,20 +166,26 @@ PAGES.runs = async view => {
     if (!run.replay_available) $('[data-run-action=replay]', row)?.remove();
     if (run.details_available === false) $('[data-run-action=trace]', row)?.remove();
   }
+  let traceRequest = 0;
   for (const button of $$('[data-run-action]', view))
     button.onclick = async () => {
       try {
         const id = button.closest('[data-run]').dataset.run,
           action = button.dataset.runAction;
         if (action === 'trace' || (action === 'resume' && runs.find(r => r.id === id)?.status !== 'running')) {
+          const request = ++traceRequest;
           const [detail, events] = await Promise.all([api('runs/' + id), api('runs/' + id + '/events')]);
+          if (!current() || request !== traceRequest) return;
           const out = $('#runs-trace');
-          out.hidden = false;
+          $('#runs-trace-panel').hidden = false;
           out.textContent = pretty({run: detail, events: events.events});
           const panel = $('#runs-intervention');
           panel.hidden = false;
           mountRunIntervention(panel, detail, async nextId => {
+            if (!current() || request !== traceRequest) return;
+            const before = runsPageRevision;
             await render();
+            if (app.route?.page !== 'runs' || runsPageRevision !== before + 1) return;
             document.querySelector(`[data-run="${CSS.escape(nextId)}"] [data-run-action=trace]`)?.click();
           });
           const nodes = $('#runs-nodes');

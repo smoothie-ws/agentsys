@@ -11,7 +11,7 @@ const port = id => ({id, name: id});
 /**
  * A stored document. Nodes: `{id, code, inputs, outs}` is a Script inside a Library node (a placed copy `complex:g_<id>`) that has the signal
  * input In (bound to the Script), the free data inputs `inputs`, the free data output `result` and the free signal outputs Out and `outs`;
- * the code is run by the Script and an `await node.emit("Out")` is added at the end of a code that has no emit, so that a list of nodes can be a
+ * the code is run by the Script and an `await node.emit("out")` is added at the end of a code that has no emit, so that a list of nodes can be a
  * chain (`bare: true` leaves the code as it is). `{id, op: 'on_run'}` is an event node, `{id, value}` a node that holds `value` on its
  * output `result`. Wires: `['a', 'b']` signal Out of a to In of b; `['a', 'b', 'x']` data result of a to input x of b;
  * `['a', 'b', 'x', 'port']` from another output; `['a', 'b', 'in', 'Done']` a signal from another output. A Script is a root by its id.
@@ -26,9 +26,9 @@ const docOf = (list, wires) => {
       op ??= value === undefined ? 'script' : undefined;
       const config =
         op === 'script'
-          ? {title: id, op, inputs: [signal('in', 'In'), {id: 'script', name: 'script', default: bare || (code ?? '').includes('node.emit(') ? (code ?? '') : (code ?? '') + '\nawait node.emit("Out");'}], outputs: []}
+          ? {title: id, op, inputs: [signal('in', 'in'), {id: 'script', name: 'script', default: bare || (code ?? '').includes('node.emit(') ? (code ?? '') : (code ?? '') + '\nawait node.emit("out");'}], outputs: []}
           : op?.startsWith('on_')
-            ? {title: id, op, inputs: [], outputs: [signal('out', 'Out'), port('payload')]}
+            ? {title: id, op, inputs: [], outputs: [signal('out', 'out'), port('payload')]}
             : {title: id, inputs: [], outputs: [{id: 'result', name: 'result', default: value}]};
       return {id, kind: 'function', node_type: 'custom', label: 'Custom', config};
     }),
@@ -42,8 +42,8 @@ const docOf = (list, wires) => {
       .map(({id, inputs = [], outs = []}) => ({
         id: 'g_' + id,
         interface: {
-          inputs: [{...signal('in', 'In'), bound: [{node_id: id, port_id: 'in'}]}, ...inputs.map(port)],
-          outputs: [port('result'), signal('out', 'Out'), ...outs.map(n => signal(n, n))],
+          inputs: [{...signal('in', 'in'), bound: [{node_id: id, port_id: 'in'}]}, ...inputs.map(port)],
+          outputs: [port('result'), signal('out', 'out'), ...outs.map(n => signal(n, n))],
         },
         collapsed: false,
         compact_width: 240,
@@ -165,7 +165,7 @@ test('a Script fires nothing when its code ends: only emit sends a signal, any n
     [
       {id: 'go', op: 'on_run'},
       {id: 'quiet', bare: true, code: 'node.output.result = 1'},
-      {id: 'loud', code: 'await node.emit("Out"); await node.emit("Out"); node.output.result = 2'},
+      {id: 'loud', code: 'await node.emit("out"); await node.emit("out"); node.output.result = 2'},
       {id: 'next', code: 'globalThis.log.push("after quiet")'},
       {id: 'after', code: 'globalThis.log.push("after loud"); node.output.result = x', inputs: ['x']},
     ],
@@ -178,12 +178,12 @@ test('a Script fires nothing when its code ends: only emit sends a signal, any n
   assert.equal(ran.filter(id => id === 'after').length, 2);
 });
 
-test('a loop: node.emit("Out") sends the signal from the middle of the code, and the nodes after it see the outputs as they are then', async () => {
+test('a loop: node.emit("out") sends the signal from the middle of the code, and the nodes after it see the outputs as they are then', async () => {
   const app = createApp();
   const doc = docOf(
     [
       {id: 'go', op: 'on_run'},
-      {id: 'loop', code: 'for (let i = 0; i < 4; i++) { node.output.result = i * 10; await node.emit("Out"); } node.output.result = "end"'},
+      {id: 'loop', code: 'for (let i = 0; i < 4; i++) { node.output.result = i * 10; await node.emit("out"); } node.output.result = "end"'},
       {id: 'seen', code: 'globalThis.log.push(x)', inputs: ['x']},
     ],
     [['go', 'loop'], ['loop', 'seen'], ['loop', 'seen', 'x']]
@@ -200,7 +200,7 @@ test('node.emit(name) sends another signal output; an output that does not exist
   const doc = docOf(
     [
       {id: 'go', op: 'on_run'},
-      {id: 'split', outs: ['Odd'], code: 'for (const n of [1, 2, 3]) { node.output.result = n; await node.emit(n % 2 ? "Odd" : "Out"); }'},
+      {id: 'split', outs: ['Odd'], code: 'for (const n of [1, 2, 3]) { node.output.result = n; await node.emit(n % 2 ? "Odd" : "out"); }'},
       {id: 'odd', code: 'globalThis.log.push("odd " + x)', inputs: ['x']},
       {id: 'even', code: 'globalThis.log.push("even " + x)', inputs: ['x']},
       {id: 'broken', code: 'await node.emit("Nope")'},
@@ -217,9 +217,9 @@ test('an error in a node that was signalled is thrown by node.emit() in the code
   const doc = docOf(
     [
       {id: 'go', op: 'on_run'},
-      {id: 'sender', code: 'try { await node.emit("Out"); } catch (e) { globalThis.log.push("caught " + e.message); } node.output.result = "survived"'},
+      {id: 'sender', code: 'try { await node.emit("out"); } catch (e) { globalThis.log.push("caught " + e.message); } node.output.result = "survived"'},
       {id: 'fails', code: 'throw new Error("boom")'},
-      {id: 'sender2', code: 'await node.emit("Out"); globalThis.log.push("not reached")'},
+      {id: 'sender2', code: 'await node.emit("out"); globalThis.log.push("not reached")'},
       {id: 'fails2', code: 'throw new Error("bang")'},
     ],
     [['go', 'sender'], ['sender', 'fails'], ['go', 'sender2'], ['sender2', 'fails2']]
@@ -301,7 +301,7 @@ test('a node that takes too long fails with a timeout; the time spent in node.em
     [
       {id: 'go', op: 'on_run'},
       {id: 'slow', code: `${sleep(5000)}`},
-      {id: 'waits', code: 'await node.emit("Out"); node.output.result = "ok"'},
+      {id: 'waits', code: 'await node.emit("out"); node.output.result = "ok"'},
       {id: 'long', code: `${sleep(500)}`},
     ],
     [['go', 'slow'], ['go', 'waits'], ['waits', 'long']]
@@ -316,7 +316,7 @@ test('a node that takes too long fails with a timeout; the time spent in node.em
   const ok = docOf(
     [
       {id: 'go', op: 'on_run'},
-      {id: 'waits', code: 'await node.emit("Out"); await node.emit("Out"); node.output.result = "ok"'},
+      {id: 'waits', code: 'await node.emit("out"); await node.emit("out"); node.output.result = "ok"'},
       {id: 'long', code: `${sleep(200)}`},
     ],
     [['go', 'waits'], ['waits', 'long']]
@@ -340,7 +340,7 @@ test('a Script that waits in node.emit() is not taken for one that never returns
   const doc = docOf(
     [
       {id: 'go', op: 'on_run'},
-      {id: 'loop', code: 'for (let i = 0; i < 3; i++) { node.output.result = i; await node.emit("Out"); }'},
+      {id: 'loop', code: 'for (let i = 0; i < 3; i++) { node.output.result = i; await node.emit("out"); }'},
       {id: 'step', code: `${sleep(250)} globalThis.x = 1`},
     ],
     [['go', 'loop'], ['loop', 'step']]
@@ -373,7 +373,7 @@ test('the size limits: one result, and all results of a run', async () => {
 
 test('a loop that replaces its output does not use up the size limit of the run', async () => {
   const app = createApp();
-  const doc = docOf([{id: 'go', op: 'on_run'}, {id: 'loop', code: 'for (let i = 0; i < 50; i++) { node.output.result = "x".repeat(1000); await node.emit("Out"); }'}], [['go', 'loop']]);
+  const doc = docOf([{id: 'go', op: 'on_run'}, {id: 'loop', code: 'for (let i = 0; i < 50; i++) { node.output.result = "x".repeat(1000); await node.emit("out"); }'}], [['go', 'loop']]);
   const {result} = await evaluate(app, doc, ['go'], {tweak: 'plan => { plan.limits.bytes = 5000; }'});
   assert.deepEqual(result.errors, {}, 'only the latest result of a node counts');
 });
@@ -468,7 +468,7 @@ test('the data of the event reaches the run: on_run carries a payload', async ()
 });
 
 // ----- Flow control: waves, node.flow (break, continue, cancel, abort) and emit(name, {handles, failFast}) -----
-const LOOP = n => `for (let i = 0; i < ${n}; i++) { node.output.result = i; const r = await node.emit("Out", {handles: ["break", "continue"]}); globalThis.log.push("emit " + i + " " + r); if (r === "break") break; }`;
+const LOOP = n => `for (let i = 0; i < ${n}; i++) { node.output.result = i; const r = await node.emit("out", {handles: ["break", "continue"]}); globalThis.log.push("emit " + i + " " + r); if (r === "break") break; }`;
 const wait = ms => `await new Promise(r => setTimeout(r, ${ms}));`;
 
 test('node.flow.break() ends the loop: the emit that handles it answers "break", and the rest of that pass does not start', async () => {
@@ -515,7 +515,7 @@ test('break() and continue() go up through emits that do not handle them, to the
     [
       {id: 'go', op: 'on_run'},
       {id: 'loop', code: LOOP(5)},
-      {id: 'branch', outs: ['T'], code: 'await node.emit("T"); globalThis.log.push("branch after T"); await node.emit("Out");'},
+      {id: 'branch', outs: ['T'], code: 'await node.emit("T"); globalThis.log.push("branch after T"); await node.emit("out");'},
       {id: 'inner', code: 'if (x === 1) node.flow.break()', inputs: ['x']},
       {id: 'rest', code: 'globalThis.log.push("rest " + x)', inputs: ['x']},
     ],
@@ -533,8 +533,8 @@ test('a loop inside a loop: break() takes the nearest emit that handles it, even
   const doc = docOf(
     [
       {id: 'go', op: 'on_run'},
-      {id: 'outer', code: 'const r = await node.emit("Out", {handles: ["break"]}); globalThis.log.push("outer " + r)'},
-      {id: 'spin', code: 'let n = 0; while (true) { node.output.result = n++; await node.emit("Out"); }'},
+      {id: 'outer', code: 'const r = await node.emit("out", {handles: ["break"]}); globalThis.log.push("outer " + r)'},
+      {id: 'spin', code: 'let n = 0; while (true) { node.output.result = n++; await node.emit("out"); }'},
       {id: 'body', code: 'globalThis.log.push("body " + x); if (x === 2) node.flow.break()', inputs: ['x']},
     ],
     [['go', 'outer'], ['outer', 'spin'], ['spin', 'body'], ['spin', 'body', 'x']]
@@ -549,7 +549,7 @@ test('break() with nothing above that handles it is an error of the node that ca
   const doc = docOf(
     [
       {id: 'go', op: 'on_run'},
-      {id: 'plain', code: 'await node.emit("Out")'},
+      {id: 'plain', code: 'await node.emit("out")'},
       {id: 'stray', code: 'node.flow.break()'},
     ],
     [['go', 'plain'], ['plain', 'stray']]
@@ -564,7 +564,7 @@ test('node.flow.cancel() stops the flow of the emit above without an error; what
   const doc = docOf(
     [
       {id: 'go', op: 'on_run'},
-      {id: 'sender', code: 'await node.emit("Out"); globalThis.log.push("sender goes on")'},
+      {id: 'sender', code: 'await node.emit("out"); globalThis.log.push("sender goes on")'},
       {id: 'stop', code: 'node.flow.cancel()'},
       {id: 'victim', code: 'globalThis.log.push("victim")'},
     ],
@@ -581,7 +581,7 @@ test('node.flow.abort() ends the whole run: nothing starts, and the loops that a
   const doc = docOf(
     [
       {id: 'go', op: 'on_run'},
-      {id: 'spin', code: 'let n = 0; while (true) { node.output.result = n++; await node.emit("Out"); }'},
+      {id: 'spin', code: 'let n = 0; while (true) { node.output.result = n++; await node.emit("out"); }'},
       {id: 'body', code: 'globalThis.log.push("body " + x); if (x === 2) node.flow.abort()', inputs: ['x']},
       {id: 'never', code: 'globalThis.log.push("never")'},
     ],
@@ -598,9 +598,9 @@ test('emit with failFast: the first failure cancels the rest of what that emit s
     docOf(
       [
         {id: 'go', op: 'on_run'},
-        {id: 'sender', code: `try { await node.emit("Out"${options}) } catch (e) { globalThis.log.push("caught") }`},
+        {id: 'sender', code: `try { await node.emit("out"${options}) } catch (e) { globalThis.log.push("caught") }`},
         {id: 'bad', code: 'throw new Error("bad")'},
-        {id: 'slow', code: `${wait(30)} await node.emit("Out")`},
+        {id: 'slow', code: `${wait(30)} await node.emit("out")`},
         {id: 'after', code: 'globalThis.log.push("after")'},
       ],
       [['go', 'sender'], ['sender', 'bad'], ['sender', 'slow'], ['slow', 'after']]
@@ -616,10 +616,10 @@ test('node.cancelled tells a long code that its flow was cancelled; handles and 
   const doc = docOf(
     [
       {id: 'go', op: 'on_run'},
-      {id: 'sender', code: 'await node.emit("Out"); globalThis.log.push("sender sees " + node.cancelled)'},
+      {id: 'sender', code: 'await node.emit("out"); globalThis.log.push("sender sees " + node.cancelled)'},
       {id: 'seer', code: `${wait(10)} globalThis.log.push("seer sees " + node.cancelled)`},
       {id: 'stop', code: 'node.flow.cancel()'},
-      {id: 'odd', code: 'try { await node.emit("Out", {handles: ["return"]}) } catch (e) { globalThis.log.push(e.message) } try { await node.emit("Out", 5) } catch (e) { globalThis.log.push(e.message) }', bare: true},
+      {id: 'odd', code: 'try { await node.emit("out", {handles: ["return"]}) } catch (e) { globalThis.log.push(e.message) } try { await node.emit("out", 5) } catch (e) { globalThis.log.push(e.message) }', bare: true},
     ],
     [['go', 'sender'], ['sender', 'seer'], ['sender', 'stop'], ['go', 'odd']]
   );
@@ -634,7 +634,7 @@ test('break() works in a Worker too (the executor is embedded there as source te
   const doc = docOf(
     [
       {id: 'go', op: 'on_run'},
-      {id: 'loop', code: 'for (let i = 0; i < 10; i++) { node.output.result = i; if ((await node.emit("Out", {handles: ["break"]})) === "break") break; }'},
+      {id: 'loop', code: 'for (let i = 0; i < 10; i++) { node.output.result = i; if ((await node.emit("out", {handles: ["break"]})) === "break") break; }'},
       {id: 'body', code: 'if (x === 2) node.flow.break()', inputs: ['x']},
     ],
     [['go', 'loop'], ['loop', 'body'], ['loop', 'body', 'x']]

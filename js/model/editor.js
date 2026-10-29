@@ -72,11 +72,25 @@ class Editor {
    */
   setTypes(list, {library = false} = {}) {
     checkTypes(list);
-    const canon = t => t && JSON.stringify([t.id, t.name, t.color ?? null, t.fields, t.control ?? null, t.options ?? null, t.alias ?? null]),
+    const canon = t =>
+        t &&
+        JSON.stringify([
+          t.id,
+          t.name,
+          t.color ?? null,
+          t.fields,
+          t.control ?? null,
+          t.options ?? null,
+          t.alias ?? null,
+        ]),
       mine = (this.doc.types ?? []).filter(t => t.library),
       now = list.filter(t => t.library);
     // A Library type is changed where it is defined: in the Custom Node that uses it (and it stays while a node does).
-    if (mine.length !== now.length || mine.some(t => !now.some(x => x.id === t.id)) || (!library && mine.some(t => canon(t) !== canon(now.find(x => x.id === t.id)))))
+    if (
+      mine.length !== now.length ||
+      mine.some(t => !now.some(x => x.id === t.id)) ||
+      (!library && mine.some(t => canon(t) !== canon(now.find(x => x.id === t.id))))
+    )
       throw bad('A Library type is changed in a Custom Node of the Library');
     const table = new TypeTable(list),
       gone = this.allPorts().find(p => p.type && !table.shape(p.type));
@@ -206,7 +220,8 @@ class Editor {
   renameNode(nodeId, title) {
     const node = this.doc.nodes.find(n => n.id === nodeId);
     if (!node || node.node_type !== 'custom') throw missing('Node not found in this project');
-    if (typeof title !== 'string' || !title.trim() || title.length > 100) throw bad('A name is text of 1 to 100 characters');
+    if (typeof title !== 'string' || !title.trim() || title.length > 100)
+      throw bad('A name is text of 1 to 100 characters');
     node.config = {...node.config, title: title.trim()};
     return {saved: true, title: node.config.title};
   }
@@ -245,7 +260,8 @@ class Editor {
       });
     }
     if (existing && type === 'custom') this.pruneStale(nodeId);
-    if (type === 'custom' && declared !== null && (existing || config.widgets)) this.declareWidgets(nodeId, config.widgets);
+    if (type === 'custom' && declared !== null && (existing || config.widgets))
+      this.declareWidgets(nodeId, config.widgets);
     if ('position' in body) this.saveLayout({[nodeId]: body.position});
     return {id: nodeId};
   }
@@ -277,7 +293,9 @@ class Editor {
    */
   ensureType(def) {
     const shape = t => JSON.stringify([t.fields, controlOf(t)]);
-    const have = (this.doc.types ?? []).find(t => t.id === def.id || (t.name.toLowerCase() === def.name.toLowerCase() && shape(t) === shape(def)));
+    const have = (this.doc.types ?? []).find(
+      t => t.id === def.id || (t.name.toLowerCase() === def.name.toLowerCase() && shape(t) === shape(def))
+    );
     if (have) return have.id;
     this.setTypes([...(this.doc.types ?? []), def]);
     return def.id;
@@ -288,16 +306,36 @@ class Editor {
    */
   addPrimitive(kind, point = {x: 0, y: 0}) {
     if (kind === 'event')
-      return this.saveNode({node_type: 'custom', position: point, config: {title: 'Event', inputs: [], outputs: [{id: 'out', name: 'Out', type: 'signal'}], op: 'on_run'}});
+      return this.saveNode({
+        node_type: 'custom',
+        position: point,
+        config: {title: 'Event', inputs: [], outputs: [{id: 'out', name: 'out', type: 'signal'}], op: 'on_run'},
+      });
     if (kind !== 'script') throw bad('Choose script or event');
-    const text = this.ensureType({id: SCRIPT_TEXT_TYPE, name: 'text', color: '#669ed6', fields: [], control: 'textarea'}),
-      code = this.ensureType({id: SCRIPT_CODE_TYPE, name: 'script', color: '#8a6fd6', fields: [], alias: 't:' + text, control: 'code'});
+    const text = this.ensureType({
+        id: SCRIPT_TEXT_TYPE,
+        name: 'text',
+        color: '#669ed6',
+        fields: [],
+        control: 'textarea',
+      }),
+      code = this.ensureType({
+        id: SCRIPT_CODE_TYPE,
+        name: 'script',
+        color: '#8a6fd6',
+        fields: [],
+        alias: 't:' + text,
+        control: 'code',
+      });
     return this.saveNode({
       node_type: 'custom',
       position: point,
       config: {
         title: 'Script',
-        inputs: [{id: 'in', name: 'In', type: 'signal'}, {id: 'script', name: 'script', type: 't:' + code}],
+        inputs: [
+          {id: 'in', name: 'in', type: 'signal'},
+          {id: 'script', name: 'script', type: 't:' + code},
+        ],
         outputs: [],
         op: 'script',
       },
@@ -306,7 +344,8 @@ class Editor {
   /** Chooses the event an Event node fires: its operation is the event (on_run, on_read, on_placed, on_deleted, on_wired, on_widget). */
   setEvent(nodeId, op) {
     const node = this.doc.nodes.find(n => n.id === nodeId);
-    if (!node || node.node_type !== 'custom' || !EVENT_OPS.has(node.config?.op) || node.config.inputs?.length) throw missing('Event node not found in this project');
+    if (!node || node.node_type !== 'custom' || !EVENT_OPS.has(node.config?.op) || node.config.inputs?.length)
+      throw missing('Event node not found in this project');
     if (!EVENT_OPS.has(op)) throw bad(`Choose one of ${[...EVENT_OPS].join(', ')}`);
     node.config = {...node.config, op};
     return {id: nodeId, op};
@@ -516,7 +555,10 @@ class Editor {
     const existing = this.doc.complex.find(c => c.id === groupId);
     const library = String(this.project.id).startsWith('lib-');
     if (!internal && 'extra' in body) return this.setExtras(groupId, body.extra);
-    if ('arbitrary' in body && !(isObject(body.arbitrary) && ['inputs', 'outputs'].every(k => typeof body.arbitrary[k] === 'boolean')))
+    if (
+      'arbitrary' in body &&
+      !(isObject(body.arbitrary) && ['inputs', 'outputs'].every(k => typeof body.arbitrary[k] === 'boolean'))
+    )
       throw bad('Arbitrary is {inputs: true or false, outputs: true or false}');
     if (!internal) {
       if (groupId === this.doc.root && (body.wrap === false || body.collapsed === true))
@@ -557,6 +599,11 @@ class Editor {
     if (internal && 'source' in body) {
       if (body.source) stored.source = clone(body.source);
       else delete stored.source;
+    }
+    if ('grants' in body) {
+      if (!stored.source) throw bad('Permissions belong to a node placed from the Library');
+      checkManifest({grants: body.grants});
+      stored.grants = [...new Set(body.grants)];
     }
     if (typeof collapsed !== 'boolean') throw bad('Collapsed must be a boolean');
     if ('compact_size' in body) {
@@ -634,7 +681,8 @@ class Editor {
         if (p.bound?.length) {
           const [first, ...rest] = p.bound;
           for (const e of edges) {
-            for (const b of rest) this.doc.port_edges.push({...e, id: uid(), [side]: b.node_id, [side + '_port']: b.port_id});
+            for (const b of rest)
+              this.doc.port_edges.push({...e, id: uid(), [side]: b.node_id, [side + '_port']: b.port_id});
             e[side] = first.node_id;
             e[side + '_port'] = first.port_id;
           }
@@ -758,7 +806,9 @@ class Editor {
       for (const direction of ['inputs', 'outputs'])
         for (const p of stored.interface[direction] || []) {
           if (!p.bound) continue;
-          const keep = p.bound.filter((b, i) => (direction === 'inputs' || i === 0) && !bindingFault(cx, nodes, b, p, direction, types));
+          const keep = p.bound.filter(
+            (b, i) => (direction === 'inputs' || i === 0) && !bindingFault(cx, nodes, b, p, direction, types)
+          );
           if (keep.length) p.bound = keep;
           else delete p.bound;
         }
@@ -915,15 +965,27 @@ class Editor {
         if (!draft && source.id === target.id && !isSignal(output.type)) throw bad('A node cannot connect to itself');
         // A Reroute point with nothing wired yet takes whatever comes (it is then typed by it, see typeReroutes): signals too.
         const open = (node, port) => node.node_type === 'reroute' && isAny(port.type);
-        if (!draft && !open(source, output) && !open(target, input) && !compatible(output.type, input.type, types)) throw bad('Port types are incompatible');
+        if (!draft && !open(source, output) && !open(target, input) && !compatible(output.type, input.type, types))
+          throw bad('Port types are incompatible');
         const b = Editor.resolveAll(nodes, target.id, input.id, 'inputs').map(t => t.join('|'));
         // A data input takes one connection: a new wire replaces the one that was there. A signal input takes any number, and
         // a signal may go in a circle, so signal wires are neither replaced nor looked at for cycles.
         const signal = isSignal(output.type) || isSignal(input.type);
         const replaced = signal
           ? []
-          : edges.filter(e => Editor.resolveAll(nodes, e.target, e.target_port, 'inputs').some(t => b.includes(t.join('|'))));
-        if (signal && edges.some(e => e.source === source.id && e.source_port === output.id && e.target === target.id && e.target_port === input.id))
+          : edges.filter(e =>
+              Editor.resolveAll(nodes, e.target, e.target_port, 'inputs').some(t => b.includes(t.join('|')))
+            );
+        if (
+          signal &&
+          edges.some(
+            e =>
+              e.source === source.id &&
+              e.source_port === output.id &&
+              e.target === target.id &&
+              e.target_port === input.id
+          )
+        )
           throw bad('These ports are connected already');
         if (replaced.length) {
           const gone = new Set(replaced.map(e => e.id));
@@ -938,7 +1000,8 @@ class Editor {
           ]) {
             const from = Editor.resolve(nodes, e.source, e.source_port, 'outputs')[0];
             if (!adjacency.has(from)) adjacency.set(from, []);
-            for (const to of Editor.resolveAll(nodes, e.target, e.target_port, 'inputs')) adjacency.get(from).push(to[0]);
+            for (const to of Editor.resolveAll(nodes, e.target, e.target_port, 'inputs'))
+              adjacency.get(from).push(to[0]);
           }
           ensureAcyclic(adjacency);
         }
@@ -971,7 +1034,10 @@ class Editor {
       outputs: stored.interface.outputs.filter(p => p.extra),
     };
     const name = group.name,
-      typed = direction => Object.fromEntries(stored.interface[direction].filter(p => !p.extra && 'default' in p).map(p => [p.id, p.default])),
+      typed = direction =>
+        Object.fromEntries(
+          stored.interface[direction].filter(p => !p.extra && 'default' in p).map(p => [p.id, p.default])
+        ),
       typedIn = typed('inputs'),
       typedOut = typed('outputs');
     const inner = snap.groups.filter(g => isInside(byId, g, groupId)).map(g => g.id);
@@ -979,8 +1045,15 @@ class Editor {
       .filter(n => snap.groups.some(g => (g.id === groupId || inner.includes(g.id)) && g.members.includes(n.id)))
       .map(n => n.id);
     // The widgets of the nodes inside stay (with their values) on the nodes that take their place: the k-th node with the same title.
-    const widgetsOf = ids => ids.filter(id => this.doc.widgets[id]).map(id => ({title: this.doc.nodes.find(n => n.id === id).config?.title, id}));
-    const oldWidgets = widgetsOf(nodes).map(({title, id}) => ({title, list: clone(this.doc.widgets[id]), declared: !!this.doc.nodes.find(n => n.id === id).config.widgets}));
+    const widgetsOf = ids =>
+      ids
+        .filter(id => this.doc.widgets[id])
+        .map(id => ({title: this.doc.nodes.find(n => n.id === id).config?.title, id}));
+    const oldWidgets = widgetsOf(nodes).map(({title, id}) => ({
+      title,
+      list: clone(this.doc.widgets[id]),
+      declared: !!this.doc.nodes.find(n => n.id === id).config.widgets,
+    }));
     const doomed = new Set(inner);
     if (nodes.length) this.deleteNodes(nodes);
     this.doc.groups = this.doc.groups.filter(g => !doomed.has(g.id));
@@ -995,6 +1068,7 @@ class Editor {
     group.members = [];
     this.paste(bundle, this.doc.layout['complex:' + groupId] ?? {x: 0, y: 0}, {
       source,
+      grants: [...(stored.grants ?? [])],
       into: groupId,
       parent: group.parent ?? null,
       extras,
@@ -1003,8 +1077,14 @@ class Editor {
     this.doc.groups.find(g => g.id === groupId).name = name;
     // A widget the definition declares keeps its value; one that the code made (no declaration) comes back as it was.
     const after = this.snapshot(),
-      innerAfter = after.groups.filter(g => isInside(new Map(after.groups.map(x => [x.id, x])), g, groupId)).map(g => g.id),
-      fresh = after.nodes.filter(n => after.groups.some(g => (g.id === groupId || innerAfter.includes(g.id)) && g.members.includes(n.id))).map(n => n.id);
+      innerAfter = after.groups
+        .filter(g => isInside(new Map(after.groups.map(x => [x.id, x])), g, groupId))
+        .map(g => g.id),
+      fresh = after.nodes
+        .filter(n =>
+          after.groups.some(g => (g.id === groupId || innerAfter.includes(g.id)) && g.members.includes(n.id))
+        )
+        .map(n => n.id);
     const used = new Map();
     for (const id of fresh) {
       const node = this.doc.nodes.find(n => n.id === id),
@@ -1067,9 +1147,7 @@ class Editor {
         .filter(n => n.kind === 'function')
         .map(n => ({
           id: n.id,
-          payload: Object.fromEntries(
-            [...COPYABLE].map(k => [k, clone(n[k])])
-          ),
+          payload: Object.fromEntries([...COPYABLE].map(k => [k, clone(n[k])])),
         })),
       positions: Object.fromEntries(
         snap.nodes.filter(n => copied.has(n.id) && n.position).map(n => [n.id, n.position])
@@ -1102,12 +1180,17 @@ class Editor {
         compact_height: c.compact_height,
         position: c.position,
         ...(c.arbitrary ? {arbitrary: clone(c.arbitrary)} : {}),
-        ...(c.source ? {source: clone(c.source)} : {}),
+        ...(c.source ? {source: clone(c.source), grants: [...(c.grants ?? [])]} : {}),
       })),
     };
   }
 
   paste(bundle, point, opts = {}) {
+    if (
+      opts.preserveIds &&
+      (!String(this.project.id).startsWith('lib-') || this.doc.nodes.length || this.doc.groups.length)
+    )
+      throw bad('Definition IDs can only be reused in an empty Library editor');
     if (
       !isObject(bundle) ||
       bundle.version !== BUNDLE_VERSION ||
@@ -1144,11 +1227,22 @@ class Editor {
       retype = p => (p && typeof p.type === 'string' ? {...p, type: renameTypeRefs(p.type, renamed)} : p),
       retypeConfig = config =>
         renamed.size
-          ? {...config, ...(config.inputs ? {inputs: config.inputs.map(retype)} : {}), ...(config.outputs ? {outputs: config.outputs.map(retype)} : {})}
+          ? {
+              ...config,
+              ...(config.inputs ? {inputs: config.inputs.map(retype)} : {}),
+              ...(config.outputs ? {outputs: config.outputs.map(retype)} : {}),
+            }
           : config;
     const mapping = new Map();
     for (const record of records)
-      mapping.set(record.id, this.saveNode({node_type: record.payload.node_type, config: retypeConfig(record.payload.config ?? {})}).id);
+      mapping.set(
+        record.id,
+        this.saveNode({
+          ...(opts.preserveIds ? {id: record.id} : {}),
+          node_type: record.payload.node_type,
+          config: retypeConfig(record.payload.config ?? {}),
+        }).id
+      );
     // Slots the placed copy had of its own come back (unless the definition does not allow them, or uses the same name or ID).
     let kept = null;
     if (opts.extras) {
@@ -1190,7 +1284,11 @@ class Editor {
     const existing = this.snapshot()
       .groups.filter(g => g.id !== opts.into)
       .map(g => ({id: g.id, name: g.name, members: g.members, parent: g.parent, position: g.position}));
-    const fresh = new Map(bundleGroups.filter(g => isObject(g) && typeof g.id === 'string').map(g => [g.id, uid()])),
+    const fresh = new Map(
+        bundleGroups
+          .filter(g => isObject(g) && typeof g.id === 'string')
+          .map(g => [g.id, opts.preserveIds ? g.id : uid()])
+      ),
       copied = [];
     // A Library node is placed (or refreshed in place, with opts.into) as one Complex Node: the single top-level group of its bundle. A bundle of plain nodes (the Script, an event) is placed as they are.
     let rootOld = null;
@@ -1252,7 +1350,8 @@ class Editor {
             inside = bound.filter(b => mapping.has(b.node_id)).map(b => ({...b, node_id: mapping.get(b.node_id)}));
           return inside.length ? {...rest, bound: inside} : rest;
         });
-      if (kept && c.id === rootOld) for (const direction of ['inputs', 'outputs']) iface[direction].push(...kept[direction]);
+      if (kept && c.id === rootOld)
+        for (const direction of ['inputs', 'outputs']) iface[direction].push(...kept[direction]);
       this.complex(
         fresh.get(c.id),
         {
@@ -1262,6 +1361,9 @@ class Editor {
           compact_size: {width: c.compact_width ?? 240, height: c.compact_height ?? 90},
           ...(c.arbitrary ? {arbitrary: c.arbitrary} : {}),
           ...(c.id === rootOld ? {source: opts.source} : c.source ? {source: c.source} : {}),
+          ...((c.id === rootOld ? opts.source : c.source)
+            ? {grants: (c.id === rootOld && opts.grants) || c.grants || []}
+            : {}),
         },
         true
       );

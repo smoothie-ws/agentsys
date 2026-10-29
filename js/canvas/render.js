@@ -74,6 +74,7 @@ function draw() {
         }
       next.dataset.signature = signature;
       next.dataset.ports = ports;
+      if (element) forgetFieldHeights(element);
       element ? element.replaceWith(next) : container.append(next);
       element = next;
       W.elements.set(node.id, element);
@@ -86,6 +87,7 @@ function draw() {
         refocused.dispatchEvent(new Event('input'));
       }
     }
+    restoreFieldHeights(element, node.id);
     element.classList.toggle('selected', W.selected.has(node.id));
     const p = W.pos.get(node.id);
     element.style.transform = `translate(${p.x}px,${p.y}px)`;
@@ -97,6 +99,7 @@ function draw() {
   }
   for (const [id, element] of W.elements)
     if (!alive.has(id)) {
+      forgetFieldHeights(element);
       W.nodeObserver?.unobserve(element);
       element.remove();
       W.elements.delete(id);
@@ -776,3 +779,43 @@ const libraryIcon = () => (app.resources || []).find(r => r.id === W.library)?.p
 
 /** The icon chosen for the Library Custom Node a placed node comes from. */
 const customIcon = node => (app.resources || []).find(r => r.id === node.source?.resource_id)?.payload.icon || '';
+
+// ----- the height of a text field is the person's: it is kept per workflow, so reopening shows it as it was left -----
+const fieldHeightsKey = () => 'fieldHeights:' + W.workflow;
+const fieldHeightContexts = new WeakMap();
+function saveFieldHeight(area) {
+  const context = fieldHeightContexts.get(area),
+    height = Math.round(parseFloat(area.style.height));
+  if (!context || !Number.isFinite(height) || height <= 0) return;
+  const saved = store.get(context.storage, {});
+  if (saved[context.key] === height) return;
+  saved[context.key] = height;
+  store.set(context.storage, saved);
+}
+const fieldHeightObserver = new ResizeObserver(entries => {
+  for (const {target} of entries) saveFieldHeight(target);
+});
+function forgetFieldHeights(element) {
+  for (const area of $$('textarea[data-literal]', element)) {
+    saveFieldHeight(area);
+    fieldHeightObserver.unobserve(area);
+    fieldHeightContexts.delete(area);
+  }
+}
+function restoreFieldHeights(element, nodeId) {
+  const saved = store.get(fieldHeightsKey(), {});
+  for (const area of $$('textarea[data-literal]', element)) {
+    const height = saved[nodeId + '|' + area.dataset.literal];
+    if (height && !area.style.height) area.style.height = height + 'px';
+    if (!fieldHeightContexts.has(area)) {
+      fieldHeightContexts.set(area, {storage: fieldHeightsKey(), key: nodeId + '|' + area.dataset.literal});
+      fieldHeightObserver.observe(area);
+    }
+  }
+}
+// Native textarea resizing may release the pointer outside the field.
+document.addEventListener(
+  'pointerup',
+  () => W.canvas && $$('textarea[data-literal]', W.canvas).forEach(saveFieldHeight),
+  true
+);

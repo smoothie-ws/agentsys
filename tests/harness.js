@@ -83,7 +83,7 @@ const nodes = {
     grants: TEST_PERMISSIONS,
     title: 'Script',
     op: 'script',
-    inputs: [signal('in', 'In'), {id: 'script', name: 'script', type: ref('code'), default: code}],
+    inputs: [signal('in', 'in'), {id: 'script', name: 'script', type: ref('code'), default: code}],
     outputs: [],
   }),
   /** An event node: `nodes.event('on_run')`, with the data outputs it carries. */
@@ -91,7 +91,7 @@ const nodes = {
     title: op,
     op,
     inputs: [],
-    outputs: [signal('out', 'Out'), ...data.map(name => ({id: name, name}))],
+    outputs: [signal('out', 'out'), ...data.map(name => ({id: name, name}))],
   }),
   run: () => nodes.event('on_run', ['payload']),
 };
@@ -259,7 +259,7 @@ async function fn(
     {Body: {inputs: [], outputs: []}, Script: {...nodes.script(unpack(inputs) + code), title: 'Script'}, ...members},
     {
       widgets,
-      inputs: [{id: 'in', name: 'In', type: 'signal', node: 'Script', port: 'in'}, ...inputs.map(slot)],
+      inputs: [{id: 'in', name: 'in', type: 'signal', node: 'Script', port: 'in'}, ...inputs.map(slot)],
       outputs: [...outputs.map(slot), ...signals.map(n => ({id: n, name: n, type: 'signal', node: false}))],
     }
   );

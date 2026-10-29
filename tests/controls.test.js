@@ -8,6 +8,31 @@ const {createApp, nodes, flow, bundleOf, place, fn} = require('./harness');
 const rejects = (promise, pattern) => assert.rejects(promise, error => pattern.test(error.message));
 const hex = n => String(n).padStart(32, '0');
 const T = n => 't:' + hex(n);
+
+test('port names preserve their declared case through saving, snapshots and placement', async () => {
+  const app = createApp(),
+    p = await app.api('POST', 'projects', {name: 'Port spelling'});
+  const entry = await app.api('POST', 'resources', {
+    name: 'Port spelling',
+    payload: bundleOf(
+      'Port spelling',
+      {Body: {inputs: [], outputs: []}},
+      {
+        inputs: [{id: 'url', name: 'URL', node: false}],
+        outputs: [{id: 'result', name: 'Result', node: false}],
+      }
+    ),
+  });
+  const placed = await app.api('POST', `projects/${p.id}/custom-nodes/${entry.id}`, {point: {x: 0, y: 0}});
+  const snapshot = await app.api('GET', `projects/${p.id}/workflow`);
+  const cx = snapshot.complex.find(c => c.id === placed.roots[0]);
+  assert.equal(cx.interface.inputs[0].name, 'URL');
+  assert.equal(cx.interface.outputs[0].name, 'Result');
+  assert.equal(
+    (await app.api('GET', `resources/${entry.id}`)).payload.bundle.complex[0].interface.inputs[0].name,
+    'URL'
+  );
+});
 const TEXT = {id: hex(1), name: 'Text', fields: [], control: 'text'},
   COUNT = {id: hex(2), name: 'Count', fields: [], control: 'number'},
   MODE = {id: hex(3), name: 'Mode', fields: [], control: 'select', options: ['fast', 'slow']},
@@ -16,10 +41,12 @@ const TEXT = {id: hex(1), name: 'Text', fields: [], control: 'text'},
 async function project(app, types = [TEXT, COUNT, MODE, PLAIN]) {
   const {id} = await app.api('POST', 'projects', {name: 'Controls'});
   await app.api('PUT', `projects/${id}/types`, {types});
-  const node = config => app.api('POST', `projects/${id}/typed-nodes`, {node_type: 'custom', config, position: {x: 0, y: 0}});
+  const node = config =>
+    app.api('POST', `projects/${id}/typed-nodes`, {node_type: 'custom', config, position: {x: 0, y: 0}});
   const run = ids => app.api('POST', `projects/${id}/evaluate-node`, {node_ids: ids, collect: true});
   /** A Library node around a Script that shows its typed input v (Text, default 'hi'). */
-  const echo = () => fn(app, id, {}, {code: 'node.display(String(v))', inputs: [{name: 'v', type: T(1), default: 'hi'}]});
+  const echo = () =>
+    fn(app, id, {}, {code: 'node.display(String(v))', inputs: [{name: 'v', type: T(1), default: 'hi'}]});
   return {id, node, run, echo, snapshot: () => app.api('GET', `projects/${id}/workflow`)};
 }
 
@@ -29,11 +56,36 @@ test('a type may have a control; an enum is a select with its options', async ()
   const types = (await p.snapshot()).types;
   assert.deepEqual(types.find(t => t.name === 'Mode').options, ['fast', 'slow']);
   const more = [...types];
-  await rejects(app.api('PUT', `projects/${p.id}/types`, {types: [...more, {id: hex(5), name: 'Bad', fields: [], control: 'knob'}]}), /control/);
-  await rejects(app.api('PUT', `projects/${p.id}/types`, {types: [...more, {id: hex(5), name: 'NoOptions', fields: [], control: 'select'}]}), /options/);
-  await rejects(app.api('PUT', `projects/${p.id}/types`, {types: [...more, {id: hex(5), name: 'Twice', fields: [], control: 'select', options: ['a', 'a']}]}), /different/);
-  await rejects(app.api('PUT', `projects/${p.id}/types`, {types: [...more, {id: hex(5), name: 'Opts', fields: [], control: 'text', options: ['a']}]}), /options/);
-  await rejects(app.api('PUT', `projects/${p.id}/types`, {types: [...more, {id: hex(5), name: 'Rec', fields: [{name: 'x', type: T(1)}], control: 'text'}]}), /fields/);
+  await rejects(
+    app.api('PUT', `projects/${p.id}/types`, {
+      types: [...more, {id: hex(5), name: 'Bad', fields: [], control: 'knob'}],
+    }),
+    /control/
+  );
+  await rejects(
+    app.api('PUT', `projects/${p.id}/types`, {
+      types: [...more, {id: hex(5), name: 'NoOptions', fields: [], control: 'select'}],
+    }),
+    /options/
+  );
+  await rejects(
+    app.api('PUT', `projects/${p.id}/types`, {
+      types: [...more, {id: hex(5), name: 'Twice', fields: [], control: 'select', options: ['a', 'a']}],
+    }),
+    /different/
+  );
+  await rejects(
+    app.api('PUT', `projects/${p.id}/types`, {
+      types: [...more, {id: hex(5), name: 'Opts', fields: [], control: 'text', options: ['a']}],
+    }),
+    /options/
+  );
+  await rejects(
+    app.api('PUT', `projects/${p.id}/types`, {
+      types: [...more, {id: hex(5), name: 'Rec', fields: [{name: 'x', type: T(1)}], control: 'text'}],
+    }),
+    /fields/
+  );
 });
 
 test('an input with no wire takes its default; a wire wins over it', async () => {
@@ -41,8 +93,14 @@ test('an input with no wire takes its default; a wire wins over it', async () =>
     p = await project(app);
   const node = await p.echo();
   assert.equal((await p.run([node.id])).displays[node.id], 'hi');
-  const source = await p.node({title: 'Source', inputs: [], outputs: [{id: 'o', name: 'o', type: T(1), editable: true, default: 'wired'}]});
-  await app.api('POST', `projects/${p.id}/port-connections`, {add: [{source: source.id, source_port: 'o', target: node.wrapper, target_port: 'v'}]});
+  const source = await p.node({
+    title: 'Source',
+    inputs: [],
+    outputs: [{id: 'o', name: 'o', type: T(1), editable: true, default: 'wired'}],
+  });
+  await app.api('POST', `projects/${p.id}/port-connections`, {
+    add: [{source: source.id, source_port: 'o', target: node.wrapper, target_port: 'v'}],
+  });
   assert.equal((await p.run([node.id])).displays[node.id], 'wired');
 });
 
@@ -65,7 +123,10 @@ test('an enum input takes only one of its options; removing an option drops a de
   const app = createApp(),
     p = await project(app);
   const node = await fn(app, p.id, {}, {code: 'node.display(m)', inputs: [{name: 'm', type: T(3), default: 'fast'}]});
-  await rejects(p.node({title: 'Bad', inputs: [{id: 'm', name: 'm', type: T(3), default: 'medium'}], outputs: []}), /default/);
+  await rejects(
+    p.node({title: 'Bad', inputs: [{id: 'm', name: 'm', type: T(3), default: 'medium'}], outputs: []}),
+    /default/
+  );
   await rejects(p.node({title: 'Bad', inputs: [{id: 'm', name: 'm', default: 'x'}], outputs: []}), /default/);
   assert.equal((await p.run([node.id])).displays[node.id], 'fast');
   const types = (await p.snapshot()).types.map(t => (t.id === hex(3) ? {...t, options: ['slow', 'later']} : t));
@@ -78,16 +139,19 @@ test('an enum input takes only one of its options; removing an option drops a de
 const echoNode = suffix =>
   bundleOf(
     'Echo',
-    {Body: {inputs: [], outputs: []}, S: nodes.script(`node.output.out = node.input.text + ${JSON.stringify(suffix)}; await node.emit("Out")`)},
+    {
+      Body: {inputs: [], outputs: []},
+      S: nodes.script(`node.output.out = node.input.text + ${JSON.stringify(suffix)}; await node.emit("done")`),
+    },
     {
       types: [TEXT],
       inputs: [
         {id: 'text', name: 'text', type: T(1), default: 'from the definition', node: false},
-        {id: 'go', name: 'In', type: 'signal', node: 'S', port: 'in'},
+        {id: 'go', name: 'in', type: 'signal', node: 'S', port: 'in'},
       ],
       outputs: [
         {id: 'out', name: 'out', node: false},
-        {id: 'done', name: 'Out', type: 'signal', node: false},
+        {id: 'done', name: 'done', type: 'signal', node: false},
       ],
     }
   );
@@ -98,7 +162,9 @@ test('a Library node placed on a workflow keeps the value typed on it, and the d
   const echo = await place(app, p.id, {workflow_id: p.id}, echoNode(''));
   await app.Backend.hooksIdle();
   const shown = await fn(app, p.id, {}, {code: 'node.display(String(v))', inputs: ['v']});
-  await app.api('POST', `projects/${p.id}/port-connections`, {add: [{source: echo.id, source_port: 'out', target: shown.wrapper, target_port: 'v'}]});
+  await app.api('POST', `projects/${p.id}/port-connections`, {
+    add: [{source: echo.id, source_port: 'out', target: shown.wrapper, target_port: 'v'}],
+  });
   const start = await flow(app, p.id, {}, [[echo.id, 'go', 'done'], shown.step]);
   const show = async () => (await p.run([start])).displays[shown.id];
   assert.equal(await show(), 'from the definition');
@@ -122,10 +188,20 @@ test('the value of a slot added on a placed node survives an edit of the Library
   const root = (await app.api('GET', `projects/${opened.project_id}/workflow`, {}, q)).root;
   const save = body => app.api('PUT', `projects/${opened.project_id}/complex/${root}`, {...q, ...body});
   await save({interface: {inputs: [{id: 'a', name: 'a'}], outputs: []}, arbitrary: {inputs: true, outputs: false}});
-  const placed = (await app.api('POST', `projects/${p.id}/custom-nodes/${opened.resource_id}`, {point: {x: 0, y: 0}})).roots[0];
-  await app.api('PUT', `projects/${p.id}/complex/${placed}`, {extra: {inputs: [{id: 'x1', name: 'extra', type: T(1), default: 'kept'}]}});
-  const defaults = async () => (await p.snapshot()).complex.find(c => c.id === placed).interface.inputs.map(s => [s.name, s.default]);
-  assert.deepEqual(await defaults(), [['a', undefined], ['extra', 'kept']]);
+  const placed = (await app.api('POST', `projects/${p.id}/custom-nodes/${opened.resource_id}`, {point: {x: 0, y: 0}}))
+    .roots[0];
+  await app.api('PUT', `projects/${p.id}/complex/${placed}`, {
+    extra: {inputs: [{id: 'x1', name: 'extra', type: T(1), default: 'kept'}]},
+  });
+  const defaults = async () =>
+    (await p.snapshot()).complex.find(c => c.id === placed).interface.inputs.map(s => [s.name, s.default]);
+  assert.deepEqual(await defaults(), [
+    ['a', undefined],
+    ['extra', 'kept'],
+  ]);
   await save({arbitrary: {inputs: true, outputs: true}});
-  assert.deepEqual(await defaults(), [['a', undefined], ['extra', 'kept']]);
+  assert.deepEqual(await defaults(), [
+    ['a', undefined],
+    ['extra', 'kept'],
+  ]);
 });

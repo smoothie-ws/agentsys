@@ -1,7 +1,7 @@
 'use strict';
 
 const CAPABILITY =
-  /^(graph\.(read|write)|library\.(read|write)|net\.fetch:[A-Za-z0-9.*:\[\]-]+|run\.(read|start)|secrets\.use:[A-Za-z0-9_-]+)$/;
+  /^(graph\.(read|write)|library\.(read|write)|net\.fetch:[A-Za-z0-9.*:\[\]-]+|run\.(read|start)|notifications\.(read|write)|secrets\.use:[A-Za-z0-9_-]+)$/;
 function checkManifest(manifest) {
   for (const field of ['capabilities', 'grants'])
     if (
@@ -20,6 +20,7 @@ function routeNeeds(pattern, method) {
   if (pattern === 'net') return ['net.fetch:{host}'];
   if (/^projects\/\{project_id\}\/runs$/.test(pattern)) return [method === 'GET' ? 'run.read' : 'run.start'];
   if (/^(runs|triggers)(\/|$)/.test(pattern)) return method === 'GET' ? ['run.read'] : ['system.admin'];
+  if (pattern === 'notifications') return [method === 'GET' ? 'notifications.read' : method === 'POST' ? 'notifications.write' : 'system.admin'];
   if (/^(resources|library)(\/|$)/.test(pattern)) return [method === 'GET' ? 'library.read' : 'library.write'];
   if (/^projects(\/|$)/.test(pattern) || pattern === 'search/nodes')
     return [method === 'GET' ? 'graph.read' : 'graph.write'];
@@ -29,6 +30,9 @@ const allows = (list, capability) =>
   list.some(value => value === capability || (value.endsWith(':*') && capability.startsWith(value.slice(0, -1))));
 // Every invocation captures its declaration at start. Code that
 // arrives through a wire (not typed into the node) cannot have been reviewed, so it only gets the read grants.
+const grantedBy = (manifest, capability) =>
+  (manifest.chain ?? [manifest.grants ?? []]).every(list => allows(list, capability)) &&
+  (!manifest.limit || allows(manifest.limit, capability));
 const READ_ONLY = ['graph.read', 'library.read', 'run.read'];
 async function preparePlanPermissions(plan) {
   const resources = (await DB.get('resources')) ?? [];
@@ -40,7 +44,11 @@ async function preparePlanPermissions(plan) {
     const grants = clone(manifest.grants ?? []);
     step.manifest = {
       capabilities: clone(manifest.capabilities ?? []),
-      grants: dynamic ? grants.filter(g => READ_ONLY.includes(g)) : grants,
+      grants,
+      // Placed in a Library node: only what every node around it allows (the node's own declared grants no longer count).
+      // A node placed before permissions moved to the placed node (no list stored on it) still counts the grants it declares.
+      ...(step.context?.grant_chain?.length ? {chain: [...step.context.grant_chain.filter(l => l), ...(step.context.grant_chain.some(l => !l) ? [grants] : [])]} : {}),
+      ...(dynamic ? {limit: READ_ONLY} : {}),
     };
   }
 }
@@ -54,7 +62,7 @@ async function nodeStartPermission(plan, step, invocation) {
   }
   const policy = (await DB.get('policy:' + plan.context.project_id)) ?? {allow: ['graph.read']};
   const denied = (step.manifest?.capabilities ?? []).find(
-    capability => !allows(step.manifest.grants ?? [], capability) || !allows(policy.allow ?? [], capability)
+    capability => !grantedBy(step.manifest, capability) || !allows(policy.allow ?? [], capability)
   );
   const reason = denied ? 'Permission denied: ' + denied : null;
   recordPlanEntry(run, 'authorizations', {invocation, node_version: step.content_hash, reason});
@@ -85,7 +93,7 @@ async function assertScriptPermission(context, method, path, body) {
   needs = [...needs, ...[...usedSecrets].map(m => 'secrets.use:' + m[1])];
   const denied = needs.find(
     need =>
-      !allows(manifest.capabilities, need) || !allows(policy.allow ?? [], need) || !allows(manifest.grants ?? [], need)
+      !allows(manifest.capabilities, need) || !allows(policy.allow ?? [], need) || !grantedBy(manifest, need)
   );
   const run = RUNS.byId.get(context.run_id);
   if (denied) {

@@ -46,8 +46,9 @@ async def resizing(page, pill, target, double=False, animated=True):
     assert await joined_colours(page), f'Visible colour break after resizing {pill}'
     assert await page.evaluate("""() => {
       const r = document.querySelector('#open-search').getBoundingClientRect();
-      return Math.abs(innerWidth - r.right - 9.6) < 1 && r.left > innerWidth / 2;
-    }"""), 'Search moved away from the upper right'
+      const bell = document.querySelector('#open-notifications').getBoundingClientRect();
+      return Math.abs(innerWidth - bell.right - 9.6) < 1 && r.right <= bell.left && r.left > innerWidth / 2;
+    }"""), 'Search and notifications moved away from the upper right'
 
 
 async def main():
@@ -60,7 +61,7 @@ async def main():
         await page.add_init_script("localStorage.setItem('agentsys-nav-joined', 'false')")
         await page.goto(URL + '#/settings')
         await page.wait_for_selector('#settings-form')
-        await page.click('#subnav [role=tab]:nth-child(2)')
+        await page.locator('#subnav-list a').filter(has_text='Appearance').click()
         assert await page.locator('[name=nav_joined]').count() == 0
         assert await page.evaluate("document.body.classList.contains('nav-joined')")
         for enabled in (False, True):

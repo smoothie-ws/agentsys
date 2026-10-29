@@ -17,22 +17,32 @@ const applyNavJoined = (on, layoutKey = '') => {
 function sectionOf(route) {
   if (route.project?.startsWith('lib-')) return 'library'; // a Custom Node is edited as a workflow
   if (route.project || route.page === 'projects') return 'projects';
-  return {resources: 'library', settings: 'settings'}[route.page] || 'home';
+  if (
+    route.page === 'plugins' &&
+    route.view &&
+    pluginById(route.id)?.manifest.contributes.pages.some(x => x.id === route.view && x.section === 'library')
+  )
+    return 'library'; // a page a plugin puts into the Library
+  return (
+    {resources: 'library', plugins: 'plugins', settings: 'settings', runs: 'runs', api: 'api'}[route.page] || 'home'
+  );
 }
 const SECTION_TITLES = {
   home: 'Dashboard',
+  plugins: 'Plugins',
   projects: 'Projects',
   library: 'Library',
   settings: 'Settings',
+  runs: 'Runs',
+  api: 'API reference',
 };
 
 // ----- the second panel -----
 /** The second panel's content: a section fills it from its tree (below), Settings from its page (`mount`). */
 const Subnav = {
-  custom: false,
   changed: false,
   html: '',
-  set(section, {title, actions = '', body = ''}, custom = false) {
+  set(section, {title, actions = '', body = ''}) {
     const panel = $('#subnav'),
       area = $('#subnav-body'),
       list = $('#subnav-list'),
@@ -47,7 +57,6 @@ const Subnav = {
     } else if (changed || body !== this.html) {
       list.innerHTML = this.html = body; // the rows are replaced; the highlight is not among them, so it glides
     }
-    this.custom = custom;
     if (changed) {
       this.changed = true;
       list.classList.remove('enter');
@@ -57,68 +66,7 @@ const Subnav = {
     area.scrollTop = changed ? 0 : scroll;
     if (typeof syncMobileNavigation === 'function') syncMobileNavigation();
   },
-  /** A page that owns its sub-sections (Settings, Runs) fills the panel while it opens. */
-  mount(parts) {
-    this.set(sectionOf(app.route || {}), parts, true);
-  },
 };
-
-/** A row that switches the page in place (the sections of Settings). */
-const navTab = (label, glyph, active) =>
-  `<button type="button" class="subnav-row ${active ? 'active' : ''}" role="tab" aria-selected="${active}" tabindex="${active ? 0 : -1}">${icon(glyph)}<span>${esc(label)}</span></button>`;
-/** Points a list of tabs at one of them (the highlight glides there). */
-function selectNavTab(list, current) {
-  $$('[role=tab]', list).forEach((el, i) => {
-    el.classList.toggle('active', i === current);
-    el.setAttribute('aria-selected', String(i === current));
-    el.tabIndex = i === current ? 0 : -1;
-  });
-  if (typeof syncMobileNavigation === 'function') syncMobileNavigation();
-}
-
-/** The rows of a page that has sections of its own (Dashboard, Runs, API) in the second panel: `[key, label, glyph]` anchors to `#prefix-key`
- *  and `[key, label, glyph, path]` links to another page. The first section starts active. */
-function sectionRows(prefix, items) {
-  return (
-    '<nav class="subnav-tree">' +
-    items
-      .map(([key, label, glyph, path], i) =>
-        path
-          ? `<a class="subnav-row" href="${esc(path)}" data-link>${icon(glyph)}<span>${esc(label)}</span></a>`
-          : `<a class="subnav-row ${i === 0 ? 'active' : ''}" href="#${prefix}-${key}" data-section-row="${key}">${icon(glyph)}<span>${esc(label)}</span></a>`
-      )
-      .join('') +
-    '</nav>'
-  );
-}
-/** Makes the rows of `sectionRows` work: a click scrolls to the section, and the section in view is the active row. */
-function followSections(view, prefix) {
-  const rows = $$('#subnav [data-section-row]');
-  const show = key => {
-    rows.forEach(row => row.classList.toggle('active', row.dataset.sectionRow === key));
-    placePills();
-  };
-  for (const row of rows)
-    row.onclick = event => {
-      event.preventDefault();
-      show(row.dataset.sectionRow);
-      $(`#${prefix}-${row.dataset.sectionRow}`, view)?.scrollIntoView({behavior: 'smooth'});
-    };
-  let frame = 0;
-  view.addEventListener('scroll', () => {
-    if (frame) return;
-    frame = requestAnimationFrame(() => {
-      frame = 0;
-      const top = view.getBoundingClientRect().top + 80;
-      let current = rows[0]?.dataset.sectionRow;
-      for (const row of rows) {
-        const section = $(`#${prefix}-${row.dataset.sectionRow}`, view);
-        if (section && section.getBoundingClientRect().top <= top) current = row.dataset.sectionRow;
-      }
-      if (current && !$(`#subnav [data-section-row="${current}"].active`)) show(current);
-    });
-  });
-}
 
 // ----- the rows -----
 /** The unfolded groups of the trees. Every tree starts folded on each visit; a group opens only when you open it. */
@@ -193,19 +141,66 @@ const resourceRow = r => ({
   key: 'r:' + r.id,
   label: r.name,
   icon: resourceIcon(r),
-  href: developerMode() ? resourceHref(r) : null,
+  href: developerMode() && !r.payload.plugin ? resourceHref(r) : null,
   menu: 'resource:' + r.id,
-  drag: developerMode() ? r.id : undefined,
+  drag: developerMode() && !r.payload.plugin ? r.id : undefined,
 });
 /** What each section shows: the open row (`active`), the groups to unfold to reach it, and the rows. */
-const NAV_TREES = {
-  projects: route => ({
-    title: SECTION_TITLES.projects,
-    actions: `<button class="icon" id="import-project-panel" title="Import project" aria-label="Import project">${icon('download')}</button><button class="icon" id="new-project" title="New project" aria-label="New project">${icon('plus')}</button>`,
-    active: route.workflow ? 'w:' + route.workflow : route.project ? 'p:' + route.project : '',
-    empty: 'No projects yet.',
+// One definition of each primary section. Pages never replace this tree.
+const SECTION_PANELS = {
+  home: [['overview', 'Overview', 'chart']],
+  settings: [
+    ['editing', 'Editing', 'settings'],
+    ['appearance', 'Appearance', 'palette'],
+    ['keyboard-shortcuts', 'Keyboard shortcuts', 'keyboard'],
+  ],
+  runs: [
+    ['activations', 'Activations', 'activity'],
+    ['workflows', 'Workflows', 'play'],
+    ['versions', 'Versions', 'file'],
+    ['permissions', 'Permissions', 'lock'],
+    ['run-limits', 'Run limits', 'settings'],
+  ],
+  api: [['reference', 'Reference', 'code']],
+};
+const sectionHref = (section, key) =>
+  (section === 'home' ? '/' : '/' + section) + (SECTION_PANELS[section]?.length > 1 ? '?section=' + key : '');
+const overviewRow = (section, href) => ({
+  key: 'overview:' + section,
+  label: 'Overview',
+  icon: 'folder',
+  href,
+  menu: 'section:' + section,
+});
+function panelTree(section) {
+  const current = selectedPanel(section);
+  return {
+    active: 'panel:' + current,
     rows: () =>
-      (app.projects || []).map(p => {
+      SECTION_PANELS[section].map(([key, label, glyph]) => ({
+        key: 'panel:' + key,
+        label,
+        icon: glyph,
+        href: sectionHref(section, key),
+        menu: 'section:' + section,
+      })),
+  };
+}
+function selectedPanel(section) {
+  const definitions = SECTION_PANELS[section],
+    requested = routeQuery().get('section');
+  return definitions.some(([key]) => key === requested) ? requested : definitions[0][0];
+}
+const NAV_TREES = {
+  home: () => panelTree('home'),
+  settings: () => panelTree('settings'),
+  runs: () => panelTree('runs'),
+  api: () => panelTree('api'),
+  projects: route => ({
+    active: route.workflow ? 'w:' + route.workflow : route.project ? 'p:' + route.project : 'overview:projects',
+    rows: () => [
+      overviewRow('projects', '/projects'),
+      ...(app.projects || []).map(p => {
         const loaded = projectTree.workflows.get(p.id);
         if (!loaded && navOpen.has('p:' + p.id)) loadProjectWorkflows(p.id);
         return {
@@ -214,48 +209,138 @@ const NAV_TREES = {
           icon: 'folder',
           href: `/p/${p.id}`,
           menu: 'project:' + p.id,
-          children:
-            loaded?.map(w => ({
-              key: 'w:' + w.id,
-              label: w.name,
-              icon: 'node',
-              href: `/p/${p.id}/w/${w.id}`,
-              menu: `workflow:${p.id}:${w.id}`,
-            })) ?? null,
+          children: loaded
+            ? [
+                ...loaded.map(w => ({
+                  key: 'w:' + w.id,
+                  label: w.name,
+                  icon: 'node',
+                  href: `/p/${p.id}/w/${w.id}`,
+                  menu: `workflow:${p.id}:${w.id}`,
+                })),
+              ]
+            : null,
         };
       }),
+    ],
   }),
   library: route => {
-    // A Custom Node open in its editor is shown as the node it is.
-    const id = route.project?.startsWith('lib-') ? route.project.slice(4) : route.id;
+    const nodeId = route.project?.startsWith('lib-')
+      ? route.project.slice(4)
+      : route.section === 'nodes'
+        ? route.id
+        : null;
     return {
-      title: SECTION_TITLES.library,
-      actions: `<button class="icon" id="library-add" title="New or import" aria-label="New or import">${icon('plus')}</button>`,
-      active: id ? 'r:' + id : route.folder ? folderKey(route.folder) : route.section ? 's:nodes' : '',
-      empty: '',
-      rows: () => [
-        {key: 's:nodes', label: 'Nodes', icon: 'library', href: NODES_PATH, menu: 'library:', drop: developerMode() ? '' : undefined, children: folderRows('')},
-      ],
+      active:
+        pluginActiveKey(route) ||
+        (nodeId
+          ? 'r:' + nodeId
+          : route.section === 'nodes'
+            ? route.folder
+              ? folderKey(route.folder)
+              : 's:nodes'
+            : route.id
+              ? `ci:${route.section}:${route.id}`
+              : route.folder
+                ? `cf:${route.section}:${route.folder}`
+                : route.section
+                  ? 'cs:' + route.section
+                  : 'overview:library'),
+      rows: () => [overviewRow('library', '/resources'), ...catalogLibraryRows(), ...pluginSectionRows('library')],
     };
   },
+  plugins: route => ({
+    active: pluginActiveKey(route) || 'overview:plugins',
+    rows: () => [
+      overviewRow('plugins', '/plugins'),
+      ...(app.plugins || []).map(p => ({
+        key: 'pl:' + p.id,
+        label: p.manifest.name,
+        icon: pluginIcon(p),
+        href: pluginHref(p.id),
+        menu: 'plugin:' + p.id,
+        ...(p.enabled && pluginSectionRows('plugins', p.id).length
+          ? {children: pluginSectionRows('plugins', p.id)}
+          : {}),
+      })),
+    ],
+  }),
 };
-let shownSection = '';
+function pageMenu(route = app.route || {}) {
+  if (route.page === 'resources')
+    return !route.section
+      ? 'library:'
+      : route.section === 'nodes'
+        ? route.id
+          ? 'resource:' + route.id
+          : route.folder
+            ? 'folder:' + route.folder
+            : 'nodes:'
+        : route.id
+          ? catalogItemMenu(route.section, route.id)
+          : route.folder
+            ? catalogFolderMenu(route.section, route.folder)
+            : catalogSectionMenu(route.section);
+  if (route.page === 'plugins' && route.id) return 'plugin:' + route.id;
+  if (route.project) return route.workflow ? `workflow:${route.project}:${route.workflow}` : 'project:' + route.project;
+  return 'section:' + sectionOf(route);
+}
+let shownSection = '',
+  shownTarget = '';
 function renderSubnav(route) {
   const section = sectionOf(route),
-    tree = NAV_TREES[section]?.(route);
+    tree = NAV_TREES[section]?.(route),
+    target = Tabs.keyOf(route),
+    changed = section !== shownSection || target !== shownTarget;
   $('#subnav').hidden = false;
   if (section !== shownSection) {
     navOpen.clear(); // arriving in a section: its tree starts folded (the Library's one section, Nodes, is open)
     if (section === 'library') navOpen.add('s:nodes');
   }
   shownSection = section;
-  if (Subnav.custom) return;
-  if (!tree) return Subnav.set(section, {title: SECTION_TITLES[section]});
+  shownTarget = target;
+  if (!tree) return Subnav.set(section, {title: SECTION_TITLES[section] || 'Navigation'});
+  const override = app.pluginNavigation;
+  if (override?.route === route)
+    return Subnav.set(section, {
+      title: override.title,
+      actions: actionButton('plugin:' + override.plugin, 'Section actions'),
+      body: `<nav class="subnav-tree">${override.items.map(item => navRow({key: 'pg:' + override.plugin + ':' + item.page, label: item.title, icon: item.icon, href: pluginHref(override.plugin, item.page), menu: 'plugin:' + override.plugin}, pluginActiveKey(route))).join('')}</nav>`,
+    });
+  if (changed && section === 'projects' && route.project) navOpen.add('p:' + route.project);
+  if (changed && section === 'library') {
+    const item = app.resources.find(
+      r => r.id === (route.project?.startsWith('lib-') ? route.project.slice(4) : route.id)
+    );
+    const folder = route.folder ?? item?.payload.folder;
+    if (route.section || item) navOpen.add('s:nodes');
+    if (folder)
+      for (let i = 1, parts = folder.split('/'); i <= parts.length; i++)
+        navOpen.add(folderKey(parts.slice(0, i).join('/')));
+  }
+  if (changed && section === 'library' && route.section && route.section !== 'nodes') {
+    let definition = catalogDefinition(route.section);
+    while (definition) {
+      navOpen.add('cs:' + definition.id);
+      definition = catalogDefinition(definition.parent);
+    }
+    if (route.folder)
+      for (let i = 1, parts = route.folder.split('/'); i <= parts.length; i++)
+        navOpen.add(`cf:${route.section}:${parts.slice(0, i).join('/')}`);
+  }
+  if (changed && section === 'library' && route.page === 'plugins') {
+    const pages = pluginById(route.id)?.manifest.contributes.pages ?? [];
+    let page = pages.find(p => p.id === route.view);
+    while (page?.parent) {
+      navOpen.add(`pg:${route.id}:${page.parent}`);
+      page = pages.find(p => p.id === page.parent);
+    }
+  }
   const rows = tree.rows();
   Subnav.set(section, {
-    title: tree.title,
-    actions: tree.actions,
-    body: `<nav class="subnav-tree" aria-label="${esc(tree.title)}">${rows.map(n => navRow(n, tree.active)).join('')}${rows.length ? '' : `<p class="muted small">${tree.empty}</p>`}</nav>`,
+    title: SECTION_TITLES[section],
+    actions: actionButton('section:' + section, 'Section actions'),
+    body: `<nav class="subnav-tree" aria-label="${esc(SECTION_TITLES[section])}">${rows.map(n => navRow(n, tree.active)).join('')}${rows.length ? '' : `<p class="muted small">Nothing here yet.</p>`}</nav>`,
   });
 }
 
@@ -352,13 +437,7 @@ function placePills(list = false, all = false) {
     const inactive = sheet ? $('#mobile-secondary') : $('#subnav');
     $(':scope > .nav-seam', inactive)?.classList.add('off');
     placePill(navPills.side, $('#sidebar a.active'), $('#sidebar'), all, host);
-    placePill(
-      navPills.mobile,
-      $('#mobile-section-tabs [aria-selected="true"]') || $('#mobile-browse'),
-      $('#mobile-secondary'),
-      list || all,
-      $('main')
-    );
+    placePill(navPills.mobile, $('#mobile-browse'), $('#mobile-secondary'), list || all, $('main'));
     navPills.sub.classList.add('off');
     return;
   }
@@ -427,6 +506,21 @@ function renderSidebar() {
 // ----- menus and folding -----
 /** The menu behind a "⋯" (`data-menu="type:argument"`) on a row of the second panel or on a card. In the panel a rename asks in a dialog; on a card it happens on the spot. */
 async function menuItems(spec, owner) {
+  const items = await resolveMenuItems(spec, owner);
+  return items?.map(item => {
+    if (!item || typeof item[1] !== 'function') return item;
+    const [label, action, options] = item;
+    return [
+      label,
+      async (...args) => {
+        if (app.pageSave && (await app.pageSave()) === false) return;
+        return action(...args);
+      },
+      options,
+    ];
+  });
+}
+async function resolveMenuItems(spec, owner) {
   const colon = spec.indexOf(':'),
     type = spec.slice(0, colon),
     arg = spec.slice(colon + 1),
@@ -442,13 +536,63 @@ async function menuItems(spec, owner) {
         (await api(`projects/${projectId}`)).workflows.find(w => w.id === workflowId);
     return workflow && workflowActions(projectId, workflow, title);
   }
+  if (type === 'plugin') {
+    const plugin = pluginById(arg);
+    return plugin && pluginActions(plugin);
+  }
+  if (type === 'plugin-template') {
+    const [id, key] = arg.split(':'),
+      plugin = pluginById(id),
+      template = plugin?.manifest.contributes.templates.find(t => t.id === key);
+    return template && templateActions(plugin, template);
+  }
+  if (type === 'section') return sectionActions(arg);
   if (type === 'library') return libraryActions();
+  if (type === 'nodes') return nodesActions();
+  if (type === 'catalog-section') return catalogSectionActions(catalogDefinition(arg));
+  if (type === 'catalog-folder' || type === 'catalog-item') {
+    const split = arg.indexOf(':');
+    const section = catalogDefinition(arg.slice(0, split));
+    const value = arg.slice(split + 1);
+    return type === 'catalog-folder'
+      ? catalogFolderActions(section, decodeURIComponent(value))
+      : catalogItemActions(section, value);
+  }
   if (type === 'resource')
     return resourceActions(
       app.resources.find(r => r.id === arg),
       title
     );
   if (type === 'folder') return folderActions(arg, title);
+}
+
+const refreshCurrentPage = async () => {
+  if (await leaveView()) await render();
+};
+function sectionActions(section) {
+  const refresh = ['Refresh', refreshCurrentPage, {icon: 'refresh'}];
+  if (section === 'library') return libraryActions();
+  if (section === 'projects')
+    return [
+      ['New project', newProjectDialog, {icon: 'plus'}],
+      ['Import project', importProjects, {icon: 'download'}],
+      null,
+      refresh,
+    ];
+  if (section === 'plugins') return [['Import plugin', importPlugin, {icon: 'download'}], null, refresh];
+  if (section === 'settings')
+    return [
+      ['Restore defaults', () => app.restoreSettings?.(), {icon: 'refresh', disabled: !app.restoreSettings}],
+      null,
+      refresh,
+    ];
+  if (section === 'api')
+    return [
+      ['Download OpenAPI', () => app.apiReference?.download(), {icon: 'download', disabled: !app.apiReference}],
+      null,
+      refresh,
+    ];
+  return [refresh];
 }
 document.addEventListener('click', event => {
   const button = event.target.closest('[data-menu]');
@@ -459,7 +603,12 @@ document.addEventListener('click', event => {
     .then(items => items && popup(rect.left, rect.bottom + 4, items))
     .catch(fail);
 });
-// The browser menu is disabled everywhere. Cards and rows reuse their action menu on right-click.
+// Cards and rows with actions keep their own menu; ordinary links retain native open/copy-link actions.
+const plainNavigationLink = target => {
+  const link = target.closest?.('a[data-link]');
+  if (!link || link.closest('#tabs')) return false;
+  return !link.closest('.card,.subnav-row')?.querySelector('[data-menu]');
+};
 // Text is the exception to every other menu: right-click on a text field (or on selected text) always opens the text menu.
 const TEXT_FIELD =
   'textarea, input:not([type]), input[type=text], input[type=search], input[type=url], input[type=tel], input[type=email], input[type=password], input[type=number], [contenteditable=""], [contenteditable=true]';
@@ -502,6 +651,7 @@ function textMenuItems(field, selected) {
 document.addEventListener(
   'contextmenu',
   event => {
+    if (plainNavigationLink(event.target)) return;
     event.preventDefault();
     const field = event.target.closest?.(TEXT_FIELD),
       selection = getSelection();
@@ -527,6 +677,7 @@ document.addEventListener(
   true
 );
 document.addEventListener('contextmenu', event => {
+  if (plainNavigationLink(event.target)) return;
   const custom = event.target.closest('[data-context-menu]');
   if (custom) return custom.click();
   if (!event.target.closest('[data-menu]') && event.target.closest('#canvas, #tabs, .popup')) return;
@@ -538,13 +689,6 @@ document.addEventListener('contextmenu', event => {
     .catch(fail);
 });
 $('#subnav').addEventListener('click', event => {
-  if (event.target.closest('#new-project')) return newProjectDialog();
-  if (event.target.closest('#import-project-panel')) return importProjects().catch(fail);
-  const add = event.target.closest('#library-add');
-  if (add) {
-    const rect = add.getBoundingClientRect();
-    return popup(rect.right - 250, rect.bottom + 4, libraryActions());
-  }
   const toggle = event.target.closest('.subnav-toggle, [data-toggle]');
   if (!toggle) return;
   event.preventDefault();

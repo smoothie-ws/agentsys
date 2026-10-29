@@ -36,13 +36,13 @@ async function fixture(scripts = 'inline', store = null) {
 async function connect(app, base, source, target, data = true) {
   await app.api('POST', base + '/port-connections', {
     add: [
-      {source: source.wrapper, source_port: 'Out', target: target.wrapper, target_port: 'in'},
+      {source: source.wrapper, source_port: 'out', target: target.wrapper, target_port: 'in'},
       ...(data ? [{source: source.wrapper, source_port: 'value', target: target.wrapper, target_port: 'value'}] : []),
     ],
   });
 }
 const run = (app, base, ids) => app.api('POST', base + '/runs', {node_ids: ids, wait: 2});
-const replace = (app, id, invocation, output, signals = ['Out']) =>
+const replace = (app, id, invocation, output, signals = ['out']) =>
   app.api('POST', `runs/${id}/output`, {invocation, output, signals, wait: 2});
 
 test('a completed invocation without wait can be replaced; its dependent reruns and independent work stays completed; recovery replays offline', async () => {
@@ -51,7 +51,7 @@ test('a completed invocation without wait can be replaced; its dependent reruns 
     app,
     p.id,
     {},
-    {code: 'node.output.value=1;await node.emit("Out");', outputs: ['value'], signals: ['Out']}
+    {code: 'node.output.value=1;await node.emit("out");', outputs: ['value'], signals: ['out']}
   );
   const consumer = await fn(
     app,
@@ -88,7 +88,7 @@ test('a failed Script before emit accepts data and explicit signal selection, an
     app,
     p.id,
     {},
-    {code: 'throw Error("broken");', outputs: ['value'], signals: ['Out', 'Other']}
+    {code: 'throw Error("broken");', outputs: ['value'], signals: ['out', 'other']}
   );
   const consumer = await fn(
     app,
@@ -114,8 +114,8 @@ test('only the selected repeated invocation and its dependent branch execute aga
     {
       inputs: ['value'],
       outputs: ['value'],
-      signals: ['Out'],
-      code: 'node.output.value=node.input.value;await node.emit("Out");',
+      signals: ['out'],
+      code: 'node.output.value=node.input.value;await node.emit("out");',
     }
   );
   const driver = await fn(
@@ -124,8 +124,8 @@ test('only the selected repeated invocation and its dependent branch execute aga
     {},
     {
       outputs: ['value'],
-      signals: ['Out'],
-      code: 'for(const value of [1,2]){node.output.value=value;await node.emit("Out");}',
+      signals: ['out'],
+      code: 'for(const value of [1,2]){node.output.value=value;await node.emit("out");}',
     }
   );
   const consumer = await fn(
@@ -153,14 +153,14 @@ test('completed recovery data and invocation dependencies survive a backend rest
     app,
     p.id,
     {},
-    {code: 'node.output.value=1;await node.emit("Out");', outputs: ['value'], signals: ['Out']}
+    {code: 'node.output.value=1;await node.emit("out");', outputs: ['value'], signals: ['out']}
   );
   const consumer = await fn(app, p.id, {}, {inputs: ['value'], code: 'node.display(node.input.value);'});
   await connect(app, base, producer, consumer);
   const original = await run(app, base, [producer.id]);
   const next = loadBackend({store});
   const replacement = await next.Backend.request('POST', `runs/${original.id}/output`, {
-    body: {invocation: `root:${producer.id}`, output: {value: 7}, signals: ['Out'], wait: 2},
+    body: {invocation: `root:${producer.id}`, output: {value: 7}, signals: ['out'], wait: 2},
   });
   assert.equal(replacement.status, 'completed', JSON.stringify(replacement.errors));
   assert.equal(replacement.displays[consumer.id], '7');
@@ -168,7 +168,7 @@ test('completed recovery data and invocation dependencies survive a backend rest
 
 test('invalid replacement requests do not stop a run or create new activations', async () => {
   const {app, p, base} = await fixture();
-  const n = await fn(app, p.id, {}, {code: 'node.output.value=1;', outputs: ['value'], signals: ['Out']});
+  const n = await fn(app, p.id, {}, {code: 'node.output.value=1;', outputs: ['value'], signals: ['out']});
   const original = await run(app, base, [n.id]);
   const count = (await app.api('GET', 'runs')).length;
   for (const body of [
@@ -189,7 +189,7 @@ test('cancelling a suspended child wave preserves its waiting sibling and does n
     app,
     p.id,
     {},
-    {signals: ['Out'], code: 'await node.emit("Out");await node.state.set("continued",true);'}
+    {signals: ['out'], code: 'await node.emit("out");await node.state.set("continued",true);'}
   );
   const wait = await fn(
     app,
@@ -231,13 +231,13 @@ test('live wave cancellation is cooperative and prevents later emits from starti
     app,
     p.id,
     {},
-    {signals: ['Out'], code: 'await node.emit("Out");await node.state.set("parent",true);'}
+    {signals: ['out'], code: 'await node.emit("out");await node.state.set("parent",true);'}
   );
   const child = await fn(
     app,
     p.id,
     {},
-    {signals: ['Out'], code: 'await agentsys("POST","net",{url:"https://hold.test"});await node.emit("Out");'}
+    {signals: ['out'], code: 'await agentsys("POST","net",{url:"https://hold.test"});await node.emit("out");'}
   );
   const tail = await fn(app, p.id, {}, {code: 'await node.state.set("wrong",true);'});
   await connect(app, base, parent, child, false);
@@ -315,7 +315,7 @@ test('a waiting invocation can be replaced and its dependent may wait again and 
     app,
     p.id,
     {},
-    {outputs: ['value'], signals: ['Out'], code: 'await node.wait({event:"original"});'}
+    {outputs: ['value'], signals: ['out'], code: 'await node.wait({event:"original"});'}
   );
   const consumer = await fn(
     app,
@@ -348,7 +348,7 @@ test('an active invocation can be replaced from its retained boundary and the or
     {},
     {
       outputs: ['value'],
-      signals: ['Out'],
+      signals: ['out'],
       code: 'await new Promise(r=>setTimeout(r,5000));await node.state.set("wrong",true);',
     }
   );
@@ -368,7 +368,7 @@ test('an active invocation can be replaced from its retained boundary and the or
 
 test('a dependent in another root reads the replaced invocation result', async () => {
   const {app, p, base} = await fixture();
-  const producer = await fn(app, p.id, {}, {outputs: ['value'], signals: ['Out'], code: 'node.output.value=2;'});
+  const producer = await fn(app, p.id, {}, {outputs: ['value'], signals: ['out'], code: 'node.output.value=2;'});
   const consumer = await fn(app, p.id, {}, {inputs: ['value'], code: 'node.display(node.input.value);'});
   await app.api('POST', base + '/port-connections', {
     add: [{source: producer.wrapper, source_port: 'value', target: consumer.wrapper, target_port: 'value'}],
@@ -444,10 +444,10 @@ test('a durable output-restart request completes once after a backend restart', 
 
 test('an old and a newly selected signal never reuse the same child invocation path', async () => {
   const {app, p, base, state} = await fixture();
-  const producer = await fn(app, p.id, {}, {signals: ['Out', 'Other'], code: 'await node.emit("Out");'});
+  const producer = await fn(app, p.id, {}, {signals: ['out', 'other'], code: 'await node.emit("out");'});
   const consumer = await fn(app, p.id, {}, {code: 'await node.state.update("calls",x=>(x??0)+1);'});
   await app.api('POST', base + '/port-connections', {
-    add: ['Out', 'Other'].map(source_port => ({
+    add: ['out', 'other'].map(source_port => ({
       source: producer.wrapper,
       source_port,
       target: consumer.wrapper,
@@ -455,7 +455,7 @@ test('an old and a newly selected signal never reuse the same child invocation p
     })),
   });
   const r = await run(app, base, [producer.id]);
-  const replacement = await replace(app, r.id, `root:${producer.id}`, {}, ['Other', 'Out']);
+  const replacement = await replace(app, r.id, `root:${producer.id}`, {}, ['other', 'out']);
   assert.equal(replacement.status, 'completed', JSON.stringify(replacement.errors));
   assert.equal(await state('calls'), 3);
 });
@@ -526,13 +526,13 @@ test('a restart recovered while workflow is paused starts no dependent code unti
     app,
     p.id,
     {},
-    {outputs: ['value'], signals: ['Out'], code: 'node.output.value=1;await node.emit("Out");'}
+    {outputs: ['value'], signals: ['out'], code: 'node.output.value=1;await node.emit("out");'}
   );
   const consumer = await fn(app, p.id, {}, {inputs: ['value'], code: 'node.display(node.input.value);'});
   await connect(app, base, producer, consumer);
   const r = await run(app, base, [producer.id]);
   await app.eval(
-    `exclusive(async()=>{const run=RUNS.byId.get('${r.id}');run.restarting=true;run.restart_request={id:uid(),at:Date.now(),replacement:replacementSpec(run,{invocation:'root:${producer.id}',output:{value:7},signals:['Out']},run.plan)};await persistRun(run,true);})`
+    `exclusive(async()=>{const run=RUNS.byId.get('${r.id}');run.restarting=true;run.restart_request={id:uid(),at:Date.now(),replacement:replacementSpec(run,{invocation:'root:${producer.id}',output:{value:7},signals:['out']},run.plan)};await persistRun(run,true);})`
   );
   await app.api('PUT', `workflows/${p.id}/control`, {status: 'paused'});
   const next = loadBackend({store});
@@ -557,13 +557,13 @@ test('ancestor idempotency keys are retained while recomputed dependents get a f
     app,
     p.id,
     {},
-    {signals: ['Out'], code: 'await node.state.set("ancestor-key",node.runKey);await node.emit("Out");'}
+    {signals: ['out'], code: 'await node.state.set("ancestor-key",node.runKey);await node.emit("out");'}
   );
   const producer = await fn(
     app,
     p.id,
     {},
-    {outputs: ['value'], signals: ['Out'], code: 'node.output.value=1;await node.emit("Out");'}
+    {outputs: ['value'], signals: ['out'], code: 'node.output.value=1;await node.emit("out");'}
   );
   const child = await fn(
     app,

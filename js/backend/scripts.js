@@ -26,6 +26,26 @@ function displayPart(value) {
     .slice(0, MAX_DISPLAY);
 }
 
+// Pieces of the isolation every Worker source starts and ends with: the shared intrinsics are frozen first, and the
+// host APIs are hidden last (after the source has taken what it needs from them). Plugin endpoints (plugins.js) use the same.
+const WORKER_FREEZE = `// Freeze the intrinsics the executor shares with node code: replacing Map.get, Promise
+// or JSON must not let a Script impersonate a different invocation at the host bridge.
+for (const name of ['Object','Array','Map','Set','Promise','Date','RegExp','String','Number','Boolean','Function','Error','TypeError','Uint8Array','ArrayBuffer','JSON','Math']) {
+  const value=globalThis[name]; if(value?.prototype)Object.freeze(value.prototype);Object.freeze(value);
+  if(!['Date','Math'].includes(name))Object.defineProperty(globalThis,name,{value,writable:false,configurable:false});
+}
+`;
+const WORKER_BLOCKED = ['fetch','importScripts','Worker','SharedWorker','WebSocket','WebSocketStream','WebTransport','RTCPeerConnection','XMLHttpRequest','EventSource','navigator','indexedDB','caches','Cache','BroadcastChannel','MessageChannel','postMessage','close','process','require','onmessage','addEventListener','removeEventListener','dispatchEvent','MessageEvent','crypto','performance','Date','Math'];
+const workerBlock = names => `const blocked = ${JSON.stringify(names)};
+for (let object=globalThis; object && object!==Object.prototype; object=Object.getPrototypeOf(object)) {
+  for(const name of blocked){
+    const descriptor=Object.getOwnPropertyDescriptor(object,name);
+    if(object===globalThis||descriptor?.configurable)Object.defineProperty(object,name,{value:undefined,writable:false,configurable:false});
+    else if(descriptor&&descriptor.value!==undefined)throw new Error('Cannot isolate Worker API: '+name);
+  }
+}
+`;
+
 // ----- Plans in a Web Worker -----
 // The Worker is told the plan, carries it out with executePlan and reports each event; the code of a node reaches the site's API
 // through the page (`call`). Nothing is left in the global scope for the code to use: `node`, `agentsys` and `context` are
@@ -34,12 +54,7 @@ const WORKER_SOURCE = `
 (() => {
 const send = globalThis.postMessage.bind(globalThis);
 const Date = globalThis.Date, Math = globalThis.Math;
-// Freeze the intrinsics the executor shares with node code: replacing Map.get, Promise
-// or JSON must not let a Script impersonate a different invocation at the host bridge.
-for (const name of ['Object','Array','Map','Set','Promise','Date','RegExp','String','Number','Boolean','Function','Error','TypeError','Uint8Array','ArrayBuffer','JSON','Math']) {
-  const value=globalThis[name]; if(value?.prototype)Object.freeze(value.prototype);Object.freeze(value);
-  if(!['Date','Math'].includes(name))Object.defineProperty(globalThis,name,{value,writable:false,configurable:false});
-}
+${WORKER_FREEZE}
 const MAX_DISPLAY = ${MAX_DISPLAY};
 const AsyncFunction = Object.getPrototypeOf(async function () {}).constructor;
 ${displayPart}
@@ -79,17 +94,10 @@ const receive = async ({data}) => {
   }
 };
 globalThis.addEventListener?.('message',receive);
-const blocked = ['fetch','importScripts','Worker','SharedWorker','WebSocket','WebSocketStream','WebTransport','RTCPeerConnection','XMLHttpRequest','EventSource','navigator','indexedDB','caches','Cache','BroadcastChannel','MessageChannel','postMessage','close','process','require','onmessage','addEventListener','removeEventListener','dispatchEvent','MessageEvent','crypto','performance','Date','Math'];
-for (let object=globalThis; object && object!==Object.prototype; object=Object.getPrototypeOf(object)) {
-  for(const name of blocked){
-    const descriptor=Object.getOwnPropertyDescriptor(object,name);
-    if(object===globalThis||descriptor?.configurable)Object.defineProperty(object,name,{value:undefined,writable:false,configurable:false});
-    else if(descriptor&&descriptor.value!==undefined)throw new Error('Cannot isolate Worker API: '+name);
-  }
-}
+${workerBlock(WORKER_BLOCKED)}
 return text => receive({data:JSON.parse(text)});
 })();`;
-let workerURL = null;
+const workerURLs = new Map();
 /** API calls from a script. Calls on the script's own project default to its own workflow. */
 const liveBridgeFor = context => ({
   request: async ([method, path, body, query]) => {
@@ -135,12 +143,13 @@ const bridgeFor = context => ({
     return pending;
   },
 });
-/** A new Worker. The headless server (headless.js) supplies its own, with the same interface. */
-function startWorker() {
-  if (typeof AGENTSYS_SPAWN_WORKER === 'function') return AGENTSYS_SPAWN_WORKER(WORKER_SOURCE);
-  workerURL ??= URL.createObjectURL(new Blob([WORKER_SOURCE], {type: 'text/javascript'}));
-  return new Worker(workerURL);
+/** A new Worker running `source`. The headless server (headless.js) supplies its own, with the same interface. */
+function startSourceWorker(source) {
+  if (typeof AGENTSYS_SPAWN_WORKER === 'function') return AGENTSYS_SPAWN_WORKER(source);
+  if (!workerURLs.has(source)) workerURLs.set(source, URL.createObjectURL(new Blob([source], {type: 'text/javascript'})));
+  return new Worker(workerURLs.get(source));
 }
+const startWorker = () => startSourceWorker(WORKER_SOURCE);
 // Every script gets a Worker of its own, so nothing one leaves behind (globals, timers) reaches the next. A Worker
 // takes ~15 ms to start, which a run of many nodes would pay once per node; so while scripts follow each other closely
 // a few fresh ones are started ahead. Idle ones do not keep the process alive and are dropped after a while.

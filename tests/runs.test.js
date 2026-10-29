@@ -16,10 +16,10 @@ async function greeting(app, name = 'Runs') {
     app.api('POST', `projects/${id}/typed-nodes`, {...workflow, node_type, config, position: {x: 0, y: 0}});
   const text = await node('custom', nodes.value('text', 'hi')),
     script = await fn(app, id, workflow, {
-      code: 'node.output.result = v + "!"; await node.emit("Out")',
+      code: 'node.output.result = v + "!"; await node.emit("out")',
       inputs: ['v'],
       outputs: ['result'],
-      signals: ['Out'],
+      signals: ['out'],
     }),
     preview = await fn(app, id, workflow, {code: 'node.display(input)', inputs: ['input']});
   const connect = (a, ap, b, bp) =>
@@ -31,7 +31,7 @@ async function greeting(app, name = 'Runs') {
   await connect(text.id, 'value', script.wrapper, 'v');
   await connect(script.wrapper, 'result', preview.wrapper, 'input');
   await connect(start.id, 'out', script.wrapper, 'in');
-  await connect(script.wrapper, 'Out', preview.wrapper, 'in');
+  await connect(script.wrapper, 'out', preview.wrapper, 'in');
   /** Gives the Script of `script` another code. */
   const recode = (target, code) =>
     app.api('PUT', `projects/${id}/typed-nodes/${target.id}`, {
@@ -139,12 +139,12 @@ test('a paused run starts no node until it is resumed; Stop ends it', async () =
     });
   const start = await node('custom', nodes.run()),
     slow = await fn(app, id, workflow, {
-      code: 'await new Promise(r => setTimeout(r, 300)); await node.emit("Out")',
-      signals: ['Out'],
+      code: 'await new Promise(r => setTimeout(r, 300)); await node.emit("out")',
+      signals: ['out'],
     }),
     after = await fn(app, id, workflow, {code: 'node.display("after")'});
   await connect(start.id, 'out', slow.wrapper);
-  await connect(slow.wrapper, 'Out', after.wrapper);
+  await connect(slow.wrapper, 'out', after.wrapper);
   const started = await app.api('POST', `projects/${id}/runs`, workflow);
   await waitUntil(async () => (await app.api('GET', `runs/${started.id}`)).nodes.some(n => n.node_id === slow.id));
   assert.equal((await app.api('POST', `runs/${started.id}/pause`, {})).paused, true);
@@ -234,7 +234,7 @@ test('Scripts in worker threads run, can call the API, and a script that never e
     p = await greeting(app);
   await p.recode(
     p.script,
-    'const projects = await agentsys("GET", "projects"); node.output.result = node.input.v + ":" + projects.length + ":" + context.run_id.length; await node.emit("Out")'
+    'const projects = await agentsys("GET", "projects"); node.output.result = node.input.v + ":" + projects.length + ":" + context.run_id.length; await node.emit("out")'
   );
   const run = await app.api('POST', `projects/${p.id}/runs`, {...p.workflow, wait: 10});
   assert.equal(run.status, 'completed');
@@ -292,7 +292,7 @@ test('a script can keep memory between runs in the workflow state', async () => 
     `let n = 0, rev = 0;
 try { const e = await agentsys('GET', 'workflows/' + context.workflow_id + '/state/count'); n = e.value; rev = e.version } catch {}
 await agentsys('PUT', 'workflows/' + context.workflow_id + '/state/count', {value: n + 1, version: rev});
-node.output.result = n + 1; await node.emit("Out")`
+node.output.result = n + 1; await node.emit("out")`
   );
   for (let i = 1; i <= 3; i++) {
     const run = await app.api('POST', `projects/${p.id}/runs`, {...p.workflow, wait: 5});
@@ -387,7 +387,7 @@ test('triggers: interval ticks, no overlap, manual fire and webhooks with a payl
     p = await greeting(app);
   await p.recode(
     p.script,
-    'node.output.result = JSON.stringify(context.payload) + context.trigger; await node.emit("Out")'
+    'node.output.result = JSON.stringify(context.payload) + context.trigger; await node.emit("out")'
   );
   await rejects(
     app.api('POST', 'triggers', {name: 'x', type: 'interval', project_id: p.id, every_seconds: 1}),

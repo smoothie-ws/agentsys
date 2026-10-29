@@ -150,7 +150,7 @@ route(
     if (item.payload.bundle?.version !== BUNDLE_VERSION)
       throw bad(`The Custom Node “${item.name}” has a bundle this version cannot read.`);
     const {editor, doc} = await c.workflow(project_id);
-    const result = editor.paste(clone(item.payload.bundle), c.body.point, {source: {resource_id, stamp: item.updated}});
+    const result = editor.paste(clone(item.payload.bundle), c.body.point, {source: {resource_id, stamp: item.updated}, grants: c.body.grants ?? item.payload.grants ?? []});
     // Placement and inclusion are one edit: failed placement never changes the available set.
     doc.library_nodes = [...new Set([...(doc.library_nodes ?? []), resource_id])];
     return result;

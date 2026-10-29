@@ -18,7 +18,7 @@ test('Script: the inputs of its Library node are variables next to display, what
   for (const mode of ['inline', 'worker']) {
     const app = createApp({scripts: mode}),
       s = await setup(app);
-    const script = await fn(app, s.id, s.q, {code: 'node.display("hi"); node.output.result = n * 2; await node.emit("Out")', inputs: ['n'], outputs: ['result'], signals: ['Out']}),
+    const script = await fn(app, s.id, s.q, {code: 'node.display("hi"); node.output.result = n * 2; await node.emit("out")', inputs: ['n'], outputs: ['result'], signals: ['out']}),
       twentyOne = await s.make(nodes.value('number', 21)),
       shown = await fn(app, s.id, s.q, {code: 'node.display(String(v))', inputs: ['v']});
     await s.wire(twentyOne.id, 'value', script.wrapper, 'n');
@@ -153,7 +153,7 @@ test('what a Script returns is not used: only output.<name> of an output its Lib
   const app = createApp(),
     {id} = await app.api('POST', 'projects', {name: 'P'}),
     q = {workflow_id: id};
-  const noOut = await fn(app, id, q, {code: 'node.output.result = 1; return 2;', outputs: ['result'], signals: ['Out']}),
+  const noOut = await fn(app, id, q, {code: 'node.output.result = 1; return 2;', outputs: ['result'], signals: ['out']}),
     typo = await fn(app, id, q, {code: 'node.output.other = 3;', outputs: ['result']});
   const run = node => app.api('POST', `projects/${id}/evaluate-node`, {...q, node_ids: [node], collect: true});
   const r = await run(noOut.id);

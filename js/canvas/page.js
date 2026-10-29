@@ -19,6 +19,15 @@ const wf = (body = {}) => ({...body, workflow_id: W.workflow});
 PAGES.workflow = async (view, route) => {
   W.unsubscribe?.();
   clearTimeout(W.reloadTimer);
+  let project;
+  try {
+    [project] = await Promise.all([api(`projects/${route.project}`), loadLibrary()]);
+  } catch (error) {
+    if (app.route !== route) return;
+    Tabs.drop(route.workflow);
+    throw error;
+  }
+  if (app.route !== route) return;
   Object.assign(W, {
     project: route.project,
     workflow: route.workflow,
@@ -52,13 +61,6 @@ PAGES.workflow = async (view, route) => {
     frameWork: new Map(),
     frameHandle: 0,
   });
-  let project;
-  try {
-    [project] = await Promise.all([api(`projects/${route.project}`), loadLibrary()]);
-  } catch (error) {
-    Tabs.drop(route.workflow);
-    throw error;
-  }
   W.projectData = project;
   const workflow = project.workflows.find(w => w.id === route.workflow);
   if (!workflow) {
@@ -78,10 +80,12 @@ PAGES.workflow = async (view, route) => {
     library: !!W.library,
     icon: W.library ? (app.resources || []).find(r => r.id === W.library)?.payload.icon || '' : '',
   });
-  const collapsed = sideHidden();
+  const collapsed = sideHidden(),
+    [parentLabel, parentHref] = parentPage(route);
   view.innerHTML = `<div class="editor opening">
     <div class="canvas" id="canvas" tabindex="0" aria-label="Workflow canvas">
       <div class="toolbar" role="toolbar" aria-label="Workflow actions">
+        <a class="button icon editor-parent" href="${esc(parentHref)}" data-link title="Back to ${esc(parentLabel)}" aria-label="Back to ${esc(parentLabel)}">${icon('chevron')}</a>
         ${W.library ? '' : `<button class="run" id="start" title="Run the workflow (${esc(shortcutText('run'))})">${icon('play')}<span>Run</span></button><button class="icon" id="pause" title="Pause the run" aria-label="Pause the run" hidden>${icon('pause')}</button>`}
         <button class="icon mobile-only" type="button" data-empty-add title="Add node" aria-label="Add node">${icon('plus')}</button>
         <button class="icon" id="undo" title="Undo (${esc(shortcutText('undo'))})" aria-label="Undo">${icon('undo')}</button>
@@ -109,6 +113,7 @@ PAGES.workflow = async (view, route) => {
   if (!W.library) {
     // The result of the last run comes back with the workflow.
     const saved = await api(`projects/${W.project}/last-run`, {query: {workflow_id: W.workflow}}).catch(() => null);
+    if (app.route !== route) return;
     if (saved?.last) {
       W.results = new Map(saved.results);
       W.runStatus = new Map(saved.status);
@@ -120,13 +125,17 @@ PAGES.workflow = async (view, route) => {
     const pending = await api(`projects/${W.project}/runs`, {
       query: {workflow_id: W.workflow, status: 'waiting', limit: 1},
     });
+    if (app.route !== route) return;
     if (pending[0]) {
       W.followedRunId = pending[0].id;
-      W.waitingRun = await api('runs/' + pending[0].id);
+      const waiting = await api('runs/' + pending[0].id);
+      if (app.route !== route) return;
+      W.waitingRun = waiting;
       for (const n of W.waitingRun.nodes) if (n.status === 'waiting') W.runStatus.set(n.node_id, 'waiting');
     }
   }
   await reload(true);
+  if (app.route !== route) return;
   if (W.library && W.snapshot.root) select(['frame:' + W.snapshot.root]);
   // Opening a graph fits it to the view; coming back to a tab already shown this session restores its camera.
   const tabKey = Tabs.key(route),
@@ -165,6 +174,7 @@ PAGES.workflow = async (view, route) => {
     {own: true}
   );
   leaveGuards.push(async () => {
+    for (const element of W.elements.values()) forgetFieldHeights(element);
     clearTimeout(W.reloadTimer);
     W.unsubscribe?.();
     W.unsubscribe = null;

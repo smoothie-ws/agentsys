@@ -3,21 +3,22 @@
 
 /** Opens the graph editor for a Custom Node: an existing one, or a new one when no id is given. */
 async function openNodeEditor(resourceId = null, folder = '', replace = false) {
+  const origin = app.route;
   const opened = await api('library/node-editor', {method: 'POST', body: {resource_id: resourceId, folder}});
+  if (app.route !== origin) return;
   await go(`/p/${opened.project_id}/w/${opened.workflow_id}`, replace);
 }
 
 // ----- the actions behind every "⋯", "+" and drag: on rows of the second panel and on cards alike -----
 const refreshLibrary = async () => {
+  if (!(await leaveView())) return;
   await loadLibrary();
   await render();
 };
 const newNode = (folder = '') => openNodeEditor(null, folder).catch(fail);
 const folderCall = body => api('library/node-folders', {method: 'POST', body});
 const moveNode = (id, folder) =>
-  api(`library/custom-nodes/${id}/move`, {method: 'POST', body: {folder}})
-    .then(refreshLibrary)
-    .catch(fail);
+  api(`library/custom-nodes/${id}/move`, {method: 'POST', body: {folder}}).then(refreshLibrary).catch(fail);
 function askGroupName(title, label, value, save) {
   dialog(
     title,
@@ -28,7 +29,9 @@ function askGroupName(title, label, value, save) {
   $('#modal input[name=name]').select();
 }
 const newGroup = parent =>
-  askGroupName('New group', 'Create', '', name => folderCall({action: 'create', path: parent, name}).then(refreshLibrary));
+  askGroupName('New group', 'Create', '', name =>
+    folderCall({action: 'create', path: parent, name}).then(refreshLibrary)
+  );
 
 /** Menus of the groups one can move a Custom Node to, nested like the groups. */
 function moveMenu(parent, item) {
@@ -80,8 +83,19 @@ const changeNodeIcon = item =>
   );
 
 /** Menu of a Custom Node. */
+/** A node (or a group) that a plugin put into the Library: it can be read, used and exported, but only the plugin changes it. */
+const pluginTop = path => path.split('/')[0];
+const pluginGroup = path =>
+  !!path && app.resources.some(r => r.payload.plugin && pluginTop(r.payload.folder || '') === pluginTop(path));
 function resourceActions(item, title = () => menuTitle('resource:' + item?.id)) {
   if (!item) return;
+  if (item.payload.plugin)
+    return [
+      ['Export', () => exportResources([item], item.name), {icon: 'upload'}],
+      ['Duplicate', () => duplicateResource(item).catch(fail), {icon: 'copy'}],
+      null,
+      ['Plugin…', () => go(pluginHref(item.payload.plugin)), {icon: 'plug'}],
+    ];
   return [
     ...(developerMode()
       ? [
@@ -120,7 +134,7 @@ const nodesIn = path => app.resources.filter(r => underPath(r.payload.folder || 
 function folderActions(path, title = () => menuTitle('folder:' + path)) {
   const name = baseName(path),
     exportGroup = ['Export group', () => exportResources(nodesIn(path), name), {icon: 'upload'}];
-  if (!developerMode()) return [exportGroup];
+  if (!developerMode() || pluginGroup(path)) return [exportGroup];
   return [
     ...creationActions(path),
     [
@@ -180,11 +194,23 @@ const creationActions = folder =>
       ]
     : [];
 /** Menu of the Library itself, and the "+" of its second panel. */
-const libraryActions = () => [
+const libraryActions = () => [['Refresh', refreshLibrary, {icon: 'refresh'}]];
+const nodesActions = () => [
   ...creationActions(''),
   ['Import…', () => importFiles(), {icon: 'download'}],
   ['Export all', () => exportResources(app.resources, 'Library'), {icon: 'upload', disabled: !app.resources.length}],
+  null,
+  ['Restore built-in nodes', () => restoreBuiltin().catch(fail), {icon: 'package'}],
 ];
+async function restoreBuiltin() {
+  const result = await api('library/builtin', {method: 'POST', body: {restore: true}});
+  await refreshLibrary();
+  toast(
+    result.added.length
+      ? `${plural(result.added.length, 'built-in node')} restored.`
+      : 'All built-in nodes are in the Library.'
+  );
+}
 async function importFiles() {
   const files = await pickFiles({accept: '.json,application/json'});
   if (!files.length) return;
@@ -227,7 +253,10 @@ document.addEventListener('drop', event => {
 // ----- import / export -----
 /** Saves Custom Nodes as one JSON file (a single node is saved as an object, several as a list). */
 function exportResources(items, name) {
-  const entries = items.map(r => ({name: r.name, payload: r.payload}));
+  const entries = items.map(r => ({
+    name: r.name,
+    payload: Object.fromEntries(Object.entries(r.payload).filter(([k]) => k !== 'plugin')),
+  }));
   const text = JSON.stringify(TextGraph.encode(entries.length === 1 ? entries[0] : entries), null, 2);
   const link = document.createElement('a');
   link.href = URL.createObjectURL(new Blob([text], {type: 'application/json'}));
@@ -249,7 +278,8 @@ async function addEntries(entries, source) {
     while (taken.has(name)) name = `${base} ${++n}`;
     taken.add(name);
     // A node keeps its group, so the tree comes back as it was exported.
-    const saved = await api('resources', {method: 'POST', body: {name, payload: {...entry.payload}}});
+    const {plugin: _owner, ...payload} = entry.payload; // only a plugin makes a node that belongs to a plugin
+    const saved = await api('resources', {method: 'POST', body: {name, payload}});
     // The main group of a node carries its name; PUT keeps that in step.
     await api(`resources/${saved.id}`, {method: 'PUT', body: {name, payload: saved.payload}});
     made.push(saved);
@@ -283,14 +313,14 @@ const cardList = rows =>
     : '<span class="preview-empty">Nothing here yet</span>';
 const itemCard = r =>
   card({
-    href: developerMode() ? resourceHref(r) : null,
+    href: developerMode() && !r.payload.plugin ? resourceHref(r) : null,
     glyph: resourceIcon(r),
     title: r.name,
     preview: `<div class="preview-layer">${previewSVG(graphFromBundle(r.payload.bundle))}</div>`,
     facts: r.payload.description ? esc(r.payload.description) : '',
     menu: 'resource:' + r.id,
     tint: 'k-complex',
-    extra: developerMode() ? `draggable="true" data-drag="${esc(r.id)}"` : '',
+    extra: developerMode() && !r.payload.plugin ? `draggable="true" data-drag="${esc(r.id)}"` : '',
   });
 const folderCard = (path, rows) => {
   const groups = app.nodeFolders.filter(f => f !== path && underPath(f, path)).length;
@@ -310,8 +340,24 @@ const notFound = (what, href, back) =>
 
 /** The Library: its sections as cards (one: Nodes). */
 function libraryOverview(view) {
-  view.innerHTML = `<div class="page">${pageHead({title: 'Library', sub: 'Reusable building blocks.'})}
-    <div class="cards">${card({href: NODES_PATH, glyph: 'library', title: 'Nodes', preview: cardList(app.resources.slice(0, 4).map(r => [resourceIcon(r), r.name])), previewClass: 'card-note', facts: plural(app.resources.length, 'node') + (app.nodeFolders.length ? ' · ' + plural(app.nodeFolders.length, 'group') : '')})}</div></div>`;
+  view.innerHTML = `<div class="page">${pageHead({title: 'Library', sub: 'Reusable resources.'})}<div class="cards">${(
+    app.librarySections ?? []
+  )
+    .filter(s => !s.parent)
+    .map(catalogSectionCard)
+    .join('')}${pluginPages('library')
+    .filter(({page}) => !page.parent)
+    .map(({plugin, page}) =>
+      card({
+        href: pluginHref(plugin.id, page.id),
+        glyph: page.icon,
+        title: page.title,
+        preview: `<p class="resource-description">${esc(plugin.manifest.description)}</p>`,
+        previewClass: 'card-note',
+        menu: 'plugin:' + plugin.id,
+      })
+    )
+    .join('')}</div></div>`;
 }
 
 /** The Nodes section, or one group of it: its groups and nodes as cards. */
@@ -324,12 +370,12 @@ function libraryList(view, route) {
   const chain = folder.split('/').map((name, i, parts) => [name, folderHref(parts.slice(0, i + 1).join('/'))]);
   const content = path =>
     app.resources.filter(r => (r.payload.folder || '') === path).map(r => [resourceIcon(r), r.name]);
-  const spec = folder ? 'folder:' + folder : 'library:';
+  const spec = folder ? 'folder:' + folder : 'nodes:';
   view.innerHTML = `<div class="page">${pageHead({
     crumbs: [['Library', '/resources'], ...(folder ? [['Nodes', NODES_PATH], ...chain.slice(0, -1)] : [])],
     title: esc(folder ? baseName(folder) : 'Nodes'),
     sub: folder ? '' : 'Reusable Custom Nodes.',
-    actions: `<button class="icon" data-menu="${esc(spec)}" title="Actions" aria-label="Actions">${icon('dots')}</button>`,
+    menu: spec,
   })}
     <div class="cards">${folders
       .map(f =>
@@ -346,7 +392,9 @@ function libraryList(view, route) {
 
 PAGES.resources = async (view, route) => {
   await loadLibrary();
+  if (app.route !== route) return;
   if (!route.section) return libraryOverview(view);
+  if (route.section !== 'nodes') return catalogPage(view, route);
   if (!route.id) return libraryList(view, route);
   if (!developerMode() || !app.resources.some(r => r.id === route.id)) return go('/resources', true);
   await openNodeEditor(route.id, '', true).catch(fail); // a node opens as a graph

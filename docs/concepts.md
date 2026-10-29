@@ -29,7 +29,7 @@ The Library is a set of sections (today one, **Nodes**, at `/resources/nodes`; t
 
 Creating and editing Custom Nodes by hand needs **Developer mode** (Settings). With it off, nodes can still be imported, exported, placed and run.
 
-Nothing ships with the app: every node a person uses is made from Script and Event. Example catalogs are in `examples/` (`basic-nodes`, `flow-nodes`, `wait-nodes`, `stream-nodes`; import them from the Library).
+The engine has two primitives, Script and Event; every other node is a Custom Node made from them. A **built-in catalog** of such nodes (Flow: For, For each, While, Branch, Break, Continue, Variable; Value: Text, Number, Bool; Streams: Queue push/worker, Counter, Dedupe, Batch/Window; Delay, Wait for event, Wait until, Execute, Preview) ships in `js/backend/builtin-nodes.js` and is added to the Library at start. They are ordinary Library nodes afterwards: edit, move or delete them; a deleted one is not brought back except by Library → *Restore built-in nodes*. More example catalogs are in `examples/`.
 
 ## Widgets
 
