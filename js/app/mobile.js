@@ -45,7 +45,7 @@ document.addEventListener(
     if (!phoneLayout.matches) return;
     if (event.target.closest('.inline-rename')) return;
     const current = event.target.closest('#sidebar a.active[data-section]');
-    if (current) {
+    if (current && (current.id !== 'brand' || app.route?.page === 'home')) {
       event.preventDefault();
       event.stopImmediatePropagation();
       toggleMobileNavigation();

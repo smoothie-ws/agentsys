@@ -9,6 +9,7 @@ async def main():
         await page.goto(f'http://127.0.0.1:{sys.argv[1]}/index.html'); await page.wait_for_selector('.page')
         await page.evaluate("""async()=>{await api('settings',{method:'PUT',body:{developer_mode:true}});app.preferences=await api('settings');}""")
         await page.evaluate("openNodeEditor(null,'')"); await page.wait_for_timeout(2500)
+        resource_id = await page.evaluate("W.project.slice(4)")
         await page.evaluate("select(['frame:'+W.snapshot.root]);Inspector.toggle(true);Inspector.show()"); await page.wait_for_timeout(700)
         # name the slots through the real controls
         await page.wait_for_selector('[data-add=inputs]')
@@ -21,7 +22,7 @@ async def main():
         pr=await page.evaluate("(async()=>{const pr=await api('projects',{method:'POST',body:{name:'T'}});return pr.id})()")
         await page.evaluate(f"go('/p/{pr}/w/{pr}')"); await page.wait_for_timeout(900)
         await page.evaluate("loadLibrary()"); await page.wait_for_timeout(300)
-        await page.evaluate("(async()=>{const item=(app.resources||[]).find(()=>true); const r=await api(`projects/${W.project}/custom-nodes/${item.id}`,{method:'POST',body:wf({point:{x:100,y:100}}),edit:editToken()}); await reload(); select(pastedSelection(r));})()")
+        await page.evaluate("async id=>{const r=await api(`projects/${W.project}/custom-nodes/${id}`,{method:'POST',body:wf({point:{x:100,y:100}}),edit:editToken()}); await reload(); select(pastedSelection(r));}", resource_id)
         await page.wait_for_timeout(800)
         await page.get_by_role('button', name='Add input').click()
         await page.locator('#own-inputs [data-field=name]').fill('extra')

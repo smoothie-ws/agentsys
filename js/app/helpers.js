@@ -52,7 +52,7 @@ const app = {
 };
 
 // ----- API -----
-/** All data lives in this browser; see backend.js. Same call shape as the former HTTP API. */
+/** File-backed mode calls the server API; browser-only mode uses the local Backend with the same contract. */
 async function api(path, {method = 'GET', body, query, edit} = {}) {
   const [bare, search = ''] = path.split('?');
   // Under the Node server, the server owns runs. Closing a browser tab leaves them alive.

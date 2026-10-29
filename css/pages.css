@@ -31,26 +31,6 @@
 .page-head h1 + .muted {
   margin: 0.35rem 0 0;
 }
-.crumbs {
-  display: flex;
-  flex-wrap: wrap;
-  align-items: center;
-  gap: 0.35rem;
-  margin-bottom: 0.3rem;
-  color: var(--muted);
-  font-size: 0.82rem;
-}
-.crumbs a {
-  color: inherit;
-  text-decoration: none;
-  transition: color var(--fast) var(--ease);
-}
-.crumbs a:hover {
-  color: var(--text);
-}
-.crumbs span {
-  opacity: 0.55;
-}
 .empty {
   padding: 4rem 1rem;
   text-align: center;
@@ -674,46 +654,6 @@ a.tile:hover {
   align-items: center;
   justify-content: space-between;
 }
-.api-reference {
-  display: grid;
-  grid-template-columns: minmax(220px, 320px) 1fr;
-  gap: 1rem;
-  margin-top: 0.8rem;
-}
-.api-list {
-  display: grid;
-  gap: 0.4rem;
-  align-content: start;
-}
-.api-calls {
-  display: grid;
-  max-height: 32rem;
-  overflow: auto;
-}
-.api-call {
-  display: flex;
-  gap: 0.4rem;
-  align-items: baseline;
-  padding: 0.3rem 0.5rem;
-  justify-content: flex-start;
-  font-size: 0.82rem;
-  text-align: left;
-  overflow-wrap: anywhere;
-  background: none;
-}
-.api-call.active {
-  background: var(--field);
-}
-.api-call .method {
-  width: 2.9rem;
-  flex-shrink: 0;
-  font-size: 0.66rem;
-}
-@media (max-width: 800px) {
-  .api-reference {
-    grid-template-columns: 1fr;
-  }
-}
 .subnav-tree > a.subnav-row {
   display: flex;
   align-items: center;
@@ -881,3 +821,20 @@ a.tile:hover {
     margin: 0;
   }
 }
+.welcome-panel {
+  padding: 24px;
+  margin: 20px 0;
+  border: 1px solid var(--line);
+  border-radius: var(--radius);
+  background: var(--field);
+}
+.welcome-panel p { max-width: 62ch; }
+.welcome-panel h2 { margin: 8px 0; }
+.run-filters { display: flex; flex-wrap: wrap; align-items: end; gap: 12px; margin: 18px 0; }
+.run-filters .field { flex: 1 1 170px; min-width: 0; margin: 0; }
+.run-filters select { width: 100%; max-width: 100%; }
+.run-pagination { display: flex; align-items: center; justify-content: space-between; flex-wrap: wrap; gap: 12px; margin-top: 16px; }
+.run-started { display: block; color: var(--muted); margin-top: 4px; }
+.live-status { white-space: nowrap; }
+.storage-context { margin: -6px 0 18px; }
+.runs-table a { overflow-wrap: anywhere; }

@@ -26,15 +26,15 @@ async def main():
         page=await browser.new_page(viewport={'width':1600,'height':1000})
         errors=[]
         page.on('pageerror',lambda e:errors.append(str(e)))
-        await page.goto(f'http://127.0.0.1:{sys.argv[1]}/index.html#/resources/nodes')
+        await page.goto(f'http://127.0.0.1:{sys.argv[1]}/index.html#/library/nodes')
         await page.wait_for_function("typeof Backend!=='undefined' && document.querySelector('#view').children.length")
-        await page.evaluate("async()=>{await addEntries(TextGraph.decode(await fetch('examples/basic-nodes.json').then(r=>r.json())),'Fixture');await go('/resources/nodes',true)}")
+        await page.evaluate("async()=>{await addEntries(TextGraph.decode(await fetch('examples/basic-nodes.json').then(r=>r.json())),'Fixture');await go('/library/nodes',true)}")
         await page.wait_for_selector('.card.k-complex')
         assert await page.locator('.card.k-complex a.card-main').count()==0
         assert await page.locator('#new-item,#new-group').count()==0
         assert await page.locator('#subnav .subnav-row[data-key^="r:"] a').count()==0
         assert await page.evaluate("libraryActions().filter(Boolean).every(item=>!['New node','New group'].includes(item[0]))")
-        assert await page.evaluate("destinations().then(items=>!items.some(i=>/^\\/resources\\/nodes\\/[^?]+/.test(i.href)))")
+        assert await page.evaluate("destinations().then(items=>!items.some(i=>/^\\/library\\/nodes\\/[^?]+/.test(i.href)))")
         await page.locator('.card.k-complex').first.click(button='right')
         await page.wait_for_selector('.popup:not(.closing)')
         assert 'Edit graph' not in await page.locator('.popup:not(.closing)').inner_text()
@@ -62,8 +62,10 @@ async def main():
         assert right_menu==await page.locator('.popup:not(.closing)').inner_text()
         project_file=await download(page,lambda:page.get_by_role('menuitem',name='Export project',exact=True).click())
         assert await page.evaluate('f=>TextGraph.decode(f).kind',project_file)=='project' and 'Answer' in json.dumps(project_file)
-        await upload(page,'#import-project',project_file,'project.json')
-        await page.wait_for_selector('#import-workflow')
+        await page.locator('#view .page-head [data-menu]').click()
+        await upload(page,'.popup:not(.closing) [role=menuitem]:has-text("Import project")',project_file,'project.json')
+        await page.wait_for_function('app.route.page === "project"')
+        await page.wait_for_selector('.card [data-menu^="workflow:"]')
         imported_project=await page.evaluate('app.route.project')
         assert imported_project!=project_id
         assert await page.evaluate('api("projects").then(p=>p.length)')==2
@@ -71,7 +73,8 @@ async def main():
         await page.locator('.card [data-menu^="workflow:"]').first.click()
         workflow_file=await download(page,lambda:page.get_by_role('menuitem',name='Export workflow',exact=True).click())
         assert await page.evaluate('f=>TextGraph.decode(f).kind',workflow_file)=='workflow'
-        await upload(page,'#import-workflow',workflow_file,'workflow.json')
+        await page.locator('#view .page-head [data-menu]').click()
+        await upload(page,'.popup:not(.closing) [role=menuitem]:has-text("Import workflow")',workflow_file,'workflow.json')
         await page.wait_for_selector('#canvas')
         assert await page.evaluate("W.snapshot.nodes.some(n=>n.config?.title==='Answer')")
         await page.locator('.toolbar [data-menu]').click(button='right')
@@ -81,6 +84,7 @@ async def main():
         await page.evaluate("""() => {
           applyStyle({...THEMES.Dark,animations:false});Inspector.toggle(true);placeRailPill(true);
           document.body.style.setProperty('--noise','none');document.body.style.setProperty('--glow','none');
+          document.body.style.setProperty('--dither','none');
         }""")
         await page.wait_for_timeout(100)
         paint_ok = await page.evaluate("""async png => {

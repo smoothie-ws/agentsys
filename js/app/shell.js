@@ -174,7 +174,7 @@ async function destinations() {
     {label: 'Dashboard', hint: 'Page', href: '/'},
     {label: 'Projects', hint: 'Page', href: '/projects'},
     {label: 'Plugins', hint: 'Page', href: '/plugins'},
-    {label: 'Library', hint: 'Page', href: '/resources'},
+    {label: 'Library', hint: 'Page', href: '/library'},
     {label: 'Runs', hint: 'Page', href: '/runs'},
     {label: 'API', hint: 'Page', href: '/api'},
     {label: 'Settings', hint: 'Page', href: '/settings'},

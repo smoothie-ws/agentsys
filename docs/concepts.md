@@ -25,7 +25,7 @@ A **value node** has no op and no signal ports; it only holds values typed on it
 
 ## The Library
 
-The Library is a set of sections (today one, **Nodes**, at `/resources/nodes`; the page `/resources` shows the sections as cards and the second panel holds the section with its groups and nodes). Nodes are **Custom Nodes**: reusable Complex Nodes made in the Library editor (a private workflow `lib-<id>`) and kept in groups (folders). A placed copy is a locked, collapsed node in a workflow that follows the Library definition; it can only be changed in the Library. Copies fire `on_placed`, `on_deleted`, `on_wired`, `on_widget`, `on_read` for themselves.
+The Library is a set of sections (today one, **Nodes**, at `/library/nodes`; the page `/library` shows the sections as cards and the second panel holds the section with its groups and nodes). Nodes are **Custom Nodes**: reusable Complex Nodes made in the Library editor (a private workflow `lib-<id>`) and kept in groups (folders). A placed copy is a locked, collapsed node in a workflow that follows the Library definition; it can only be changed in the Library. Copies fire `on_placed`, `on_deleted`, `on_wired`, `on_widget`, `on_read` for themselves.
 
 Creating and editing Custom Nodes by hand needs **Developer mode** (Settings). With it off, nodes can still be imported, exported, placed and run.
 

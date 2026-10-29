@@ -412,15 +412,14 @@ async function pluginDetailPage(view, route) {
   const m = p.manifest,
     c = m.contributes,
     panels = [
-      ['overview', 'Overview'],
       ['settings', 'Settings'],
       ['permissions', 'Permissions'],
       ['activity', 'Activity'],
     ];
-  const requested = routeQuery().get('tab') ?? 'overview',
-    selected = panels.some(([key]) => key === requested) ? requested : 'overview';
+  const requested = routeQuery().get('tab') ?? 'settings',
+    selected = panels.some(([key]) => key === requested) ? requested : 'settings';
   let readme = m.description;
-  if (m.readme && selected === 'overview') readme = (await api(`plugins/${p.id}/file`, {query: {path: m.readme}})).text;
+  if (m.readme) readme = (await api(`plugins/${p.id}/file`, {query: {path: m.readme}})).text;
   if (app.route !== route) return;
   const templates = c.templates
     .map(t =>
@@ -453,8 +452,8 @@ async function pluginDetailPage(view, route) {
       .join('');
   view.innerHTML = `<div class="page plugin-page">${pageHead({title: `<span class="plugin-title">${icon(pluginIcon(p))}<span>${esc(m.name)}</span></span>`, crumbs: [['Plugins', '/plugins']], sub: esc(m.description), menu: 'plugin:' + p.id})}
     <p class="plugin-meta">${statusBadge(p.enabled ? 'enabled' : 'disabled')}<span>Version ${esc(m.version)}</span>${m.author ? `<span>${esc(m.author)}</span>` : ''}</p>
+    <section class="plugin-description"><div class="plugin-layout"><article class="plugin-readme">${renderMarkdown(readme || 'No description provided.')}${additions ? `<h2>Library and pages</h2><div class="cards">${additions}</div>` : ''}${templates ? `<h2>Templates</h2><div class="cards">${templates}</div>` : ''}</article><aside class="plugin-facts"><h2>Details</h2><dl><dt>Version</dt><dd>${esc(m.version)}</dd><dt>Publisher</dt><dd>${esc(m.author || 'Not specified')}</dd><dt>Installed</dt><dd>${esc(stamp(p.installed))}</dd><dt>Library nodes</dt><dd>${p.nodes}</dd><dt>Collections</dt><dd>${(c.library ?? []).length}</dd>${m.homepage ? `<dt>Website</dt><dd><a href="${esc(m.homepage)}" target="_blank" rel="noopener noreferrer">Open website</a></dd>` : ''}</dl></aside></div></section>
     ${contentTabLinks(panels, selected)}
-    <section data-content-panel="overview" ${selected === 'overview' ? '' : 'hidden'}><div class="plugin-layout"><article class="plugin-readme">${renderMarkdown(readme || 'No description provided.')}${additions ? `<h2>Library and pages</h2><div class="cards">${additions}</div>` : ''}${templates ? `<h2>Templates</h2><div class="cards">${templates}</div>` : ''}</article><aside class="plugin-facts"><h2>Details</h2><dl><dt>Version</dt><dd>${esc(m.version)}</dd><dt>Publisher</dt><dd>${esc(m.author || 'Not specified')}</dd><dt>Installed</dt><dd>${esc(stamp(p.installed))}</dd><dt>Library nodes</dt><dd>${p.nodes}</dd><dt>Collections</dt><dd>${(c.library ?? []).length}</dd>${m.homepage ? `<dt>Website</dt><dd><a href="${esc(m.homepage)}" target="_blank" rel="noopener noreferrer">Open website</a></dd>` : ''}</dl></aside></div></section>
     <section data-content-panel="settings" ${selected === 'settings' ? '' : 'hidden'}><h2>Settings</h2>${p.settings.schema.fields.length ? `<form id="plugin-settings" class="catalog-form">${p.settings.schema.fields.map(f => settingField(f, p.settings.values[f.key])).join('')}</form>` : '<p class="muted">This plugin has no additional settings.</p>'}${m.secrets.length ? `<h3>Credentials</h3>${p.secrets.map(secret => `<div class="plugin-secret" data-secret="${esc(secret.name)}"><span>${esc(secret.name)}</span><small class="muted">${secret.present ? 'Configured' : 'Not configured'}</small><button type="button" data-secret-set>${secret.present ? 'Change' : 'Set'}</button>${secret.present ? '<button type="button" data-secret-clear>Clear</button>' : ''}</div>`).join('')}` : ''}</section>
     <section data-content-panel="permissions" ${selected === 'permissions' ? '' : 'hidden'}><h2>Permissions</h2>${m.capabilities.length ? `<div data-plugin-permissions>${permissionChoices(m.capabilities, p.grants, 'data-plugin-grant', 'plugin-grant')}</div>` : '<p class="muted">This plugin requests no permissions.</p>'}</section>
     <section data-content-panel="activity" ${selected === 'activity' ? '' : 'hidden'}><h2>Activity</h2><div id="plugin-log"></div></section>
@@ -530,7 +529,7 @@ async function pluginFramePage(view, route) {
   view.innerHTML = `<div class="page plugin-page">${pageHead({
     crumbs:
       page.section === 'library'
-        ? [['Library', '/resources'], ...parents]
+        ? [['Library', '/library'], ...parents]
         : [['Plugins', '/plugins'], [p.manifest.name, pluginHref(p.id)], ...parents],
     title: `${icon(page.icon)} ${esc(page.title)}`,
   })}<div id="plugin-host" class="plugin-host"></div></div>`;

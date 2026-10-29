@@ -10,7 +10,7 @@
 | `GET POST PUT PATCH DELETE /api/<route>` | JSON body; query string for query parameters. Errors: `{"error": {"code", "message"}}` with the status (400, 404, 409, 429…) |
 | `GET /api/runs/{id}/stream` | Server-Sent Events: `run_started`, `node_started`, `node_completed`, `node_failed`, `node_cancelled`, `run_finished` |
 | `POST /hooks/{token}` | starts the run of a webhook trigger |
-| `/__data/…` | the browser's storage (reads open; writes need `X-AgentSys`) |
+| `/__data/…` | the browser's raw storage; the same Host/token boundary as the API; writes additionally require `X-AgentSys: 1` |
 
 The app lives under `/editor/` (files, `/__data` and `/api` are reached through that prefix too); `/` redirects there. In scripts the same routes are called as `agentsys(method, path, body)`.
 
@@ -20,9 +20,13 @@ The app lives under `/editor/` (files, `/__data` and `/api` are reached through 
 
 - On loopback (`HOST` unset) the `Host` header must be `localhost`, `127.0.0.1` or `[::1]` (more names: `ALLOWED_HOSTS=a,b`) and every request that changes data must send `X-AgentSys: 1`.
 - `AGENTSYS_TOKEN=secret` additionally requires `Authorization: Bearer secret` (`X-AgentSys` is then not needed).
+- The token also protects `/__data`, individual storage keys and storage SSE, including `/editor/__data`. Raw storage writes still need `X-AgentSys: 1`.
 - On any other `HOST` (e.g. `0.0.0.0`) the API stays off until `AGENTSYS_TOKEN` is set.
+- The same non-loopback restriction applies to raw storage. The browser UI does not yet provide a token login/session; use the default local mode, or provide authenticated access externally. An authentication failure is shown explicitly and never silently opens a different browser database.
 - Anyone who can call the API can run code as you: keep it on loopback or use a token.
 - `/hooks/{token}` needs no other credential — the token is the secret. It only starts runs of workflows that exist.
+
+Webhook payloads must be JSON objects (an empty body means `{}`). Invalid JSON, arrays and `null` return 400 without starting a run. Static serving is limited to `index.html` and public `js`, `css`, `docs`, `examples`, `plugins` assets; the configured data directory and the default `data/` directory are always private.
 
 ## Runs
 

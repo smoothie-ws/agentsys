@@ -24,6 +24,7 @@ test('notifications: input is checked and the list is bounded', async () => {
   await assert.rejects(app.api('POST', 'notifications', {}), /title/);
   await assert.rejects(app.api('POST', 'notifications', {title: 'x', level: 'loud'}), /level/);
   await assert.rejects(app.api('POST', 'notifications', {title: 'x', href: 'https://evil.example'}), /href/);
+  await assert.rejects(app.api('POST', 'notifications', {title: 'x', href: '//evil.example'}), /href/);
   for (let i = 0; i < 205; i++) await app.api('POST', 'notifications', {title: 'n' + i});
   const list = await app.api('GET', 'notifications', {}, {limit: 500});
   assert.equal(list.total, 200);

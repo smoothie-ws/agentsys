@@ -2,7 +2,7 @@
 'use strict';
 
 // ----- projects -----
-const EMPTY_PROJECTS = '<div class="empty"><h2>Start your first project</h2></div>';
+const EMPTY_PROJECTS = '<div class="empty"><h2>Start your first project</h2><p class="muted">Projects keep related workflows together. Create one or explore a working example.</p><div class="button-row"><button type="button" class="primary" data-new-project>New project</button><button type="button" data-example>Open example</button></div></div>';
 PAGES.projects = async (view, route) => {
   await loadProjects();
   if (app.route !== route) return;
@@ -22,6 +22,7 @@ PAGES.projects = async (view, route) => {
       )
       .join('')}</div>${app.projects.length ? '' : EMPTY_PROJECTS}</div>`;
   loadCardPreviews(view);
+  bindWelcome($('.page', view));
 };
 
 /** Menu of a project (card or row of the second panel). `title` is the element showing its name, if it is on the page. */

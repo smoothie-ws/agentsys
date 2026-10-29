@@ -12,7 +12,7 @@ Every limit in the system, and whether a person can see and change it in the UI.
 | Finished runs / summaries kept, their age; run lifetime; replay data retention and size; checkpoints; events; bridge calls per run; event dedupe window; state value / total size / keys; queue item / total size (18 values) | see `LIMITS` in `js/backend/settings.js` | Runs → Run limits |
 | Queue `limit`, `visibility_ms`, `overflow` | 1000, 30 s, fail | API only (`PUT workflows/{id}/queues/{name}`) |
 | Trigger interval, `max_concurrency`, `overlap` | 10 s – 30 days, 1–16 | API only (`/api/triggers`) |
-| Workspace permission allow list | `graph.read` | Runs → Permissions |
+| Project permission allow list | `graph.read` | Canvas → Workflow settings → Permissions (applies to all workflows in the project) |
 
 The single source of the defaults of the Run limits is the `LIMITS` table in `js/backend/settings.js`; `GET settings` returns it with the defaults, and the Runs page is drawn from it.
 

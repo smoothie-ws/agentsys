@@ -2,7 +2,7 @@
 'use strict';
 
 const catalogHref = (section, folder = '', id = '') =>
-  `/resources/${encodeURIComponent(section)}${id ? '/' + encodeURIComponent(id) : ''}${folder ? '?folder=' + encodeURIComponent(folder) : ''}`;
+  `/library/${encodeURIComponent(section)}${id ? '/' + encodeURIComponent(id) : ''}${folder ? '?folder=' + encodeURIComponent(folder) : ''}`;
 const catalogDefinition = id => (app.librarySections ?? []).find(s => s.id === id);
 const catalogFolderMenu = (section, folder) => 'catalog-folder:' + section + ':' + encodeURIComponent(folder);
 const catalogItemMenu = (section, id) => 'catalog-item:' + section + ':' + id;
@@ -84,7 +84,7 @@ function catalogCrumbs(section, folder = '') {
     chain.unshift([parent.title, catalogHref(parent.id)]);
   }
   return [
-    ['Library', '/resources'],
+    ['Library', '/library'],
     ...chain,
     ...(folder
       ? [
@@ -227,7 +227,6 @@ function catalogSectionActions(section, folder = '', actions = section.actions) 
         ]
       : []),
     ...catalogCustomActions(section, actions, {folder}),
-    ['Refresh', catalogRefresh, {icon: 'refresh'}],
   ];
 }
 function catalogFolderActions(section, folder) {
@@ -329,7 +328,7 @@ async function catalogItemActions(section, id) {
 async function catalogPage(view, route) {
   const section = catalogDefinition(route.section);
   if (!section)
-    return void (view.innerHTML = `<div class="page">${notFound('Section', '/resources', 'Back to Library')}</div>`);
+    return void (view.innerHTML = `<div class="page">${notFound('Section', '/library', 'Back to Library')}</div>`);
   const folder = route.folder ?? '',
     data = collectionSnapshot(section.id);
   if (route.id) {

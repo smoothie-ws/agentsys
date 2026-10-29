@@ -2,7 +2,7 @@
 // AgentSys local server: serves the site, keeps the data as JSON files in the data/ folder, and runs the same
 // backend the browser has as an HTTP API (/api/…), so runs, triggers and outside programs work with no page open.
 // No dependencies. Run:  node server.js
-// Environment: PORT, HOST (default 127.0.0.1), DATA_DIR, AGENTSYS_TOKEN (required to use /api on a non-loopback
+// Environment: PORT, HOST (default 127.0.0.1), DATA_DIR, AGENTSYS_TOKEN (required for API/storage on a non-loopback
 // HOST; optional otherwise), ALLOWED_HOSTS (extra Host header names accepted on loopback, comma separated).
 'use strict';
 const http = require('http'),
@@ -90,6 +90,7 @@ function walk(dir, out = []) {
     else if (
       (e.name.endsWith('.json') ||
         e.name.endsWith('.jsonl') ||
+        e.name === 'SKILL.md' ||
         (p.includes('.files' + path.sep + 'scripts' + path.sep) && e.name.endsWith('.js'))) &&
       !e.name.includes('.tmp-')
     )
@@ -414,9 +415,12 @@ function createServer(options = {}) {
     scheduler.unref();
   }
 
-  // ----- /__data: the browser's storage (reads are open; writes need the X-AgentSys header) -----
+  // ----- /__data: raw storage (same Host/token boundary as the API; writes also need X-AgentSys) -----
   async function handleData(req, res, url) {
     if (hostRefused(req)) return sendJSON(res, 403, {error: 'forbidden'});
+    if (!loopbackBound && !TOKEN)
+      return sendJSON(res, 503, {error: 'Set AGENTSYS_TOKEN to access storage on a non-loopback address'});
+    if (TOKEN && !tokenGiven(req)) return sendJSON(res, 401, {error: 'Storage requires a Bearer token'});
     const rest = url.pathname.slice('/__data'.length).replace(/^\//, '');
     if (req.method === 'GET' && rest === 'events') {
       res.writeHead(200, {'Content-Type': 'text/event-stream', 'Cache-Control': 'no-store', Connection: 'keep-alive'});
@@ -567,24 +571,37 @@ function createServer(options = {}) {
     if (!backend) return sendJSON(res, 503, {error: {code: 'unavailable', message: 'The backend is not running'}});
     if (req.method !== 'POST') return sendJSON(res, 405, {error: {message: 'Use POST'}});
     const token = decodeURIComponent(url.pathname.slice('/hooks/'.length));
-    const body = await parseJSONBody(req, 64000).catch(() => ({}));
+    const body = await parseJSONBody(req, 64000);
     const run = await backend.Backend.request('POST', `hooks/${encodeURIComponent(token)}`, {body});
     sendJSON(res, 202, JSON.parse(JSON.stringify(run)));
   }
 
   function handleStatic(req, res, url, editor = false) {
     let rel = decodeURIComponent(url.pathname);
-    const pageRoute = editor && (!path.extname(rel) || /^\/(?:p|resources|plugins)\//.test(rel));
+    const pageRoute = editor && (!path.extname(rel) || /^\/(?:p|library|resources|plugins)\//.test(rel));
     if (rel.endsWith('/')) rel += 'index.html';
     let file = path.join(ROOT, rel);
+    // Windows resolves directory names case-insensitively and ignores trailing dots/spaces.
+    const normalized = value => process.platform === 'win32'
+      ? value.replace(/[. ]+(?=[\\/]|$)/g, '').toLowerCase()
+      : value;
+    const inside = (target, directory) => {
+      const name = normalized(target), root = normalized(directory);
+      return name === root || name.startsWith(root + path.sep);
+    };
     if (
       !file.startsWith(ROOT + path.sep) ||
-      file.startsWith(DATA + path.sep) ||
+      inside(file, DATA) ||
+      inside(file, path.join(ROOT, 'data')) ||
       /(^|[\\/])\.|node_modules|\0/.test(rel)
     )
       return send(res, 404, 'Not found', 'text/plain');
     // A page of the editor (/editor/p/…, /editor/settings): no such file, so the editor opens and shows it.
     if (pageRoute && !fs.existsSync(file)) file = path.join(ROOT, 'index.html');
+    // Serve only public assets, never arbitrary files from the checkout.
+    const publicPath = path.relative(ROOT, file).split(path.sep).join('/');
+    if (!/^(?:index\.html$|(?:js|css|docs|examples|plugins)\/)/.test(publicPath))
+      return send(res, 404, 'Not found', 'text/plain');
     fs.readFile(file, (err, data) => {
       if (err) return send(res, 404, 'Not found', 'text/plain');
       // The page names its files without a leading path; under /editor/ (at any depth) they are found there.

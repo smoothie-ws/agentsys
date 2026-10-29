@@ -194,7 +194,7 @@ const creationActions = folder =>
       ]
     : [];
 /** Menu of the Library itself, and the "+" of its second panel. */
-const libraryActions = () => [['Refresh', refreshLibrary, {icon: 'refresh'}]];
+const libraryActions = () => [];
 const nodesActions = () => [
   ...creationActions(''),
   ['Import…', () => importFiles(), {icon: 'download'}],
@@ -372,7 +372,7 @@ function libraryList(view, route) {
     app.resources.filter(r => (r.payload.folder || '') === path).map(r => [resourceIcon(r), r.name]);
   const spec = folder ? 'folder:' + folder : 'nodes:';
   view.innerHTML = `<div class="page">${pageHead({
-    crumbs: [['Library', '/resources'], ...(folder ? [['Nodes', NODES_PATH], ...chain.slice(0, -1)] : [])],
+    crumbs: [['Library', '/library'], ...(folder ? [['Nodes', NODES_PATH], ...chain.slice(0, -1)] : [])],
     title: esc(folder ? baseName(folder) : 'Nodes'),
     sub: folder ? '' : 'Reusable Custom Nodes.',
     menu: spec,
@@ -396,6 +396,6 @@ PAGES.resources = async (view, route) => {
   if (!route.section) return libraryOverview(view);
   if (route.section !== 'nodes') return catalogPage(view, route);
   if (!route.id) return libraryList(view, route);
-  if (!developerMode() || !app.resources.some(r => r.id === route.id)) return go('/resources', true);
+  if (!developerMode() || !app.resources.some(r => r.id === route.id)) return go('/library', true);
   await openNodeEditor(route.id, '', true).catch(fail); // a node opens as a graph
 };

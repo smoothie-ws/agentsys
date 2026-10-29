@@ -36,11 +36,11 @@ async def desktop_theme(browser):
     await set_part(page,'buttons','pressed','#607080')
     await page.wait_for_timeout(250)
     preview=page.locator('.theme-live-preview > button').first
-    assert await preview.evaluate('(el)=>getComputedStyle(el).backgroundColor')=='rgb(32, 48, 64)'
-    await preview.hover();await page.wait_for_timeout(180)
-    assert await preview.evaluate('(el)=>getComputedStyle(el).backgroundColor')=='rgb(64, 80, 96)'
-    await page.mouse.down();await page.wait_for_timeout(180)
-    assert await preview.evaluate('(el)=>getComputedStyle(el).backgroundColor')=='rgb(96, 112, 128)'
+    await page.wait_for_function("getComputedStyle(document.querySelector('.theme-live-preview > button')).backgroundColor==='rgb(32, 48, 64)'")
+    await preview.hover()
+    await page.wait_for_function("getComputedStyle(document.querySelector('.theme-live-preview > button')).backgroundColor==='rgb(64, 80, 96)'")
+    await page.mouse.down()
+    await page.wait_for_function("getComputedStyle(document.querySelector('.theme-live-preview > button')).backgroundColor==='rgb(96, 112, 128)'")
     await page.mouse.up()
     await set_part(page,'fields','background','#142536cc')
     await set_part(page,'fields','radius','0')
@@ -49,6 +49,7 @@ async def desktop_theme(browser):
     await set_part(page,'nodes','text','#ff99cc')
     await page.locator('[name=node_radius]').fill('0')
     await page.locator('[name=group_radius]').fill('0')
+    await page.wait_for_function("getComputedStyle(document.querySelector('.theme-live-preview > input')).borderRadius==='0px'")
     assert await page.locator('.theme-live-preview > input').evaluate('(el)=>getComputedStyle(el).borderRadius')=='0px'
     assert await page.evaluate("getComputedStyle(document.querySelector('#sidebar')).backgroundColor")=='rgba(0, 0, 0, 0)'
     await page.wait_for_function("app.preferences.style?.components?.fields?.background==='#142536cc'")
@@ -119,7 +120,7 @@ async def phone(browser,width,height):
     await page.goto(URL+'#/settings?section=appearance')
     await page.wait_for_selector('.theme-component-editor')
     assert (await page.locator('#sidebar').bounding_box())['width']==width
-    assert await page.locator('#sidebar [data-section]:visible').count()==4
+    assert await page.locator('#sidebar [data-section]:visible').count()==5
     assert await page.locator('#sidebar [data-section] > span:not(.brand-mark):visible').count()==0
     await page.wait_for_timeout(400)
     assert await page.locator('#sidebar').evaluate('(el)=>{const rows=[...el.querySelectorAll("[data-section]")],r=parseFloat(getComputedStyle(el).getPropertyValue("--join-r"));return rows[0].getBoundingClientRect().left>=r && rows.at(-1).getBoundingClientRect().right<=innerWidth-r}')
@@ -127,7 +128,7 @@ async def phone(browser,width,height):
         assert await page.locator(selector).is_visible()
         assert '0deg' in await page.locator(selector).evaluate('(el)=>getComputedStyle(el).backgroundImage')
     if width==390:
-        clean=await page.add_style_tag(content='#view,#topstrip{visibility:hidden}body{--noise:none;--glow:none}')
+        clean=await page.add_style_tag(content='#view,#topstrip{visibility:hidden}body{--noise:none;--glow:none;--dither:none}')
         png=base64.b64encode(await page.screenshot()).decode()
         assert await page.evaluate('''async png=>{
           const image=new Image();image.src='data:image/png;base64,'+png;await image.decode();
@@ -157,10 +158,12 @@ async def phone(browser,width,height):
     assert await page.evaluate('document.documentElement.scrollWidth===innerWidth')
     await page.locator('#sidebar [data-section=home]').tap()
     await page.wait_for_selector('.tile')
-    await page.locator('#sidebar [data-section=api]').tap()
-    await page.wait_for_selector('.api-call')
-    await page.locator('.api-list input').fill('project-defaults')
-    await page.locator('.api-call:not([hidden])').first.tap()
+    await page.locator('#mobile-browse').tap()
+    await page.locator('#subnav [data-key="dashboard:api"] a').tap()
+    await page.wait_for_selector('.api-method-heading')
+    await page.locator('#mobile-browse').tap()
+    await page.locator('#api-nav-search').fill('project-defaults')
+    await page.locator('#subnav [data-key^="api-call:"] a:visible').first.tap()
     assert '/api/project-defaults' in await page.locator('.api-method-heading').inner_text()
     assert await page.evaluate('document.documentElement.scrollWidth===innerWidth')
     await page.locator('#sidebar [data-section=projects]').tap()

@@ -27,7 +27,7 @@ The core already has what an optimistic collaborative editor needs: a monotonic 
 Ordered by value:
 
 1. **UI for what is API-only today:** triggers (interval/webhook/queue) and queues, secrets (there is no page), workflow `dedupe_ms`/`pending_limit` (now on Runs → Workflows).
-2. **Live Runs page** (SSE instead of Refresh), filters (workflow, status, time), failure notifications (desktop, and through plugins Telegram/Discord/email).
+2. **Failure notifications:** desktop and plugin-delivered Telegram/Discord/email alerts. Live Dashboard/Runs updates, workflow/status/time filters and history pagination are implemented; see the [interface follow-up](interface-polish.md).
 3. **Backup and safety:** one-click workspace export/import (zip of the data folder), optional auto-commit of `data/` to git (the text format is diff-friendly), a trash for deleted projects/workflows/nodes, a `data/format` version with explicit migrations.
 4. **Health:** `GET /api/health` (scheduler lag, active runs, disk space, last error), a Dashboard status tile, structured log file with rotation, a guard against a full disk.
 5. **Dashboard metrics over time:** run counts, failure rate and duration per workflow from run summaries (sparklines), queue depth and state size, quota usage.

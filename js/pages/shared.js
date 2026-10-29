@@ -2,6 +2,39 @@
 'use strict';
 
 const PAGES = {};
+/** Update only a page's live regions; keep forms, focus and plugin frames mounted. */
+function livePage(route, update) {
+  let stopped = false, busy = false, again = false, timer;
+  const run = async () => {
+    if (stopped || app.route !== route || document.hidden) return;
+    if (busy) { again = true; return; }
+    busy = true;
+    try {
+      await update();
+      if (!stopped && app.route === route) {
+        const status = $('[data-live-status]');
+        if (status) status.textContent = 'Live';
+      }
+    } catch {
+      if (!stopped && app.route === route) {
+        const status = $('[data-live-status]');
+        if (status) status.textContent = 'Connection interrupted · retrying';
+      }
+    } finally {
+      busy = false;
+      if (again && !stopped) { again = false; schedule(); }
+    }
+  };
+  const schedule = () => { if (!timer) timer = setTimeout(() => { timer = null; run(); }, 250); };
+  const unsubscribe = Backend.subscribe(schedule, {own: true});
+  const interval = setInterval(run, 3000);
+  document.addEventListener('visibilitychange', schedule);
+  app.pageDispose = () => {
+    stopped = true; clearTimeout(timer); clearInterval(interval); unsubscribe();
+    document.removeEventListener('visibilitychange', schedule);
+  };
+  return run;
+}
 /** A common save lifecycle for settings pages and Library resource editors. */
 function pageAutosave(form, read, write) {
   const save = autoForm(form, read, write),
@@ -24,9 +57,9 @@ const COMMON_CAPABILITIES = [
 function permissionChoices(capabilities, grants, attr = 'data-grant', prefix = 'grant') {
   return `<table class="permission-table"><thead><tr><th scope="col">Permission</th><th scope="col">Allow</th><th scope="col">Disallow</th></tr></thead><tbody>${capabilities.map(cap => `<tr><th scope="row">${esc(cap)}</th><td><label class="permission-choice"><input type="radio" name="${prefix}:${esc(cap)}" value="allow" ${attr}="${esc(cap)}" aria-label="Allow ${esc(cap)}" ${grants.includes(cap) ? 'checked' : ''}></label></td><td><label class="permission-choice"><input type="radio" name="${prefix}:${esc(cap)}" value="disallow" aria-label="Disallow ${esc(cap)}" ${grants.includes(cap) ? '' : 'checked'}></label></td></tr>`).join('')}</tbody></table>`;
 }
-function grantControls(grants = []) {
+function grantControls(grants = [], {hint = 'Permissions are limited by the parent node.', title = 'Permissions'} = {}) {
   const extra = grants.filter(v => !COMMON_CAPABILITIES.includes(v)).join(', ');
-  return `<fieldset class="permission-controls" data-grants><legend>Permissions</legend><div class="permission-fields">${permissionChoices(COMMON_CAPABILITIES, grants)}<label class="field"><span>Specific permissions</span><input name="extra_grants" value="${esc(extra)}" placeholder="net.fetch:example.com"></label><p class="permission-hint muted">Permissions are limited by the parent node.</p></div></fieldset>`;
+  return `<fieldset class="permission-controls" data-grants><legend>${esc(title)}</legend><p class="permission-hint muted">${esc(hint)}</p><div class="permission-fields">${permissionChoices(COMMON_CAPABILITIES, grants)}<label class="field"><span>Specific permissions</span><input name="extra_grants" value="${esc(extra)}" placeholder="net.fetch:example.com"></label></div></fieldset>`;
 }
 function readGrantControls(root) {
   const box = $('[data-grants]', root);
@@ -63,11 +96,11 @@ function showSectionPanel(form, section = sectionOf(app.route)) {
   );
 }
 const actionButton = (menu, label = 'Actions') =>
-  `<button type="button" class="icon" data-menu="${esc(menu)}" title="${esc(label)}" aria-label="${esc(label)}">${icon('dots')}</button>`;
+  menu ? `<button type="button" class="icon" data-menu="${esc(menu)}" title="${esc(label)}" aria-label="${esc(label)}">${icon('dots')}</button>` : '';
 
-/** The header of a page: where it is (links up the tree), its name, a line about it, and its buttons. `title` and `sub` are HTML. */
-const pageHead = ({crumbs = [], title, sub = '', actions = '', menu = pageMenu()}) =>
-  `<div class="page-head"><div>${crumbs.length ? `<nav class="crumbs" aria-label="Path">${crumbs.map(([label, href]) => `<a href="${esc(href)}" data-link>${esc(label)}</a>`).join('<span aria-hidden="true">/</span>')}</nav>` : ''}<h1>${title}</h1>${sub ? `<p class="muted">${sub}</p>` : ''}</div><div class="actions">${actions}${actionButton(menu)}</div></div>`;
+/** The common page heading, description and actions. `title` and `sub` are HTML. */
+const pageHead = ({title, sub = '', actions = '', menu = pageMenu()}) =>
+  `<div class="page-head"><div><h1>${title}</h1>${sub ? `<p class="muted">${sub}</p>` : ''}</div><div class="actions">${actions}${actionButton(menu)}</div></div>`;
 
 /**
  * The card of every page (projects, workflows, Library nodes and groups), built like a node of the canvas: a header with an icon
@@ -342,8 +375,8 @@ async function loadLibrary() {
   return settings;
 }
 const baseName = path => path.slice(path.lastIndexOf('/') + 1);
-/** The Library has sections (now one: Nodes) under /resources; the nodes live at /resources/nodes. */
-const NODES_PATH = '/resources/nodes';
+/** The Library has sections (now one: Nodes) under /library; the nodes live at /library/nodes. */
+const NODES_PATH = '/library/nodes';
 const resourceHref = r => `${NODES_PATH}/${r.id}`;
 const folderHref = path => `${NODES_PATH}?folder=${encodeURIComponent(path)}`;
 const folderKey = path => 'f:' + path;

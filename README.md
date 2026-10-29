@@ -4,7 +4,7 @@ A visual workflow system that runs by itself. You draw a graph of nodes; the gra
 
 - Static browser editor, no build step, no framework, no dependencies.
 - A tiny Node server (`server.js`) keeps all data as readable JSON/JS files in `data/`, runs the same backend as an HTTP API, ticks a scheduler and serves webhooks. With no server the editor works on its own with IndexedDB.
-- Everything the UI can do is an API call (`/api/...`); the API page (`/editor/api`, a card on the Dashboard) has the full reference.
+- Everything the UI can do is an API call (`/api/...`); the API page (`/editor/api`, under Dashboard) has the full reference.
 
 ## Run
 
@@ -19,14 +19,18 @@ Environment: `PORT`, `HOST` (default `127.0.0.1`), `DATA_DIR`, `AGENTSYS_TOKEN` 
 
 | Page | Path | What it is |
 |---|---|---|
-| Dashboard | `/editor/` (the logo) | counts of projects, workflows, Library nodes; run metrics; what needs attention; recent runs; the way to the API |
-| API | `/editor/api` | the reference generated from the route table, OpenAPI download; reached from the Dashboard, not from the sidebar |
+| Dashboard | `/editor/` (the logo) | counts of projects and workflows; run metrics; recent runs; the way to the API |
+| API | `/editor/api` | the reference generated from the route table, OpenAPI download; under Dashboard in the navigation |
 | Projects | `/editor/projects` | projects and their workflows |
 | Plugins | `/editor/plugins` | installed plugins: import, enable, disable, remove, permissions, settings; the pages they add |
 | Notifications | the bell beside Search | messages from plugins and workflows (`/api/notifications`); empty until something posts |
-| Library | `/editor/resources` | the Library's sections as cards; today one: **Nodes** (`/editor/resources/nodes`: reusable Custom Nodes and the groups they are kept in) |
-| Runs | `/editor/runs` | workflows' control, activations, versions, permissions, limits |
+| Library | `/editor/library` | reusable Nodes and plugin collections, including AI providers and skills |
+| Runs | `/editor/runs` | under Dashboard: workflows' control, activations, versions, limits |
 | Settings | `/editor/settings` | appearance, shortcuts, developer mode |
+
+Workflow settings on the canvas contain Types, Available nodes and Permissions. The permission policy applies to every workflow in the project and uses the same Allow/Disallow controls as nodes.
+
+Dashboard and Runs update automatically. Runs supports shareable workflow/status/time filters and paginated retained history; policy forms autosave and protect unsaved edits when leaving. An empty workspace offers a runnable starter workflow. See [interface improvements](docs/interface-polish.md) for validation and remaining scope.
 
 ## Documentation
 
@@ -38,5 +42,6 @@ Environment: `PORT`, `HOST` (default `127.0.0.1`), `DATA_DIR`, `AGENTSYS_TOKEN` 
 - [Limits](docs/limits.md) — every limit of the system and whether the UI exposes it
 - [Code guide](docs/code-guide.md) — file map, how to add a route, an op, a page
 - [Testing](docs/testing.md)
+- [Full audit, 2026-10-29](docs/full-audit-2026-10-29.md) — findings, fixes, measurements and improvement priorities (Russian)
 - [Plugins](docs/plugins.md) — package format, rights, pages, endpoints
 - [Roadmap](docs/roadmap.md) — plugins and what is planned

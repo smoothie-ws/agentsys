@@ -67,8 +67,7 @@ async def main():
         await payload_form.locator('textarea').fill('{"value":1}')
         await payload_form.locator('button').click()
         await wait_api(page, "async id => (await api('runs/'+id)).status==='completed'", ids['run'])
-        await page.locator('.page-head [data-menu]').click()
-        await page.get_by_role('menuitem',name='Refresh',exact=True).click()
+        await page.reload()
         try:
             await page.wait_for_function("id => document.querySelector('[data-run=\"'+id+'\"]')?.textContent.includes('completed')", arg=ids['run'])
         except Exception:
@@ -80,7 +79,7 @@ async def main():
           const gate=new Promise(resolve=>release=resolve),captured=new Promise(resolve=>ready=resolve);
           api=async(path,options)=>{
             const result=await original(path,options);
-            if(path==='runs'&&!delayed){delayed=true;ready();await gate;return result.map(r=>r.id===id?{...r,status:'stale'}:r);}
+            if(path==='runs/overview'&&!delayed){delayed=true;ready();await gate;return {...result,items:result.items.map(r=>r.id===id?{...r,status:'stale'}:r)};}
             return result;
           };
           try{const older=render();await captured;await render();release();await older;}
@@ -184,8 +183,7 @@ async def main():
         # Cancel a durable waiting wave through the same management panel.
         wave_run=await page.evaluate("id=>api('projects/'+id+'/runs',{method:'POST',body:{wait:2}})",ids['p'])
         assert wave_run['status']=='waiting'
-        await page.locator('.page-head [data-menu]').click()
-        await page.get_by_role('menuitem',name='Refresh',exact=True).click()
+        await page.reload()
         await page.wait_for_selector('[data-run="'+wave_run['id']+'"]')
         await page.locator('[data-run="'+wave_run['id']+'"] [data-run-action="trace"]').click()
         await page.locator('#runs-intervention [data-cancel-wave="run"]').click()

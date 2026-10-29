@@ -148,6 +148,8 @@ const Inspector = {
   // ───── Panel frame: mount, show/hide, tabs ─────
 
   mount(root) {
+    this.availableOpen = new Map();
+    this.workflowPolicySave = null;
     this.root = root;
     root.hidden = false;
     root.dataset.collapsed = String(sideHidden());
@@ -248,6 +250,7 @@ const Inspector = {
   },
 
   async leave() {
+    if (this.workflowPolicySave && !(await leaveAutosave(this.workflowPolicySave))) return false;
     await this.flushConnections?.();
     await this.pending?.();
     this.pending = null;
@@ -298,7 +301,10 @@ const Inspector = {
       this.connections();
       return;
     }
-    if (!soft) await this.flushConnections?.();
+    if (!soft) {
+      await this.flushConnections?.();
+      await this.workflowPolicySave?.();
+    }
     const pending = this.pending;
     this.pending = null;
     if (!soft) await pending?.();
@@ -381,7 +387,7 @@ const Inspector = {
         .map(([name, sub]) => {
           const nodes = descendants(sub),
             count = nodes.filter(item => available.has(item.id)).length;
-          return `<details class="available-group" data-library-folder="${esc(sub.path)}" ${previous.get(sub.path) !== false ? 'open' : ''}><summary><label class="check"><input type="checkbox" data-library-group="${esc(sub.path)}" aria-label="Include group: ${esc(sub.path)}" ${nodes.length && count === nodes.length ? 'checked' : ''} ${count && count < nodes.length ? 'data-partial' : ''} ${nodes.length ? '' : 'disabled'}>${icon((app.nodeFolderIcons || {})[sub.path] || 'folder')}<span>${esc(name)}</span></label></summary><div class="available-group-items">${render(sub)}</div></details>`;
+          return `<details class="available-group" data-library-folder="${esc(sub.path)}" ${previous.get(sub.path) === true ? 'open' : ''}><summary><label class="check"><input type="checkbox" data-library-group="${esc(sub.path)}" aria-label="Include group: ${esc(sub.path)}" ${nodes.length && count === nodes.length ? 'checked' : ''} ${count && count < nodes.length ? 'data-partial' : ''} ${nodes.length ? '' : 'disabled'}>${icon((app.nodeFolderIcons || {})[sub.path] || 'folder')}<span>${esc(name)}</span></label></summary><div class="available-group-items">${render(sub)}</div></details>`;
         })
         .join('');
     body.innerHTML = `<div class="available-nodes">${render(tree) || '<p class="muted small">No Library nodes yet.</p>'}</div>`;
@@ -421,9 +427,12 @@ const Inspector = {
   workflow() {
     const issues = W.snapshot.diagnostics || [],
       host = $('#side-workflow');
+    const existingPolicy = $('#workflow-policy', host);
+    if (existingPolicy && (existingPolicy.contains(document.activeElement) || this.workflowPolicySave?.isDirty())) return;
     host.innerHTML = `<h2>${esc(W.snapshot.workflow_name)}</h2>
       ${this.typesSection()}
       <section class="workflow-available"><h3>Available nodes</h3><div data-available-nodes></div></section>
+      ${W.library ? '' : `<form id="workflow-policy">${grantControls(W.policy.allow, {title: 'Project permissions', hint: 'Applies to every workflow in this project, not just this workflow. Nodes are limited by these permissions.'})}</form>`}
       ${
         issues.length
           ? `<h3>Graph problems</h3><ul class="links">${issues
@@ -436,6 +445,11 @@ const Inspector = {
     this.wireReveal();
     this.wireTypes();
     this.availableNodes($('[data-available-nodes]', host));
+    const form = $('#workflow-policy', host), project = W.project;
+    this.workflowPolicySave = form ? autoForm(form, () => ({allow: readGrantControls(form)}), async body => {
+      const policy = await api(`projects/${project}/policy`, {method: 'PUT', body});
+      if (W.project === project) W.policy = policy;
+    }) : null;
   },
 
   /** The types of the workflow: what they are made of, where they came from, and (in developer mode) how to change them. */

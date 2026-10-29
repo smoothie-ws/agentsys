@@ -42,9 +42,6 @@
   width: 32px;
   padding: 0;
 }
-.editor-parent svg {
-  transform: rotate(180deg);
-}
 #run-summary {
   display: flex;
   align-items: center;
@@ -413,6 +410,14 @@
   box-shadow:
     0 0 0 var(--sw) var(--bad),
     var(--node-shadow);
+}
+.node-marks {
+  position: absolute;
+  right: 8px;
+  bottom: calc(100% + 6px);
+  display: flex;
+  align-items: center;
+  gap: 5px;
 }
 .run-state {
   flex: none;

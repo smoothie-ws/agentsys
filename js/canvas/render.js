@@ -218,13 +218,13 @@ function nodeHTML(node) {
   if (node.color) classes.push('colored');
   if (node.disabled || node.muted) classes.push('off');
   const pin = node.pinned ? `<span class="pinned" title="Pinned">${icon('pin')}</span>` : '';
-  // Every header reads: icon, name, state marks, and the fold button (it appears when the pointer is on the node).
+  // Status marks sit above the right edge; the fold button stays in the header.
   const fold = `<button class="icon fold" data-fold="${esc(node.id)}" title="${node.folded ? 'Expand' : 'Collapse'}" aria-label="${node.folded ? 'Expand node' : 'Collapse node'}" aria-expanded="${!node.folded}">${icon('chevron')}</button>`;
   const head = (title, glyph, extra = '') =>
-    `<header>${extra}<span class="head-icon">${icon(glyph)}</span><span class="title" title="${esc(title)}">${esc(title)}</span>${stateHTML}${node.disabled || node.muted ? `<span class="switched-off" title="${node.disabled ? 'Disabled' : 'Disabled by its group'}: a run skips this node">${icon('power')}</span>` : ''}${pin}${fold}</header>`;
+    `<header>${extra}<span class="head-icon">${icon(glyph)}</span><span class="title" title="${esc(title)}">${esc(title)}</span>${fold}</header><div class="node-marks">${stateHTML}${node.disabled || node.muted ? `<span class="switched-off" title="${node.disabled ? 'Disabled' : 'Disabled by its group'}: a run skips this node">${icon('power')}</span>` : ''}${pin}</div>`;
   if (node.node_type === 'reroute')
     return `<div class="node reroute" data-id="${esc(node.id)}" title="Reroute point"><span class="sock" data-dir="in" data-port="in"></span><span class="sock" data-dir="out" data-port="out"></span></div>`;
-  // The state of a node that runs, or has just run, as an icon among the marks at the right of its header (an outline would clash with the node's own).
+  // The state of a node that runs, or has just run, appears above its right edge.
   const waitSpec = node.wait?.wait_spec;
   const stateMark = {
       waiting: [

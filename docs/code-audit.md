@@ -1,5 +1,7 @@
 # Code and UI audit — 2026-10-29
 
+Historical record of the earlier UI pass. For the current broad review, unresolved issues, measurements and validation, use the [full audit](full-audit-2026-10-29.md). Navigation descriptions below may predate the later changes.
+
 Reviewed the shared shell, routing, page renderers, Library, plugin package lifecycle, storage, permissions and execution boundaries. The engine and HTTP behavior were also checked through the full automated suite. This records verified findings; it does not claim that arbitrary future plugin code is error-free.
 
 | Criterion | Findings and changes |

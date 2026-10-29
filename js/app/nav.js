@@ -13,7 +13,7 @@ const applyNavJoined = (on, layoutKey = '') => {
   requestAnimationFrame(() => placePills(true, true));
 };
 
-/** Which section of the sidebar a route belongs to (the home page, the dashboard, belongs to none). */
+/** Which primary section owns a route; Dashboard contains its overview, Runs and API. */
 function sectionOf(route) {
   if (route.project?.startsWith('lib-')) return 'library'; // a Custom Node is edited as a workflow
   if (route.project || route.page === 'projects') return 'projects';
@@ -24,7 +24,7 @@ function sectionOf(route) {
   )
     return 'library'; // a page a plugin puts into the Library
   return (
-    {resources: 'library', plugins: 'plugins', settings: 'settings', runs: 'runs', api: 'api'}[route.page] || 'home'
+    {resources: 'library', plugins: 'plugins', settings: 'settings', runs: 'home', api: 'home'}[route.page] || 'home'
   );
 }
 const SECTION_TITLES = {
@@ -79,7 +79,7 @@ const navOpen = new Set();
  */
 function navRow(n, active) {
   const group = n.children !== undefined,
-    open = group && navOpen.has(n.key),
+    open = group && (n.open ?? navOpen.has(n.key)),
     here = n.key === active;
   const row = `<div class="subnav-row ${here ? 'active' : ''}" data-key="${esc(n.key)}"${n.drop !== undefined ? ` data-drop-folder="${esc(n.drop)}"` : ''}${n.drag ? ` draggable="true" data-drag="${esc(n.drag)}"` : ''}>${
     group
@@ -158,20 +158,11 @@ const SECTION_PANELS = {
     ['activations', 'Activations', 'activity'],
     ['workflows', 'Workflows', 'play'],
     ['versions', 'Versions', 'file'],
-    ['permissions', 'Permissions', 'lock'],
     ['run-limits', 'Run limits', 'settings'],
   ],
-  api: [['reference', 'Reference', 'code']],
 };
 const sectionHref = (section, key) =>
   (section === 'home' ? '/' : '/' + section) + (SECTION_PANELS[section]?.length > 1 ? '?section=' + key : '');
-const overviewRow = (section, href) => ({
-  key: 'overview:' + section,
-  label: 'Overview',
-  icon: 'folder',
-  href,
-  menu: 'section:' + section,
-});
 function panelTree(section) {
   const current = selectedPanel(section);
   return {
@@ -182,7 +173,7 @@ function panelTree(section) {
         label,
         icon: glyph,
         href: sectionHref(section, key),
-        menu: 'section:' + section,
+        menu: sectionActions(section).length ? 'section:' + section : undefined,
       })),
   };
 }
@@ -192,14 +183,23 @@ function selectedPanel(section) {
   return definitions.some(([key]) => key === requested) ? requested : definitions[0][0];
 }
 const NAV_TREES = {
-  home: () => panelTree('home'),
+  home: route => ({
+    active:
+      route.page === 'runs'
+        ? 'panel:' + selectedPanel('runs')
+        : route.page === 'api'
+          ? selectedApiCallKey() ? 'api-call:' + selectedApiCallKey() : 'dashboard:api'
+          : 'panel:overview',
+    rows: () => [
+      ...panelTree('home').rows(),
+      {key: 'dashboard:runs', label: 'Runs', icon: 'activity', href: '/runs', children: panelTree('runs').rows()},
+      {key: 'dashboard:api', label: 'API', icon: 'code', href: '/api', menu: 'section:api', empty: 'No calls found.', children: apiNavigationRows(route.page === 'api' ? Tabs.stateOf('api')?.apiFilter || '' : '')},
+    ],
+  }),
   settings: () => panelTree('settings'),
-  runs: () => panelTree('runs'),
-  api: () => panelTree('api'),
   projects: route => ({
     active: route.workflow ? 'w:' + route.workflow : route.project ? 'p:' + route.project : 'overview:projects',
     rows: () => [
-      overviewRow('projects', '/projects'),
       ...(app.projects || []).map(p => {
         const loaded = projectTree.workflows.get(p.id);
         if (!loaded && navOpen.has('p:' + p.id)) loadProjectWorkflows(p.id);
@@ -246,13 +246,12 @@ const NAV_TREES = {
                 : route.section
                   ? 'cs:' + route.section
                   : 'overview:library'),
-      rows: () => [overviewRow('library', '/resources'), ...catalogLibraryRows(), ...pluginSectionRows('library')],
+      rows: () => [...catalogLibraryRows(), ...pluginSectionRows('library')],
     };
   },
   plugins: route => ({
     active: pluginActiveKey(route) || 'overview:plugins',
     rows: () => [
-      overviewRow('plugins', '/plugins'),
       ...(app.plugins || []).map(p => ({
         key: 'pl:' + p.id,
         label: p.manifest.name,
@@ -269,7 +268,7 @@ const NAV_TREES = {
 function pageMenu(route = app.route || {}) {
   if (route.page === 'resources')
     return !route.section
-      ? 'library:'
+      ? ''
       : route.section === 'nodes'
         ? route.id
           ? 'resource:' + route.id
@@ -283,16 +282,19 @@ function pageMenu(route = app.route || {}) {
             : catalogSectionMenu(route.section);
   if (route.page === 'plugins' && route.id) return 'plugin:' + route.id;
   if (route.project) return route.workflow ? `workflow:${route.project}:${route.workflow}` : 'project:' + route.project;
-  return 'section:' + sectionOf(route);
+  return ['home', 'runs'].includes(route.page) ? '' : 'section:' + route.page;
 }
 let shownSection = '',
   shownTarget = '';
 function renderSubnav(route) {
   const section = sectionOf(route),
     tree = NAV_TREES[section]?.(route),
-    target = Tabs.keyOf(route),
+    target = Tabs.keyOf(route) + (route.page === 'api' ? ':' + (routeQuery().get('call') || '') : ''),
     changed = section !== shownSection || target !== shownTarget;
   $('#subnav').hidden = false;
+  $('#api-nav-filter').hidden = route.page !== 'api';
+  const apiFilter = Tabs.stateOf('api')?.apiFilter || '';
+  if ($('#api-nav-search').value !== apiFilter) $('#api-nav-search').value = apiFilter;
   if (section !== shownSection) {
     navOpen.clear(); // arriving in a section: its tree starts folded (the Library's one section, Nodes, is open)
     if (section === 'library') navOpen.add('s:nodes');
@@ -307,6 +309,19 @@ function renderSubnav(route) {
       actions: actionButton('plugin:' + override.plugin, 'Section actions'),
       body: `<nav class="subnav-tree">${override.items.map(item => navRow({key: 'pg:' + override.plugin + ':' + item.page, label: item.title, icon: item.icon, href: pluginHref(override.plugin, item.page), menu: 'plugin:' + override.plugin}, pluginActiveKey(route))).join('')}</nav>`,
     });
+  if (changed && route.page === 'runs') navOpen.add('dashboard:runs');
+  if (changed && route.page === 'api') {
+    navOpen.add('dashboard:api');
+    const call = selectedApiCallKey();
+    const path = call?.slice(call.indexOf(' ') + 1).replace(/^\/api/, '');
+    if (path) {
+      let parent = '';
+      for (const segment of path.split('/').filter(Boolean)) {
+        parent += '/' + segment;
+        navOpen.add('api-path:' + parent);
+      }
+    }
+  }
   if (changed && section === 'projects' && route.project) navOpen.add('p:' + route.project);
   if (changed && section === 'library') {
     const item = app.resources.find(
@@ -339,7 +354,7 @@ function renderSubnav(route) {
   const rows = tree.rows();
   Subnav.set(section, {
     title: SECTION_TITLES[section],
-    actions: actionButton('section:' + section, 'Section actions'),
+    actions: sectionActions(section).length ? actionButton('section:' + section, 'Section actions') : '',
     body: `<nav class="subnav-tree" aria-label="${esc(SECTION_TITLES[section])}">${rows.map(n => navRow(n, tree.active)).join('')}${rows.length ? '' : `<p class="muted small">Nothing here yet.</p>`}</nav>`,
   });
 }
@@ -388,6 +403,8 @@ function placePill(pill, row, box, instant, host) {
   if (!row || !row.offsetParent) {
     pill.classList.add('off');
     seam?.classList.add('off');
+    host?.style.removeProperty('--row-top');
+    host?.style.removeProperty('--row-bottom');
     return;
   }
   const r = row.getBoundingClientRect(),
@@ -396,6 +413,8 @@ function placePill(pill, row, box, instant, host) {
     id = rowId(row),
     other = pill.rowId !== id;
   pill.rowId = id;
+  pill.style.setProperty('--space-before', Math.max(0, r.top - b.top) + 'px');
+  pill.style.setProperty('--space-after', Math.max(0, b.bottom - r.bottom) + 'px');
   pill.style.setProperty('--x', r.left - b.left + box.scrollLeft - box.clientLeft + 'px');
   let jump = instant || pill.classList.contains('off');
   if (other && !jump) pill.glideUntil = now + GLIDE_MS;
@@ -412,6 +431,8 @@ function placePill(pill, row, box, instant, host) {
     return;
   }
   const h = host.getBoundingClientRect();
+  host.style.setProperty('--row-top', Math.max(0, r.top - h.top) + 'px');
+  host.style.setProperty('--row-bottom', Math.max(0, h.bottom - r.bottom) + 'px');
   settle(seam, jump || seam.classList.contains('off'));
   seam.style.setProperty('--y', r.top - h.top - host.clientTop + 'px');
   seam.style.setProperty('--h', r.height + 'px');
@@ -566,34 +587,22 @@ async function resolveMenuItems(spec, owner) {
   if (type === 'folder') return folderActions(arg, title);
 }
 
-const refreshCurrentPage = async () => {
-  if (await leaveView()) await render();
-};
 function sectionActions(section) {
-  const refresh = ['Refresh', refreshCurrentPage, {icon: 'refresh'}];
   if (section === 'library') return libraryActions();
-  if (section === 'projects')
-    return [
-      ['New project', newProjectDialog, {icon: 'plus'}],
-      ['Import project', importProjects, {icon: 'download'}],
-      null,
-      refresh,
-    ];
-  if (section === 'plugins') return [['Import plugin', importPlugin, {icon: 'download'}], null, refresh];
-  if (section === 'settings')
-    return [
-      ['Restore defaults', () => app.restoreSettings?.(), {icon: 'refresh', disabled: !app.restoreSettings}],
-      null,
-      refresh,
-    ];
-  if (section === 'api')
-    return [
-      ['Download OpenAPI', () => app.apiReference?.download(), {icon: 'download', disabled: !app.apiReference}],
-      null,
-      refresh,
-    ];
-  return [refresh];
+  if (section === 'projects') return [
+    ['New project', newProjectDialog, {icon: 'plus'}],
+    ['Import project', importProjects, {icon: 'download'}],
+  ];
+  if (section === 'plugins') return [['Import plugin', importPlugin, {icon: 'download'}]];
+  if (section === 'settings') return [
+    ['Restore defaults', () => app.restoreSettings?.(), {icon: 'refresh', disabled: !app.restoreSettings}],
+  ];
+  if (section === 'api') return [
+    ['Download OpenAPI', () => app.apiReference?.download(), {icon: 'download', disabled: !app.apiReference}],
+  ];
+  return [];
 }
+
 document.addEventListener('click', event => {
   const button = event.target.closest('[data-menu]');
   if (!button) return;
@@ -695,3 +704,8 @@ $('#subnav').addEventListener('click', event => {
   const group = toggle.closest('.subnav-group');
   setGroupOpen(group, !group.classList.contains('open'));
 });
+
+$('#api-nav-search').oninput = event => {
+  Tabs.stateOf('api').apiFilter = event.target.value;
+  renderSidebar();
+};

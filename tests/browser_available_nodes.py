@@ -34,7 +34,7 @@ async def main():
           await go(`/p/${project.id}/w/${project.id}`);
           return {project:project.id,second:second.id,alpha:alpha.id,beta:beta.id};
         }""")
-        assert await page.locator('#sidebar [data-section=runs]').count() == 1
+        assert await page.locator('#sidebar [data-section=runs]').count() == 0
         assert await page.evaluate('W.snapshot.library_nodes.length') == 0
         await page.locator('[data-empty-add]:visible').click()
         menu = page.locator('.popup:not(.closing)')
@@ -49,6 +49,8 @@ async def main():
         await menu.get_by_role('menuitem', name='Checks / Availability Alpha', exact=True).click()
         await page.wait_for_function('id => W.snapshot.library_nodes.includes(id) && W.snapshot.complex.length === 1', arg=ids['alpha'])
         await page.locator('[data-side-tab=workflow]').click()
+        assert await page.locator('.available-group[open]').count() == 0
+        await page.locator('[data-library-folder="Checks"] > summary').click(position={'x':5,'y':10})
         alpha = page.locator(f'[data-library-node="{ids["alpha"]}"]')
         beta = page.locator(f'[data-library-node="{ids["beta"]}"]')
         group = page.locator('[data-library-group="Checks"]')
@@ -94,12 +96,13 @@ async def main():
         if os.environ.get('AGENTSYS_UI_SCREENSHOT'):
             await page.wait_for_timeout(400)
             await page.screenshot(path=os.environ['AGENTSYS_UI_SCREENSHOT'])
+        await page.locator('[data-library-folder="Checks"] > summary').click(position={'x':5,'y':10})
         # A narrow layout still exposes and opens the section.
         await page.set_viewport_size({'width': 390, 'height': 844})
         await page.locator('[data-side-tab=workflow]').click()
         assert await page.locator(f'[data-library-node="{ids["alpha"]}"]').is_visible()
         await page.set_viewport_size({'width': 1500, 'height': 1000})
-        await page.evaluate("go('/resources/nodes?folder=Checks')")
+        await page.evaluate("go('/library/nodes?folder=Checks')")
         await page.wait_for_selector('.cards .card')
         assert await page.locator('[data-enable]').count() == 0
         await page.locator(f'.cards [data-menu="resource:{ids["alpha"]}"]').click()

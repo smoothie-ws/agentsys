@@ -1,26 +1,52 @@
-// The API page (/api, reached from the dashboard): the reference generated from the route table, a searchable list of calls and the details of the chosen one.
+// The API reference (/api): a searchable call tree in the Dashboard sidebar and the selected call on the page.
 'use strict';
 
-/** Fills `box` with the reference. Returns nothing; everything it needs is the route table (`Backend.openapi()`). */
-function mountApiReference(box, spec = Backend.openapi()) {
-  const rows = Object.entries(spec.paths).flatMap(([path, methods]) =>
-    Object.entries(methods)
-      .filter(([method]) => ['get', 'post', 'put', 'patch', 'delete'].includes(method))
-      .map(([method, op]) => ({path, method, op}))
+/** Shared path tree for Dashboard navigation and the searchable reference. */
+const apiCallKey = row => row.method + ' ' + row.path;
+const apiCallHref = row => '/api?call=' + encodeURIComponent(apiCallKey(row));
+const apiReferenceRows = spec => Object.entries(spec.paths).flatMap(([path, methods]) =>
+  Object.entries(methods)
+    .filter(([method]) => ['get', 'post', 'put', 'patch', 'delete'].includes(method))
+    .map(([method, op]) => ({path, method, op}))
+);
+function selectedApiCallKey() {
+  const rows = app.apiReference?.rows || apiReferenceRows(Backend.openapi());
+  const row = rows.find(row => apiCallKey(row) === routeQuery().get('call')) || rows[0];
+  return row ? apiCallKey(row) : null;
+}
+function apiPathTree(rows) {
+  const root = {children: new Map(), calls: []};
+  rows.forEach(row => {
+    let level = root, path = '';
+    for (const segment of row.path.replace(/^\/api\//, '').split('/')) {
+      path += '/' + segment;
+      if (!level.children.has(segment)) level.children.set(segment, {segment, path, children: new Map(), calls: []});
+      level = level.children.get(segment);
+    }
+    level.calls.push(row);
+  });
+  return root;
+}
+function apiNavigationRows(query = '') {
+  const q = query.trim().toLocaleLowerCase();
+  const calls = apiReferenceRows(app.apiReference?.spec || Backend.openapi()).filter(row =>
+    `${row.path} ${row.method} ${row.op.summary}`.toLocaleLowerCase().includes(q)
   );
-  box.innerHTML = `<div class="api-reference">
-    <div class="api-list"><input type="search" placeholder="Find a call…" aria-label="Find an API call"><div class="api-calls" role="list">${rows
-      .map(
-        (row, index) =>
-          `<button type="button" class="api-call" role="listitem" data-call="${index}"><span class="method m-${row.method}">${row.method.toUpperCase()}</span><span>${esc(row.path.replace(/^\/api\//, ''))}</span></button>`
-      )
-      .join('')}</div></div>
-    <article class="api-method" aria-live="polite"><p class="muted">Choose a call.</p></article></div>`;
-  const detail = $('.api-method', box),
-    buttons = $$('[data-call]', box);
+  const tree = apiPathTree(calls);
+  const rows = level => [
+    ...level.calls.map(row => ({key: 'api-call:' + apiCallKey(row), label: row.method.toUpperCase(), icon: 'code', href: apiCallHref(row)})),
+    ...[...level.children.values()].map(child => ({key: 'api-path:' + child.path, label: child.segment, icon: 'folder', open: q ? true : undefined, children: rows(child)})),
+  ];
+  return rows(tree);
+}
+
+/** The page shows the selected call; the endpoint tree and search live in Dashboard's sidebar. */
+function mountApiReference(box, spec = Backend.openapi()) {
+  const rows = apiReferenceRows(spec);
+  box.innerHTML = '<article class="api-method" aria-live="polite"><p class="muted">Choose a call in the sidebar.</p></article>';
+  const detail = $('.api-method', box);
   const select = index => {
     const {path, method, op} = rows[index];
-    buttons.forEach((b, i) => b.classList.toggle('active', i === index));
     detail.innerHTML = `<div class="api-method-heading"><span class="method m-${method}">${method.toUpperCase()}</span><code>${esc(path)}</code></div><h3>${esc(op.summary)}</h3>${op.description ? `<p class="muted">${esc(op.description)}</p>` : ''}
       <pre class="code">await agentsys('${method.toUpperCase()}', '${esc(path.replace(/^\/api\//, ''))}'${op.requestBody ? ', body' : ''})</pre>
       ${op.parameters?.length ? `<div class="table-scroll"><table><thead><tr><th>Name</th><th>Location</th><th>Type</th><th>Description</th></tr></thead><tbody>${op.parameters.map(p => `<tr><td><code>${esc(p.name)}</code>${p.required ? ' *' : ''}</td><td>${esc(p.in)}</td><td>${esc(p.schema?.type || '')}</td><td>${esc(p.description || '')}</td></tr>`).join('')}</tbody></table></div>` : ''}
@@ -29,18 +55,8 @@ function mountApiReference(box, spec = Backend.openapi()) {
         .map(([status, response]) => `<li><code>${esc(status)}</code><span>${esc(response.description)}</span></li>`)
         .join('')}</ul>`;
   };
-  $('.api-calls', box).onclick = event => {
-    const button = event.target.closest('[data-call]');
-    if (button) select(Number(button.dataset.call));
-  };
-  $('input', box).oninput = event => {
-    const q = event.target.value.toLocaleLowerCase();
-    buttons.forEach((b, i) => {
-      const {path, method, op} = rows[i];
-      b.hidden = !`${path} ${method} ${op.summary}`.toLocaleLowerCase().includes(q);
-    });
-  };
-  if (rows.length) select(0);
+  const requested = routeQuery().get('call'), selected = rows.findIndex(row => apiCallKey(row) === requested);
+  if (rows.length) select(selected < 0 ? 0 : selected);
   return {
     rows,
     spec,

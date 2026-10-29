@@ -61,7 +61,7 @@ async def check(base):
         }""")
         assert await page.locator('.frame .port-name').filter(has_text='InputSignal').count() == 1
         print('PASS workflow subsection, group styling, permission hint, hidden capabilities, height after reopen/reload and port spelling')
-        await page.evaluate("go('/resources')")
+        await page.evaluate("go('/library')")
         assert await page.locator('#view .card').filter(has_text='AI').count() == 1
         await page.evaluate("go('/runs')")
         await page.wait_for_selector('#runs-runs:not([hidden])')

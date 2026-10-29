@@ -782,6 +782,45 @@ route(
   },
   {unlocked: true, query: ['status', 'limit']}
 );
+// One overview query serves monitoring pages without loading every project over HTTP.
+route('GET', 'runs/overview', 'Read run metrics, filtered history and workflow labels', async c => {
+  const limit = Number(c.query.limit ?? 50);
+  if (!Number.isInteger(limit) || limit < 1 || limit > 200) throw bad('limit must be an integer from 1 to 200');
+  const live = [...RUNS.byId.values()].map(runSummary), ids = new Set(live.map(r => r.id));
+  const all = [...live, ...((await DB.get('run_summaries')) ?? []).filter(r => !ids.has(r.id))]
+    .sort((a, b) => b.started - a.started || b.id.localeCompare(a.id));
+  const projects = await c.projects();
+  const workflows = projects.flatMap(p => p.workflows.map(w => ({id: w.id, project_id: p.id, name: p.name + ' / ' + w.name})));
+  if (c.query.controls === '1')
+    for (const w of workflows) {
+      const control = await c.ctx.get(workflowControlKey(w.id), defaultWorkflowControl());
+      w.control = {...control, dedupe: undefined};
+    }
+  const metrics = {
+    projects: projects.length, workflows: workflows.length,
+    active: all.filter(r => ['running', 'waiting'].includes(r.status)).length,
+    failed_24h: all.filter(r => ['failed', 'interrupted'].includes(r.status) && r.started >= Date.now() / 1000 - 86400).length,
+  };
+  const statuses = ['running', 'waiting', 'completed', 'failed', 'interrupted', 'cancelled'];
+  if (c.query.status && ![...statuses, 'active', 'attention'].includes(c.query.status)) throw bad('Unknown run status');
+  const since = Number(c.query.since ?? 0);
+  if (!Number.isFinite(since) || since < 0) throw bad('since must be a nonnegative timestamp');
+  const selected = c.query.status === 'active' ? ['running', 'waiting']
+    : c.query.status === 'attention' ? ['failed', 'interrupted'] : [c.query.status];
+  let rows = all.filter(r => (!c.query.status || selected.includes(r.status)) &&
+    (!c.query.workflow_id || r.workflow_id === c.query.workflow_id) && r.started >= since);
+  const total = rows.length;
+  if (c.query.cursor) {
+    let cursor;
+    try { cursor = JSON.parse(c.query.cursor); } catch { throw bad('Invalid history cursor'); }
+    if (!Array.isArray(cursor) || cursor.length !== 2 || !Number.isFinite(cursor[0]) || typeof cursor[1] !== 'string')
+      throw bad('Invalid history cursor');
+    rows = rows.filter(r => r.started < cursor[0] || (r.started === cursor[0] && r.id.localeCompare(cursor[1]) < 0));
+  }
+  const items = rows.slice(0, limit).map(asSummary), last = items.at(-1);
+  return {items, total, metrics, workflows,
+    next_cursor: rows.length > limit ? JSON.stringify([last.started, last.id]) : null};
+}, {query: ['limit', 'cursor', 'status', 'workflow_id', 'since', 'controls'], needs: {GET: ['run.read']}});
 route(
   'GET',
   'runs/{run_id}',

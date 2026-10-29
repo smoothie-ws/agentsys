@@ -19,9 +19,9 @@ const wf = (body = {}) => ({...body, workflow_id: W.workflow});
 PAGES.workflow = async (view, route) => {
   W.unsubscribe?.();
   clearTimeout(W.reloadTimer);
-  let project;
+  let project, policy;
   try {
-    [project] = await Promise.all([api(`projects/${route.project}`), loadLibrary()]);
+    [project, , policy] = await Promise.all([api(`projects/${route.project}`), loadLibrary(), api(`projects/${route.project}/policy`)]);
   } catch (error) {
     if (app.route !== route) return;
     Tabs.drop(route.workflow);
@@ -62,6 +62,7 @@ PAGES.workflow = async (view, route) => {
     frameHandle: 0,
   });
   W.projectData = project;
+  W.policy = policy;
   const workflow = project.workflows.find(w => w.id === route.workflow);
   if (!workflow) {
     Tabs.drop(route.workflow);
@@ -70,7 +71,7 @@ PAGES.workflow = async (view, route) => {
   W.library = route.project.startsWith('lib-') ? route.project.slice(4) : null;
   if (W.library && !developerMode()) {
     Tabs.dropProject(route.project);
-    return go('/resources', true);
+    return go('/library', true);
   }
   Tabs.open({
     project: route.project,
@@ -80,12 +81,10 @@ PAGES.workflow = async (view, route) => {
     library: !!W.library,
     icon: W.library ? (app.resources || []).find(r => r.id === W.library)?.payload.icon || '' : '',
   });
-  const collapsed = sideHidden(),
-    [parentLabel, parentHref] = parentPage(route);
+  const collapsed = sideHidden();
   view.innerHTML = `<div class="editor opening">
     <div class="canvas" id="canvas" tabindex="0" aria-label="Workflow canvas">
       <div class="toolbar" role="toolbar" aria-label="Workflow actions">
-        <a class="button icon editor-parent" href="${esc(parentHref)}" data-link title="Back to ${esc(parentLabel)}" aria-label="Back to ${esc(parentLabel)}">${icon('chevron')}</a>
         ${W.library ? '' : `<button class="run" id="start" title="Run the workflow (${esc(shortcutText('run'))})">${icon('play')}<span>Run</span></button><button class="icon" id="pause" title="Pause the run" aria-label="Pause the run" hidden>${icon('pause')}</button>`}
         <button class="icon mobile-only" type="button" data-empty-add title="Add node" aria-label="Add node">${icon('plus')}</button>
         <button class="icon" id="undo" title="Undo (${esc(shortcutText('undo'))})" aria-label="Undo">${icon('undo')}</button>
@@ -151,7 +150,7 @@ PAGES.workflow = async (view, route) => {
   // Code that runs by itself (a hook) edits the workflow too: `own` also listens to that.
   W.unsubscribe = Backend.subscribe(
     keys => {
-      if (keys.includes('wf:' + route.workflow)) scheduleReload();
+      if (keys.includes('wf:' + route.workflow) || keys.includes('policy:' + route.project)) scheduleReload();
       if (W.followedRunId && keys.includes('runs/' + W.followedRunId)) {
         const id = W.followedRunId;
         api('runs/' + id)

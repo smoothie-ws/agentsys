@@ -652,3 +652,26 @@ main {
 .notif .icon { flex: none; opacity: 0; }
 .notif:hover .icon, .notif .icon:focus-visible { opacity: 1; }
 .notif-empty { padding: 1.5rem 1rem; text-align: center; }
+
+/* The API has one navigation tree, with its search kept outside the scrolling rows. */
+.subnav-filter {
+  position: relative;
+  z-index: 2;
+  display: flex;
+  align-items: center;
+  gap: 0.4rem;
+  margin: 0 0.65rem 0.5rem;
+}
+.subnav-filter svg {
+  width: 14px;
+  height: 14px;
+  flex: none;
+  color: var(--muted);
+}
+.subnav-filter input {
+  width: 100%;
+  min-width: 0;
+}
+.subnav-collapsed .subnav-filter {
+  display: none;
+}

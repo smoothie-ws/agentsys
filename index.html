@@ -175,11 +175,9 @@
     <a class="brand" href="#/" data-link data-section="home" id="brand" title="Dashboard" aria-label="AgentSys home"><span class="brand-mark"></span><span>AgentSys</span></a>
     <nav class="sidebar-top" aria-label="Sections">
       <a href="#/plugins" data-link data-section="plugins" title="Plugins"><svg><use href="#i-plug"/></svg><span>Plugins</span></a>
-      <a href="#/resources" data-link data-section="library" title="Library"><svg><use href="#i-library"/></svg><span>Library</span></a>
+      <a href="#/library" data-link data-section="library" title="Library"><svg><use href="#i-library"/></svg><span>Library</span></a>
       <hr>
       <a href="#/projects" data-link data-section="projects" title="Projects"><svg><use href="#i-folder"/></svg><span>Projects</span></a>
-      <a href="#/runs" data-link data-section="runs" title="Runs"><svg><use href="#i-activity"/></svg><span>Runs</span></a>
-      <a href="#/api" data-link data-section="api" title="API reference"><svg><use href="#i-code"/></svg><span>API reference</span></a>
     </nav>
     <nav class="sidebar-footer" aria-label="Application">
       <a href="#/settings" data-link data-section="settings" title="Settings"><svg><use href="#i-settings"/></svg><span>Settings</span></a>
@@ -187,6 +185,7 @@
   </aside>
   <aside id="subnav" aria-label="Section navigation" hidden>
     <header class="subnav-head"><h2 id="subnav-title"></h2><span id="subnav-actions"></span><button class="icon mobile-only" type="button" id="mobile-subnav-close" aria-label="Close navigation"> <svg><use href="#i-x"/></svg></button></header>
+    <label class="subnav-filter" id="api-nav-filter" hidden><svg><use href="#i-search"/></svg><input id="api-nav-search" type="search" placeholder="Find a call" aria-label="Find an API call"></label>
     <div id="subnav-body"><div id="subnav-list"></div></div>
   </aside>
   <main>
@@ -195,7 +194,7 @@
       <button class="search-button" id="open-search" title="Search (Ctrl K)"><svg><use href="#i-search"/></svg><span>Search</span><kbd>Ctrl K</kbd></button>
       <button class="notif-button" id="open-notifications" title="Notifications" aria-label="Notifications" aria-haspopup="true" aria-expanded="false" aria-controls="notifications-panel"><svg><use href="#i-bell"/></svg></button>
       <div id="notifications-panel" class="notif-panel" role="dialog" aria-label="Notifications" inert>
-        <header><h2>Notifications</h2><button type="button" class="small ghost" id="notifications-clear">Clear</button></header>
+        <header><h2>Notifications</h2><button type="button" class="small ghost" id="notifications-clear">Clear</button><button type="button" class="icon" id="notifications-close" title="Close notifications" aria-label="Close notifications"><svg><use href="#i-x"/></svg></button></header>
         <div id="notifications-list"></div>
       </div>
     </div>

@@ -48,6 +48,11 @@ document.addEventListener('click', event => {
   if (!Notifications.open) return;
   const inside = event.target.closest('#notifications-panel');
   if (!inside) return setNotificationsOpen(false);
+  if (event.target.closest('#notifications-close')) {
+    setNotificationsOpen(false);
+    $('#open-notifications').focus();
+    return;
+  }
   const row = event.target.closest('.notif');
   if (event.target.closest('#notifications-clear')) return notificationAction('notifications', {method: 'DELETE'});
   if (!row) return;

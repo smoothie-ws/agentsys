@@ -15,7 +15,7 @@ function newNotification(input) {
   };
   const level = input.level ?? 'info';
   if (!NOTIFICATION.levels.includes(level)) throw bad(`level is one of ${NOTIFICATION.levels.join(', ')}`);
-  if (input.href !== undefined && (typeof input.href !== 'string' || !/^\/[A-Za-z0-9_\-/?=&%.]{0,198}$/.test(input.href)))
+  if (input.href !== undefined && (typeof input.href !== 'string' || !/^\/(?!\/)[A-Za-z0-9_\-/?=&%.]{0,198}$/.test(input.href)))
     throw bad('href is a page of the app, like /runs');
   return {
     id: uid(),

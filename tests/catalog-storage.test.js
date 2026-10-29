@@ -49,6 +49,16 @@ test('SKILL.md and separate provider credentials survive a server restart and di
       (await call('GET', 'library/sections/ai.skills/items/' + skill.id)).values.instructions.trim(),
       'Edited on disk.'
     );
+    // Editing while the process is alive must invalidate the cached Markdown too.
+    fs.writeFileSync(filename, fs.readFileSync(filename, 'utf8').replace('Edited on disk.', 'Edited while running.'));
+    const deadline = Date.now() + 8000;
+    let instructions;
+    do {
+      instructions = (await call('GET', 'library/sections/ai.skills/items/' + skill.id)).values.instructions.trim();
+      if (instructions === 'Edited while running.') break;
+      await new Promise(resolve => setTimeout(resolve, 100));
+    } while (Date.now() < deadline);
+    assert.equal(instructions, 'Edited while running.');
     assert.deepEqual((await call('GET', 'library/sections/ai.providers/items/' + provider.id)).secrets, {apiKey: true});
     assert.equal((await fetch(base + '/data/library/skills/ai.skills/test-skill/SKILL.md')).status, 404);
     await call('DELETE', 'plugins/ai');

@@ -35,7 +35,7 @@ body .mobile-only,
     width: 100%;
     height: var(--mobile-primary);
     display: grid;
-    grid-template-columns: repeat(7, minmax(0, 1fr));
+    grid-template-columns: repeat(5, minmax(0, 1fr));
     gap: 2px;
     padding: 3px max(4px, env(safe-area-inset-right, 0px)) env(safe-area-inset-bottom, 0px)
       max(4px, env(safe-area-inset-left, 0px));
@@ -554,11 +554,13 @@ body .mobile-only,
   }
   body.nav-joined #sidebar > .nav-pill::before,
   body.nav-joined #mobile-secondary > .nav-pill::before {
+    --curve-r: var(--join-r);
     inset: 0 auto auto calc(-1 * var(--join-r));
     background: radial-gradient(circle at 0 100%, transparent calc(var(--join-r) - 0.8px), var(--join) var(--join-r));
   }
   body.nav-joined #sidebar > .nav-pill::after,
   body.nav-joined #mobile-secondary > .nav-pill::after {
+    --curve-r: var(--join-r);
     inset: 0 calc(-1 * var(--join-r)) auto auto;
     background: radial-gradient(
       circle at 100% 100%,

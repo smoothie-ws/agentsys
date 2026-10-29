@@ -64,10 +64,16 @@ const DB = (() => {
     if (typeof fetch !== 'function' || typeof location === 'undefined' || !/^https?:$/.test(location.protocol))
       return null;
     try {
-      const response = await fetch(API, {cache: 'no-store'}),
-        info = response.ok ? await response.json() : null;
+      const response = await fetch(API, {cache: 'no-store'});
+      if ([401, 403, 503].includes(response.status))
+        throw Object.assign(
+          new Error('Server storage is unavailable or requires authentication. Open the local server without a token, or configure authenticated access.'),
+          {storageDenied: true}
+        );
+      const info = response.ok ? await response.json() : null;
       return info?.agentsys ? info : null;
-    } catch {
+    } catch (error) {
+      if (error.storageDenied) throw error;
       return null;
     }
   };

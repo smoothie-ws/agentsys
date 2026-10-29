@@ -4,13 +4,17 @@
 // ----- routing -----
 // Pages: / (the dashboard), /projects, /runs, /api, /settings, /p/{project}, /p/{project}/settings, /p/{project}/w/{workflow},
 // /plugins (the installed plugins), /plugins/{id} (one plugin) and /plugins/{id}/{page} (a page it adds),
-// /resources (the Library: its sections as cards), /resources/nodes[?folder=…] (the Nodes section: nodes and groups as cards)
-// and /resources/nodes/{id} (one node).
+// /library (the Library: its sections as cards), /library/nodes[?folder=…] (the Nodes section: nodes and groups as cards)
+// and /library/nodes/{id} (one node).
 // Served by server.js the editor is at /editor/ and these are real paths (/editor/p/…). Opened any other way (a static server,
 // a file) there is no server to answer them, so they live in the URL hash (#/p/…). `urlOf` makes the address of a page for either.
 const PATH_BASE = '/editor';
 const pathMode = /^\/editor(\/|$)/.test(location.pathname);
-const urlOf = path => (pathMode ? PATH_BASE + (path === '/' ? '/' : path) : '#' + path);
+const canonicalPath = path => path.replace(/^\/resources(?=[/?]|$)/, '/library');
+const urlOf = path => {
+  path = canonicalPath(path);
+  return pathMode ? PATH_BASE + (path === '/' ? '/' : path) : '#' + path;
+};
 /** The page now, as `path?query`. */
 const routeTarget = () =>
   (pathMode ? location.pathname.slice(PATH_BASE.length) + location.search : location.hash.replace(/^#/, '')) || '/';
@@ -19,6 +23,7 @@ const routeQuery = () => new URLSearchParams(routeTarget().split('?')[1] || '');
 const routeURL = () => urlOf(routeTarget());
 // An address with the old hash form (/editor/#/p/…) becomes the path.
 if (pathMode && location.hash.startsWith('#/')) history.replaceState({}, '', urlOf(location.hash.slice(1)));
+if (canonicalPath(routeTarget()) !== routeTarget()) history.replaceState({}, '', urlOf(routeTarget()));
 function parseRoute(path = routePath(), query = routeQuery()) {
   let parts;
   try {
@@ -34,7 +39,7 @@ function parseRoute(path = routePath(), query = routeQuery()) {
     return {page: 'not-found'};
   }
   const page =
-    {projects: 'projects', settings: 'settings', resources: 'resources', runs: 'runs', api: 'api', plugins: 'plugins'}[
+    {projects: 'projects', settings: 'settings', library: 'resources', resources: 'resources', runs: 'runs', api: 'api', plugins: 'plugins'}[
       parts[0]
     ] || 'not-found';
   if (page === 'plugins') return parts.length <= 3 ? {page, id: parts[1], view: parts[2]} : {page: 'not-found'};
@@ -62,14 +67,14 @@ function parentPage(route) {
           catalogHref(route.section, parentPath(route.folder)),
         ];
       const parent = catalogDefinition(section?.parent);
-      return parent ? [parent.title, catalogHref(parent.id)] : ['Library', '/resources'];
+      return parent ? [parent.title, catalogHref(parent.id)] : ['Library', '/library'];
     }
     if (route.folder)
       return [
         parentPath(route.folder) ? baseName(parentPath(route.folder)) : 'Nodes',
         folderHref(parentPath(route.folder)),
       ];
-    return ['Library', '/resources'];
+    return ['Library', '/library'];
   }
   if (route.page === 'plugins' && route.view) {
     const plugin = pluginById(route.id),
@@ -79,7 +84,7 @@ function parentPage(route) {
         plugin.manifest.contributes.pages.find(p => p.id === page.parent).title,
         pluginHref(route.id, page.parent),
       ];
-    if (page?.section === 'library') return ['Library', '/resources'];
+    if (page?.section === 'library') return ['Library', '/library'];
     return [plugin?.manifest.name || 'Plugin', pluginHref(route.id)];
   }
   return route.page === 'plugins' && route.id ? ['Plugins', '/plugins'] : ['Dashboard', '/'];
@@ -109,6 +114,7 @@ function leaveView() {
   return leavingView;
 }
 async function render() {
+  if (canonicalPath(routeTarget()) !== routeTarget()) history.replaceState({}, '', urlOf(routeTarget()));
   const revision = ++renderRevision;
   const requested = parseRoute();
   if (
@@ -120,11 +126,13 @@ async function render() {
     if (!developerMode()) {
       Tabs.items = Tabs.items.filter(tab => !tab.library && !tab.project.startsWith('lib-'));
       Tabs.save();
-      history.replaceState({}, '', urlOf('/resources'));
+      history.replaceState({}, '', urlOf('/library'));
       return render();
     }
   }
   app.currentURL = routeURL();
+  app.pageDispose?.();
+  app.pageDispose = null;
   const view = $('#view'),
     previous = Tabs.stateOf();
   if (previous) previous.scroll = view.scrollTop; // the tab being left remembers how far it was scrolled

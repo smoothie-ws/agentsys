@@ -27,12 +27,14 @@ async function reload(first = false) {
   const canvas = W.canvas;
   if (!canvas?.isConnected) return;
   if (W.drag) return scheduleReload(300);
-  const [snapshot, history] = await Promise.all([
+  const [snapshot, history, policy] = await Promise.all([
     api(`projects/${W.project}/workflow`, {query: {workflow_id: W.workflow}}),
     api(`projects/${W.project}/edit-history`, {query: {workflow_id: W.workflow}}),
+    api(`projects/${W.project}/policy`),
   ]);
   if (canvas !== W.canvas || !canvas.isConnected || snapshot.workflow_id !== W.workflow) return;
   W.snapshot = snapshot;
+  W.policy = policy;
   W.history = history;
   discardStaleRun();
   for (const node of W.waitingRun?.nodes ?? []) if (node.status === 'waiting') W.runStatus.set(node.node_id, 'waiting');

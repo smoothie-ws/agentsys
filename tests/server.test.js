@@ -180,6 +180,16 @@ test('who may use the API: header for changes, Host check, token', async () => {
     assert.equal(await withHost(url, 'agentsys.test'), 200);
   });
   await withServer({token: 's3cret'}, async ({url}) => {
+    for (const prefix of ['', '/editor']) {
+      for (const suffix of ['', '/prefs', '/events'])
+        assert.equal((await fetch(`${url}${prefix}/__data${suffix}`)).status, 401);
+      assert.equal((await fetch(`${url}${prefix}/__data`, {
+        method: 'POST', headers: {'X-AgentSys': '1'}, body: '{"set":{"prefs":{}}}',
+      })).status, 401);
+      assert.equal((await fetch(`${url}${prefix}/__data/prefs`, {
+        headers: {Authorization: 'Bearer s3cret'},
+      })).status, 200);
+    }
     assert.equal((await call(url, 'GET', 'projects')).status, 401);
     assert.equal((await call(url, 'GET', 'projects', undefined, {Authorization: 'Bearer nope'})).status, 401);
     // With the token, X-AgentSys is not needed (a cross-site page cannot send Authorization either).
@@ -192,10 +202,12 @@ test('who may use the API: header for changes, Host check, token', async () => {
   });
   // Beyond loopback the API stays off until there is a token.
   await withServer({host: '0.0.0.0'}, async ({url, app}) => {
+    assert.equal((await fetch(url.replace('localhost', '127.0.0.1') + '/__data')).status, 503);
     assert.equal(app.apiAvailable, false);
     assert.equal((await call(url.replace('localhost', '127.0.0.1'), 'GET', 'projects')).status, 503);
   });
   await withServer({host: '0.0.0.0', token: 'abc'}, async ({url, app}) => {
+    assert.equal((await fetch(url.replace('localhost', '127.0.0.1') + '/__data')).status, 401);
     assert.equal(app.apiAvailable, true);
     assert.equal(
       (await call(url.replace('localhost', '127.0.0.1'), 'GET', 'projects', undefined, {Authorization: 'Bearer abc'}))
@@ -256,6 +268,10 @@ test('webhooks start runs with the body as payload, with no other credential', a
     ).body;
     await startOf(url, id, w, [hook.id], auth);
     const trigger = (await call(url, 'POST', 'triggers', {name: 'Push', type: 'webhook', project_id: id}, auth)).body;
+    for (const body of ['{broken', '[]', 'null'])
+      assert.equal((await fetch(`${url}/hooks/${trigger.token}`, {method: 'POST', body})).status, 400);
+    assert.equal((await call(url, 'GET', 'runs', undefined, auth)).body.length, 0,
+      'invalid payloads must not activate a workflow with an empty object');
     const response = await fetch(`${url}/hooks/${trigger.token}`, {
       method: 'POST',
       body: JSON.stringify({event: 'push'}),
@@ -335,13 +351,30 @@ test('the interval scheduler runs inside the server', async () => {
   }
 });
 
-test('the site itself is still served, without the data folder or dotfiles', async () => {
+test('the site itself is still served, without the data folder or dotfiles', async t => {
+  const readFile = fs.readFile;
+  const privateFile = path.resolve(__dirname, '../data/__audit-private.json');
+  let privateRead = false;
+  t.mock.method(fs, 'readFile', (file, ...args) => {
+    if (String(file).replace(/[. ]+(?=[\\/]|$)/g, '').toLowerCase() === privateFile.toLowerCase()) {
+      privateRead = true;
+      return args.at(-1)(null, Buffer.from('{"private":true}'));
+    }
+    return readFile(file, ...args);
+  });
   await withServer({}, async ({url}) => {
     const index = await fetch(url + '/editor/');
     assert.equal(index.status, 200);
     assert.match(await index.text(), /AgentSys/);
     assert.equal((await fetch(url + '/.gitignore')).status, 404);
     assert.equal((await fetch(url + '/__data')).status, 200);
+    for (const prefix of ['', '/editor']) {
+      for (const folder of ['data', 'DATA', 'data.', 'data%20'])
+        assert.equal((await fetch(url + prefix + `/${folder}/__audit-private.json`)).status, 404);
+      for (const file of ['server.js', 'headless.js', 'package.json', 'tests/harness.js'])
+        assert.equal((await fetch(url + prefix + '/' + file)).status, 404);
+    }
+    assert.equal(privateRead, false, 'default data is private even with a different DATA_DIR');
   });
 });
 
@@ -367,7 +400,7 @@ test('the app is at /editor/ (/ goes there) and everything it loads is under /ed
     assert.match(page, /id="brand"/);
     assert.match(page, /src="\/editor\/js\/app\/router\.js"/);
     assert.equal((await fetch(url + '/editor/js/nothing.js')).status, 404);
-    for (const page of ['api', 'api/', 'settings/', 'runs/', 'projects/', 'p/lib-builtin.delay/w/lib-builtin.delay/']) {
+    for (const page of ['api', 'api/', 'settings/', 'runs/', 'projects/', 'library', 'library/nodes', 'library/ai.skills', 'library/ai.providers/provider.example', 'resources/ai.skills', 'p/lib-builtin.delay/w/lib-builtin.delay/']) {
       const response = await fetch(url + '/editor/' + page);
       assert.equal(response.status, 200, page);
       assert.match(response.headers.get('content-type'), /text\/html/, page);

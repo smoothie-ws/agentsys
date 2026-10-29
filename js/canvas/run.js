@@ -3,6 +3,7 @@
 
 // ----- runs -----
 function syncToolbar() {
+  if (!W.canvas?.isConnected || !$('#run-summary')) return;
   const last = W.lastRun;
   $('#run-summary').innerHTML = W.running
     ? `<span class="dot busy"></span>${W.runPaused ? 'Paused' : 'Running…'}`
@@ -158,6 +159,7 @@ function applyRunEvent(event) {
 async function watchRun(roots) {
   const canvas = W.canvas;
   const run = await api(`projects/${W.project}/runs`, {method: 'POST', body: wf({node_ids: roots})});
+  if (W.canvas !== canvas || !canvas.isConnected) return null;
   W.runId = run.id;
   W.followedRunId = run.id;
   syncToolbar();
@@ -172,6 +174,7 @@ async function watchRun(roots) {
     if (changing.length) draw();
   }
   const detail = await api(`runs/${run.id}`);
+  if (W.canvas !== canvas || !canvas.isConnected) return null;
   W.waitingRun = detail.status === 'waiting' ? detail : null;
   const cancelled = detail.status === 'cancelled',
     status = {},
@@ -216,6 +219,7 @@ async function runAction() {
   const starts = startNodes();
   if (!starts.length) return toast('Place a node with the operation on_run and wire its signal to a node that runs.');
   const workflow = W.workflow,
+    canvas = W.canvas,
     started = Date.now();
   W.running = true;
   W.runPaused = false;
@@ -230,17 +234,19 @@ async function runAction() {
   try {
     result = await watchRun(starts.map(n => n.id));
   } finally {
-    W.running = false;
-    W.runPaused = false;
-    W.runId = null;
-    for (const [id, status] of [...W.runStatus])
-      if (!['failed', 'blocked', 'waiting'].includes(status)) W.runStatus.delete(id);
-    for (const node of W.snapshot.nodes)
-      if (!['failed', 'blocked', 'waiting'].includes(node.status)) node.status = 'ready';
-    syncComplexStatus();
-    // The toolbar and the nodes must come back to rest even when the call itself failed.
-    draw();
-    syncToolbar();
+    if (W.canvas === canvas && canvas.isConnected) {
+      W.running = false;
+      W.runPaused = false;
+      W.runId = null;
+      for (const [id, status] of [...W.runStatus])
+        if (!['failed', 'blocked', 'waiting'].includes(status)) W.runStatus.delete(id);
+      for (const node of W.snapshot.nodes)
+        if (!['failed', 'blocked', 'waiting'].includes(node.status)) node.status = 'ready';
+      syncComplexStatus();
+      // The toolbar and the nodes must come back to rest even when the call itself failed.
+      draw();
+      syncToolbar();
+    }
   }
   if (!result || W.workflow !== workflow || !W.canvas?.isConnected) return;
   const {failed, last, results, log} = runRecord(W.snapshot.nodes, result, started);

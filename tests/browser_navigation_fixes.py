@@ -14,7 +14,7 @@ async def main():
         page.on('pageerror', lambda e: errors.append(str(e)))
         await page.goto(f'http://127.0.0.1:{sys.argv[1]}/index.html#/settings')
         await page.wait_for_selector('#settings-form')
-        assert await page.locator('#sidebar [data-section]').evaluate_all('(els)=>els.map(el=>el.dataset.section)') == ['home', 'plugins', 'library', 'projects', 'runs', 'api', 'settings']
+        assert await page.locator('#sidebar [data-section]').evaluate_all('(els)=>els.map(el=>el.dataset.section)') == ['home', 'plugins', 'library', 'projects', 'settings']
         assert await page.locator('#sidebar [data-section=library] + hr').count() == 1
         await page.get_by_role('link', name='Keyboard shortcuts').click()
         await page.locator('.page-head [data-menu]').click()
@@ -79,7 +79,7 @@ async def main():
         await page.reload()
         await page.wait_for_selector('[data-upload-icon].active img')
         assert await page.locator('.tab.active .custom-icon').count() == 1
-        await page.evaluate("go('/resources/nodes')")
+        await page.evaluate("go('/library/nodes')")
         await page.wait_for_selector('.card .custom-icon')
         print('PASS icon selection is exclusive; uploaded icon is resized, saved and restored in cards and tabs')
 
@@ -98,11 +98,11 @@ async def main():
         await page.evaluate('(path)=>go(path)', address)
         await page.wait_for_selector('#view h1')
         assert await page.locator('#canvas').count() == 0
-        assert await page.evaluate('location.hash') == '#/resources'
+        assert await page.evaluate('location.hash') == '#/library'
         await page.reload()
         await page.wait_for_selector('#view h1')
         assert await page.locator('#canvas').count() == 0
-        await page.evaluate('(id)=>go(`/resources/nodes/${id}`)', resource_id)
+        await page.evaluate('(id)=>go(`/library/nodes/${id}`)', resource_id)
         await page.wait_for_selector('#view h1')
         assert await page.locator('#canvas').count() == 0
         await page.evaluate('(id)=>go(`/p/${id}/w/${id}`)', project_id)
@@ -112,12 +112,12 @@ async def main():
         await page.evaluate("go('/')")
         await page.wait_for_selector('.tile')
         assert await page.locator('.api-call').count() == 0
-        await page.locator('#sidebar [data-section=api]').click()
-        await page.wait_for_selector('.api-call')
+        await page.locator('#subnav [data-key="dashboard:api"] a').click()
+        await page.wait_for_selector('.api-method-heading')
         assert await page.evaluate('location.hash') == '#/api'
-        await page.locator('.api-call').nth(3).click()
+        await page.locator('#subnav [data-key^="api-call:"] a:visible').first.click()
         assert await page.locator('.api-method-heading').inner_text()
-        assert await page.locator('#sidebar [data-section=api].active').count() == 1
+        assert await page.locator('#brand.active').count() == 1
         assert await page.locator('#subnav .subnav-row.active').count() == 1
         print('PASS the API is a page of its own, reached from the dashboard')
         assert not errors, errors

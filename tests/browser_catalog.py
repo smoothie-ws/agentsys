@@ -17,14 +17,14 @@ async def audit(base, directory):
         await page.goto(base+'/editor/')
         await page.wait_for_selector('.dashboard')
         assert not errors, errors
-        for path, section in [('/','home'),('/projects','projects'),('/plugins','plugins'),('/resources','library'),('/settings','settings'),('/runs','runs'),('/api','api')]:
+        for path, section in [('/','home'),('/projects','projects'),('/plugins','plugins'),('/library','library'),('/settings','settings'),('/runs','home'),('/api','home')]:
             await page.evaluate('path=>go(path)',path)
             assert await page.locator('#sidebar a.active').get_attribute('data-section') == section
             assert await page.locator('#subnav .subnav-tree').count() == 1
-            assert await page.locator('#subnav-actions [data-menu]').count() == 1
-            assert await page.locator('.page-head > .actions > button').count() == 1
+            assert await page.locator('#subnav-actions [data-menu]').count() == int(section in ('projects','plugins','settings'))
+            assert await page.locator('.page-head > .actions > button').count() == int(path in ('/projects','/plugins','/settings','/api'))
             assert await page.locator('#subnav [role=tab]').count() == 0
-        print('PASS seven primary sections use one navigation and header format',flush=True)
+        print('PASS primary sections and Dashboard pages use one navigation and header format',flush=True)
         await page.evaluate("go('/settings?section=appearance')")
         settings_rows = await page.locator('#subnav-list a').evaluate_all('els=>els.map(e=>[e.textContent,linkPath(e)])')
         await page.locator('#subnav-list a').filter(has_text='Keyboard shortcuts').click()
@@ -37,14 +37,11 @@ async def audit(base, directory):
         assert 'section=' not in page.url
         assert await page.locator('#settings-form > section:not([hidden]) h2').inner_text() == 'Editing'
         print('PASS URL selection, Back and direct section links without hidden redirects',flush=True)
-        await page.evaluate("go('/resources')")
+        await page.evaluate("go('/library')")
         assert await page.locator('.card').count() == 2
         assert await page.locator('.card [data-menu]').count() == 2
-        await page.locator('.page-head [data-menu]').click()
-        menu = await page.locator('.popup').inner_text()
-        assert 'New node' not in menu and 'New group' not in menu
-        await page.keyboard.press('Escape')
-        await page.evaluate("go('/resources/ai.skills')")
+        assert await page.locator('.page-head [data-menu]').count() == 0
+        await page.evaluate("go('/library/ai.skills')")
         library_rows=await page.locator('#subnav-list a').all_text_contents()
         await page.locator('.page-head [data-menu]').click()
         await page.get_by_role('menuitem',name='New Skill',exact=True).click()
@@ -108,14 +105,14 @@ async def audit(base, directory):
         assert await page.locator('#subnav-title').text_content() == 'Plugins'
         print('PASS default plugin navigation and explicit overrides',flush=True)
         await page.evaluate("go('/api')")
-        await page.locator('.api-call').nth(2).click()
+        await page.locator('#subnav [data-key^="api-call:"] a:visible').first.click()
         assert await page.locator('.api-method-heading').inner_text()
         await page.locator('.page-head [data-menu]').click()
         async with page.expect_download() as download:
             await page.get_by_role('menuitem',name='Download OpenAPI',exact=True).click()
         assert (await download.value).suggested_filename == 'agentsys-openapi.json'
         await page.set_viewport_size({'width':390,'height':844})
-        for section in ['home','projects','library','plugins','runs','api','settings']:
+        for section in ['home','projects','library','plugins','settings']:
             link=page.locator('#sidebar [data-section='+section+']')
             box=await link.bounding_box()
             assert box and box['x']>=0 and box['x']+box['width']<=391,(section,box)
@@ -124,13 +121,17 @@ async def audit(base, directory):
             await page.locator('#mobile-browse').click()
             assert await page.locator('#subnav').get_attribute('aria-modal') == 'true'
             await page.locator('#mobile-subnav-close').click()
-        await page.evaluate("go('/resources/ai.skills')")
+        await page.evaluate("go('/library/ai.skills')")
         await page.screenshot(path=str(Path(tempfile.gettempdir())/'agentsys-library-mobile.png'))
         assert await page.evaluate('document.documentElement.scrollWidth<=innerWidth')
         await page.reload()
-        await page.wait_for_selector('.card h3:has-text("review-code")')
+        try:
+            await page.wait_for_selector('.card h3:has-text("review-code")')
+        except Exception:
+            print('Reload diagnostic:',page.url,await page.locator('#view').inner_text(),errors,flush=True)
+            raise
         assert not errors,errors
-        print('PASS API download, seven mobile sections, persistent Library resources; no page errors',flush=True)
+        print('PASS API download, mobile sections, persistent Library resources; no page errors',flush=True)
         await browser.close()
 
 

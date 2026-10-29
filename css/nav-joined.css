@@ -35,7 +35,7 @@ body.nav-joined {
   background: var(--dither), var(--glass-2);
   overflow: clip; /* the glow reaches below the last row: it must not make the page scroll */
   overflow-clip-margin: 4px; /* keep the resize handle reachable on the shared edge */
-  border-radius: var(--join-r);
+  border-radius: var(--panel-top-r) var(--join-r) var(--join-r) var(--panel-bottom-r);
   isolation: isolate;
   --corner: var(--j-1);
   --edge-line: transparent; /* the border you drag (sidebar | second panel) carries no outline of its own */
@@ -157,16 +157,18 @@ body.nav-joined #mobile-secondary > .nav-pill {
   content: '';
   position: absolute;
   right: 0;
-  width: var(--join-r);
-  height: var(--join-r);
+  width: var(--curve-r);
+  height: var(--curve-r);
 }
 .nav-joined .nav-pill::before {
-  top: calc(-1 * var(--join-r));
-  background: radial-gradient(circle at 0 0, transparent calc(var(--join-r) - 0.8px), var(--join) var(--join-r));
+  --curve-r: min(var(--join-r), var(--space-before, var(--join-r)));
+  top: calc(-1 * var(--curve-r));
+  background: radial-gradient(circle at 0 0, transparent calc(var(--curve-r) - 0.8px), var(--join) var(--curve-r));
 }
 .nav-joined .nav-pill::after {
-  bottom: calc(-1 * var(--join-r));
-  background: radial-gradient(circle at 0 100%, transparent calc(var(--join-r) - 0.8px), var(--join) var(--join-r));
+  --curve-r: min(var(--join-r), var(--space-after, var(--join-r)));
+  bottom: calc(-1 * var(--curve-r));
+  background: radial-gradient(circle at 0 100%, transparent calc(var(--curve-r) - 0.8px), var(--join) var(--curve-r));
 }
 .nav-joined #subnav-body > .nav-pill {
   left: var(--x, 0px);
@@ -226,12 +228,19 @@ body.nav-joined #mobile-secondary > .nav-pill {
   z-index: -1;
 }
 .nav-joined main {
-  border-radius: var(--join-r);
+  border-radius: var(--panel-top-r) var(--join-r) var(--join-r) var(--panel-bottom-r);
   position: relative;
   isolation: isolate;
   overflow: clip; /* the glow beside a row near the bottom must not extend the page */
   --corner: var(--j-2);
   --edge-line: transparent; /* second panel | content is dragged too: no outline */
+}
+
+/* A selected row near the window edge supplies the outer curve itself; leave space for it instead of overlapping two corners. */
+.nav-joined #subnav,
+.nav-joined main {
+  --panel-top-r: clamp(0px, calc(var(--row-top, 9999px) - var(--join-r)), var(--join-r));
+  --panel-bottom-r: clamp(0px, calc(var(--row-bottom, 9999px) - var(--join-r)), var(--join-r));
 }
 
 /* The left edge of the open panels: rounded top and bottom, with a thin visible line. One strip per panel: a small piece in the colour of the panel on the left
@@ -247,9 +256,9 @@ body.nav-joined #mobile-secondary > .nav-pill {
   width: var(--join-r);
   pointer-events: none;
   background:
-    radial-gradient(circle at 100% 100%, transparent calc(var(--join-r) - 1.8px), var(--edge-line) calc(var(--join-r) - 1.8px), var(--edge-line) calc(var(--join-r) - 0.8px), var(--corner) calc(var(--join-r) - 0.8px)) top left / var(--join-r) var(--join-r) no-repeat,
-    radial-gradient(circle at 100% 0, transparent calc(var(--join-r) - 1.8px), var(--edge-line) calc(var(--join-r) - 1.8px), var(--edge-line) calc(var(--join-r) - 0.8px), var(--corner) calc(var(--join-r) - 0.8px)) bottom left / var(--join-r) var(--join-r) no-repeat,
-    linear-gradient(90deg, var(--edge-line) 1px, transparent 1px) 0 var(--join-r) / 100% calc(100% - 2 * var(--join-r)) no-repeat;
+    radial-gradient(circle at 100% 100%, transparent calc(var(--panel-top-r) - 1.8px), var(--edge-line) calc(var(--panel-top-r) - 1.8px), var(--edge-line) calc(var(--panel-top-r) - 0.8px), var(--corner) calc(var(--panel-top-r) - 0.8px)) top left / var(--panel-top-r) var(--panel-top-r) no-repeat,
+    radial-gradient(circle at 100% 0, transparent calc(var(--panel-bottom-r) - 1.8px), var(--edge-line) calc(var(--panel-bottom-r) - 1.8px), var(--edge-line) calc(var(--panel-bottom-r) - 0.8px), var(--corner) calc(var(--panel-bottom-r) - 0.8px)) bottom left / var(--panel-bottom-r) var(--panel-bottom-r) no-repeat,
+    linear-gradient(90deg, var(--edge-line) 1px, transparent 1px) 0 var(--panel-top-r) / 100% calc(100% - var(--panel-top-r) - var(--panel-bottom-r)) no-repeat;
 }
 
 /* One family: the rest of the shell speaks the same accent language as the open row (hover, tabs, the Properties panel). */
@@ -323,10 +332,10 @@ body.nav-joined #mobile-secondary > .nav-pill {
   left: 0;
 }
 .nav-joined .side-tabs .nav-pill::before {
-  background: radial-gradient(circle at 100% 0, transparent calc(var(--join-r) - 0.8px), var(--join) var(--join-r));
+  background: radial-gradient(circle at 100% 0, transparent calc(var(--curve-r) - 0.8px), var(--join) var(--curve-r));
 }
 .nav-joined .side-tabs .nav-pill::after {
-  background: radial-gradient(circle at 100% 100%, transparent calc(var(--join-r) - 0.8px), var(--join) var(--join-r));
+  background: radial-gradient(circle at 100% 100%, transparent calc(var(--curve-r) - 0.8px), var(--join) var(--curve-r));
 }
 .nav-joined .side-tabs button {
   position: relative;
