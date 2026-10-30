@@ -1,20 +1,15 @@
-# Permissions
+﻿# Permissions
 
-A Script has only the capabilities that (1) its Library node's payload (or its own `config`) **declares** in `capabilities`, (2) a person **grants** in `grants`, and (3) the workspace policy **allows** (`GET/PUT projects/{id}/policy {allow: [...]}`). Effective rights are the intersection; missing fields mean none. `x:*` grants a family; hostnames match exactly, port included.
+A Library node has default permissions (`payload.grants`). Placing it on the canvas copies those values to the new instance. There is no declaration or Library-level runtime permission check: existing instances may allow or deny permissions independently of the defaults. Changing the defaults affects subsequent placements only.
 
-Edit the project policy in the canvas Workflow settings, below Available nodes. It autosaves using the same Allow/Disallow table and specific-permissions field as nodes, and applies to all workflows in the project. Runs contains execution monitoring and history.
+Capabilities include graph.read/write, library.read/write, run.read/start for current execution, notifications.read/write, net.fetch:HOST and secrets.use:NAME. Unknown/admin routes are denied to scripts. The host UI represents the user's authority and edits project policy.
 
-Names: `graph.read`, `graph.write`, `library.read`, `library.write`, `net.fetch:<host>`, `run.read`, `run.start`, `notifications.read`, `notifications.write`, `secrets.use:<name>`.
+In a Library node's graph editor, Workflow / Default permissions edits these placement defaults. On the canvas, Properties / Permissions edits the selected instance. A Script inside nested placed nodes must have permission from each enclosing instance and the project's allow list (Workflow / Project permissions). A standalone Script uses `config.grants`. The source of its code, typed or wired, does not add a permission layer.
 
-- Every route has method-specific `needs` (OpenAPI `x-needs`). Admin and unknown routes are denied to scripts.
-- Rights are checked **at node start** against the current policy and the version's grants; a denied version is `blocked` with a reason and runs no code. Every bridge call checks again, hook calls included.
-- **Quarantine:** what a Script writes through the bridge (a node, a Library node, a change of code) comes out with `grants: ["graph.read"]`. A Script cannot give itself or another more than it holds; changed code loses its grants until a person grants them again in the inspector. Code arriving through a wire instead of typed in the node gets only the read grants.
-- The host UI/API is the user's authority and can edit policies.
+Only actual API calls check these permissions. Ordinary calculations, signals and delays do not require API permissions and are not rejected because an unused permission is absent from project policy. Script-created or modified code is quarantined until explicitly granted by a person. Plugin host permissions are configured separately in Plugins.
 
-## Network and secrets
+Checked HTTP requests use `agentsys('POST','net',{url,method,headers,body,timeout})`. Redirects require a separate checked call. Secrets use `{{secret:NAME}}` placeholders; reads return metadata only and reflected credential values are redacted from network responses.
 
-`agentsys('POST', 'net', {url, method?, headers?, body?, timeout?})`. Redirects are refused, so each new host needs its own checked call. Credentials go in `PUT secrets/{name} {value}`; `GET` returns metadata only. Use placeholders: `Authorization: "Bearer {{secret:service}}"` (needs `secrets.use:service` as well as the host capability). The host substitutes and redacts reflected values before returning data.
+See [Script API examples](scripts-api.md) for Library reads, HTTP requests and permission setup.
 
-## Isolation
-
-Workers hide networking, imports, worker creation, host messaging and Node globals. On Node, user code runs in a separate VM realm inside the Worker; host callbacks are closures and messages cross as JSON. The browser's CSP restricts imported code to application/blob sources. Denied and sensitive actions are audited in the run log. The inline test runner has **no isolation** — use `scripts: 'worker'` for security tests.
+Scripts run in isolated Workers with networking, imports, worker creation, host messaging and Node globals hidden. Node execution uses a separate VM realm inside the Worker. The inline runner is a trusted test harness; security tests use actual Workers.

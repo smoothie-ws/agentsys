@@ -123,6 +123,33 @@ test('without a signal nothing runs: a Script nobody signals does nothing, and r
   assert.deepEqual(user.result.outputs.user, {result: 'undefined'});
 });
 
+test('Pause also gates a node that was waiting for a free execution slot',async()=>{
+  const app=createApp();
+  app.context.__doc=docOf([
+    {id:'a',bare:true,code:'await agentsys("GET","first");'},
+    {id:'b',bare:true,code:'node.display("second");'},
+  ],[]);
+  const result=await app.eval(`(async()=>{
+    const plan=compilePlan(buildSnapshot({id:'p'},{id:'w'},__doc),['a','b']);
+    plan.limits.parallel=1;
+    const gate={paused:false,waiters:[]}, started=[];
+    let releaseFirst, firstStarted;
+    const first=new Promise(resolve=>firstStarted=resolve);
+    const execution=executePlan(plan,{
+      AsyncFunction:Object.getPrototypeOf(async function(){}).constructor,displayText,gate,limits:plan.limits,
+      emit:event=>{if(event.ev==='start')started.push(event.id);},
+      call:()=>{firstStarted();return new Promise(resolve=>releaseFirst=resolve);}
+    });
+    await first;gate.paused=true;releaseFirst();
+    await new Promise(resolve=>setTimeout(resolve,0));
+    const during=[...started];
+    gate.paused=false;gate.waiters.splice(0).forEach(wake=>wake());
+    await execution;
+    return JSON.stringify({during,after:started});
+  })()`);
+  assert.deepEqual(JSON.parse(result),{during:['a'],after:['a','b']});
+});
+
 test('a signal goes to every wire at once; the receivers work independently', async () => {
   const app = createApp({scripts: 'worker'});
   const doc = docOf(

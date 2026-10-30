@@ -14,6 +14,8 @@ function validateIcon(value = '') {
 }
 function validateResource(payload) {
   if (!isObject(payload)) throw bad('Invalid payload.');
+  delete payload.plugin; // Retired ownership marker; Library nodes are ordinary editable data.
+  delete payload.capabilities; // Retired declaration field; only placement defaults remain.
   checkManifest(payload);
   const bundle = payload.bundle;
   if (!isObject(bundle) || bundle.version !== BUNDLE_VERSION || !Array.isArray(bundle.groups) || !bundle.groups.length)

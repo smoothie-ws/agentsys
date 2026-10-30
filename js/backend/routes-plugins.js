@@ -3,7 +3,7 @@
 'use strict';
 
 const pluginSummary = (record, nodes = 0) => ({...record, nodes});
-const nodeCount = (resources, id) => resources.filter(r => pluginOwned(r) === id).length;
+const nodeCount = (resources, id) => resources.filter(r => r.id.startsWith(`plugin.${id}.`)).length;
 const pluginSource = value => (typeof value === 'string' ? value.slice(0, 200) : '');
 
 route(
@@ -27,13 +27,14 @@ route(
       const existing = index.find(r => r.id === id);
       if (existing) {
         if (existing.source === 'built-in' && existing.manifest.version !== input.manifest.version) {
-          if (id === 'ai' && existing.manifest.version === '0.1.0') await migrateAICollections(c);
           const pkg = validatePluginPackage(input);
           existing.collections = ownedCatalogSections(existing);
+          if (pkg.manifest.main) existing.contributions = clone(pluginContributions(existing));
+          else delete existing.contributions;
           existing.manifest = pkg.manifest;
           existing.updated = Date.now() / 1000;
           c.ctx.set(pluginKey(id, 'package'), pkg);
-          await syncPluginLibrary(c, existing, pkg);
+          if (!pkg.manifest.main) await seedPluginNodes(c, existing, pkg);
           updated.push(id);
         }
         added.add(id);
@@ -50,9 +51,10 @@ route(
         source: 'built-in',
         grants: [],
         manifest: pkg.manifest,
+        ...(pkg.manifest.main ? {contributions: clone(EMPTY_PLUGIN_CONTRIBUTIONS), runtime: {status: 'starting'}} : {}),
       };
       c.ctx.set(pluginKey(id, 'package'), pkg);
-      await syncPluginLibrary(c, record, pkg);
+      if (!pkg.manifest.main) await seedPluginNodes(c, record, pkg);
       index.push(record);
       added.add(id);
       made.push(id);
@@ -63,6 +65,7 @@ route(
         index.sort((a, b) => a.id.localeCompare(b.id))
       );
     if (added.size !== state.added.length) c.ctx.set('builtin_plugins', {added: [...added].sort()});
+    c.pluginLifecycle = startEnabledPluginRuntimes;
     return {added: made, updated};
   },
   {body: {restore: false}}
@@ -78,7 +81,8 @@ route(
     if (c.method === 'GET')
       return {
         api: PLUGIN_API,
-        format: PLUGIN_FORMAT,
+        format: RUNTIME_PLUGIN_FORMAT,
+        formats: [RUNTIME_PLUGIN_FORMAT, PLUGIN_FORMAT],
         plugins: index.map(r => pluginSummary(r, nodeCount(resources, r.id))),
       };
     const pkg = validatePluginPackage(c.body.package),
@@ -90,7 +94,7 @@ route(
     // An update keeps what the person granted, as far as the new version still declares it.
     const grants = checkPluginGrants(
       pkg.manifest,
-      c.body.grants ?? (old ? old.grants.filter(g => pkg.manifest.capabilities.includes(g)) : [])
+      c.body.grants ?? (old ? old.grants.filter(g => pluginCapabilities(pkg).includes(g)) : [])
     );
     const record = {
       id,
@@ -100,20 +104,29 @@ route(
       source: pluginSource(c.body.source),
       grants,
       collections: ownedCatalogSections(old),
+      ...(old?.nodes_added ? {nodes_added: [...old.nodes_added]} : {}),
       manifest: pkg.manifest,
+      ...(pkg.manifest.main ? {contributions: clone(old ? pluginContributions(old) : EMPTY_PLUGIN_CONTRIBUTIONS), runtime: {status: (old ? old.enabled : c.body.enable === true) ? 'starting' : 'inactive'}} : {}),
     };
+    await checkRuntimeDependencies(c, record);
     c.ctx.set(pluginKey(id, 'package'), pkg);
     c.ctx.set(
       PLUGIN_INDEX,
       [...index.filter(p => p.id !== id), record].sort((a, b) => a.id.localeCompare(b.id))
     );
-    const nodes = await syncPluginLibrary(c, record, pkg);
+    const nodes = pkg.manifest.main ? nodeCount(resources, id) : await seedPluginNodes(c, record, pkg);
+    c.pluginLifecycle = async () => {
+      await stopPluginRuntime(id);
+      if (record.enabled && record.manifest.main) await ensurePluginRuntime(id);
+      if (old) await refreshPluginDependents(id);
+    };
+    c.pluginResult = id;
     logPlugin(id, {kind: old ? 'updated' : 'installed', version: pkg.manifest.version});
     return pluginSummary(record, nodes);
   },
   {
     body: {
-      package: {format: PLUGIN_FORMAT, manifest: {id: 'my-plugin', name: 'My plugin', version: '1.0.0'}, files: {}},
+      package: {format: RUNTIME_PLUGIN_FORMAT, manifest: {id: 'my-plugin', name: 'My plugin', version: '1.0.0', engine: '>=2', main: 'main.js'}, files: {'main.js': 'exports.activate = context => {};'}},
       grants: [],
       enable: false,
       replace: false,
@@ -133,21 +146,21 @@ route(
     const resources = await c.ctx.get('resources', []);
     if (c.method === 'GET') {
       const pkg = await c.ctx.get(pluginKey(id, 'package'), null),
-        schema = record.manifest.contributes.settings;
+        schema = pluginContributions(record).settings;
       return {
         ...pluginSummary(record, nodeCount(resources, id)),
         files: Object.entries(pkg?.files ?? {}).map(([path, text]) => ({path, bytes: text.length})),
         nodes_list: resources
-          .filter(r => pluginOwned(r) === id)
+          .filter(r => r.id.startsWith(`plugin.${id}.`))
           .map(r => ({id: r.id, name: r.name, folder: r.payload.folder})),
         settings: {schema, values: pluginSettingValues(schema, await pluginSettingsOf(c, record))},
         secrets: await Promise.all(
-          record.manifest.secrets.map(async name => ({name, present: !!(await c.ctx.get('secrets/' + name))}))
+          pluginSecrets(record).map(async name => ({name, present: !!(await c.ctx.get('secrets/' + name))}))
         ),
       };
     }
     if (c.method === 'DELETE') {
-      await syncPluginLibrary(c, {...record, enabled: false}, null);
+      await assertNoPluginDependents(c, id);
       await removePluginCollections(c, record);
       for (const what of ['package', 'settings', 'data']) await c.ctx.remove(pluginKey(id, what));
       c.ctx.set(
@@ -155,6 +168,7 @@ route(
         index.filter(p => p !== record)
       );
       PLUGIN_LOG.delete(id);
+      c.pluginLifecycle = () => stopPluginRuntime(id);
       return {deleted: true};
     }
     const next = {...record};
@@ -163,8 +177,13 @@ route(
       next.enabled = c.body.enabled;
     }
     if ('grants' in c.body) next.grants = checkPluginGrants(record.manifest, c.body.grants);
+    if (!next.enabled) await assertNoPluginDependents(c, id);
+    await checkRuntimeDependencies(c, next);
+    if (next.manifest.main && (!next.enabled || next.enabled !== record.enabled)) next.runtime = {status: next.enabled ? 'starting' : 'inactive'};
     next.updated = Date.now() / 1000;
-    const nodes = await syncPluginLibrary(c, next, await pluginPackage(c, id));
+    const nodes = next.manifest.main ? nodeCount(resources, id) : await seedPluginNodes(c, next, await pluginPackage(c, id));
+    c.pluginLifecycle = async () => {if (!next.enabled) await stopPluginRuntime(id); else if (next.manifest.main) await ensurePluginRuntime(id);};
+    c.pluginResult = id;
     c.ctx.set(
       PLUGIN_INDEX,
       index.map(p => (p === record ? next : p))
@@ -184,7 +203,7 @@ route(
       pkg = await pluginPackage(c, id);
     if (!record.enabled) throw bad('The plugin is disabled');
     const entry = c.query.path;
-    if (![...record.manifest.contributes.pages, ...record.manifest.contributes.tiles].some(p => p.entry === entry))
+    if (![...pluginContributions(record).pages, ...pluginContributions(record).tiles].some(p => p.entry === entry))
       throw bad('Choose a declared plugin page');
     const files = {},
       visit = path => {
@@ -240,7 +259,7 @@ route(
   'Read or change the settings of a plugin',
   async (c, {id}) => {
     const record = await pluginRecord(c, id),
-      schema = record.manifest.contributes.settings;
+      schema = pluginContributions(record).settings;
     if (c.method === 'PUT') {
       // A change is merged over what is saved, and every value is checked against the plugin's declaration.
       const merged = {...(await pluginSettingsOf(c, record)), ...(c.body.values ?? {})};
@@ -291,10 +310,11 @@ route(
     const record = ((await DB.get(PLUGIN_INDEX)) ?? []).find(p => p.id === id);
     if (!record) throw missing('Plugin not found');
     if (!record.enabled) throw new ApiError('plugin_disabled', `The plugin “${id}” is not enabled`, 409);
-    const endpoint = record.manifest.contributes.endpoints.find(e => e.name === name);
+    const endpoint = pluginContributions(record).endpoints.find(e => e.name === name);
     if (!endpoint) throw missing('The plugin has no such endpoint');
     if (!endpoint.methods.includes(c.method))
       throw new ApiError('method_not_allowed', `This endpoint answers ${endpoint.methods.join(', ')}`, 405);
+    if (endpoint.handler) return (await invokePluginHandler(record, endpoint.handler, [{method: c.method, query: clone(c.query), body: clone(c.body)}], endpoint.timeout,c.scriptContext?.signal)).result;
     const pkg = (await DB.get(pluginKey(id, 'package'))) ?? null;
     if (!pkg) throw missing('The files of this plugin are missing');
     return callPluginEndpoint(record, endpoint, pkg.files[endpoint.entry], {
@@ -306,6 +326,16 @@ route(
   {unlocked: true, body: {}}
 );
 
+route('POST', 'plugins/{id}/commands/{command}', 'Execute a registered plugin command', async (c, {id, command}) => {
+  let record = ((await DB.get(PLUGIN_INDEX)) ?? []).find(p => p.id === id);
+  if (!record?.enabled) throw bad('The plugin is missing or disabled');
+  if (record.manifest.main) await ensurePluginRuntime(id);
+  record = ((await DB.get(PLUGIN_INDEX)) ?? []).find(p => p.id === id);
+  const entry = pluginContributions(record).commands.find(item => item.id === command);
+  if (!entry?.handler) throw missing('No executable command with this ID');
+  return invokePluginHandler(record, entry.handler, Array.isArray(c.body.args) ? c.body.args : []);
+}, {unlocked: true, body: {args: []}});
+
 route(
   'POST',
   'plugins/{id}/templates/{template}/instantiate',
@@ -313,7 +343,7 @@ route(
   async (c, {id, template}) => {
     const record = await pluginRecord(c, id);
     if (!record.enabled) throw new ApiError('plugin_disabled', `The plugin “${id}” is not enabled`, 409);
-    const item = record.manifest.contributes.templates.find(t => t.id === template);
+    const item = pluginContributions(record).templates.find(t => t.id === template);
     if (!item) throw missing('The plugin has no such template');
     const pkg = await pluginPackage(c, id);
     let body;

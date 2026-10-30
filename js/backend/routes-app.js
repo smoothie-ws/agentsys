@@ -19,14 +19,8 @@ route(
         resources: await c.ctx.get('resources', []),
         node_folders: await nodeFolders(c),
         node_folder_icons: await c.ctx.get('node_folder_icons', {}),
-        limits: allLimits(prefs),
       };
     const value = c.body;
-    for (const k of Object.keys(LIMITS))
-      if (k in value) {
-        if (!Number.isSafeInteger(value[k]) || value[k] < 1) throw bad('Invalid ' + k);
-        prefs[k] = value[k];
-      }
     if ('undo_steps' in value) {
       if (!Number.isInteger(value.undo_steps) || value.undo_steps < 0 || value.undo_steps > 500)
         throw bad('Undo steps must be an integer from 0 to 500');
@@ -120,8 +114,6 @@ function saveResource(c, items, id, name, payload, newId = null) {
   name = name.trim();
   validateResource(payload);
   if (items.some(r => r.name === name && r.id !== id)) throw bad('A node with that name already exists.');
-  if (payload?.plugin !== undefined)
-    throw bad('Only a plugin can make a node that belongs to a plugin.');
   c.libraryTouched = true; // the Library's types follow its nodes
   const now = Date.now() / 1000;
   let item = items.find(r => r.id === id);
@@ -143,7 +135,6 @@ route(
       item = items.find(r => r.id === resource_id);
     if (!item) throw missing('Record not found');
     if (c.method === 'GET') return item;
-    if (pluginOwned(item)) throw pluginManaged(item);
     if (c.method === 'DELETE') {
       c.ctx.set(
         'resources',

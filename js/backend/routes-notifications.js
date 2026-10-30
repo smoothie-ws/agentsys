@@ -16,7 +16,7 @@ function newNotification(input) {
   const level = input.level ?? 'info';
   if (!NOTIFICATION.levels.includes(level)) throw bad(`level is one of ${NOTIFICATION.levels.join(', ')}`);
   if (input.href !== undefined && (typeof input.href !== 'string' || !/^\/(?!\/)[A-Za-z0-9_\-/?=&%.]{0,198}$/.test(input.href)))
-    throw bad('href is a page of the app, like /runs');
+    throw bad('href is a page of the app, like /projects');
   return {
     id: uid(),
     title: text(input.title, 'title', NOTIFICATION.title, 1).trim(),
@@ -46,7 +46,7 @@ route(
     return {deleted: items.length};
   },
   {
-    body: {title: 'Backup finished', body: 'optional text', level: 'info|success|warn|error', href: '/runs', source: 'optional'},
+    body: {title: 'Backup finished', body: 'optional text', level: 'info|success|warn|error', href: '/projects', source: 'optional'},
     query: ['limit'],
   }
 );

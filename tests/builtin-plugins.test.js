@@ -10,11 +10,10 @@ test('built-in AI installs once, groups its native Library collections and respe
   assert.equal(ai.enabled, true);
   assert.deepEqual(ai.grants, []);
   assert.deepEqual(
-    ai.manifest.contributes.library.map(p => [p.id, p.parent]),
+    ai.contributions.library.map(p => [p.id, p.parent]),
     [
       ['ai', undefined],
       ['providers', 'ai'],
-      ['skills', 'ai'],
     ]
   );
   await app.api('PUT', 'plugins/ai', {enabled: false});

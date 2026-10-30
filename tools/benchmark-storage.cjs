@@ -9,7 +9,7 @@ const {createServer} = require('../server');
 
 (async () => {
   const dataDir = fs.mkdtempSync(path.join(os.tmpdir(), 'agentsys-storage-bench-'));
-  const app = createServer({dataDir, scheduler: false});
+  const app = createServer({dataDir});
   try {
     await app.listen(0);
     const folder = path.join(dataDir, 'other');

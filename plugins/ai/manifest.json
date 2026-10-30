@@ -1,85 +1,17 @@
 {
   "id": "ai",
   "name": "AI",
-  "version": "0.2.0",
-  "engine": ">=1",
-  "description": "Provider configurations and reusable agent skills in the Library.",
-  "author": "AgentSys",
+  "version": "2.2.1",
+  "engine": ">=2",
+  "main": "main.js",
+  "description": "AI Providers, model selection and text requests on the graph.",
+  "authors": [
+    {
+      "name": "AgentSys"
+    }
+  ],
   "icon": "icon.svg",
   "readme": "README.md",
-  "capabilities": [],
-  "contributes": {
-    "library": [
-      {"id": "ai", "title": "AI", "icon": "spark", "description": "Providers and reusable instructions."},
-      {
-        "id": "providers",
-        "parent": "ai",
-        "title": "Providers",
-        "icon": "server",
-        "description": "Configure a provider, its endpoint and model catalog.",
-        "item": {
-          "name": "Provider",
-          "format": "json",
-          "fields": [
-            {
-              "key": "providerId",
-              "label": "Provider ID",
-              "type": "text",
-              "format": "id",
-              "required": true,
-              "unique": true,
-              "help": "Stable identifier used to address models as provider-id/model-id."
-            },
-            {
-              "key": "npm",
-              "label": "API adapter",
-              "type": "select",
-              "options": ["@ai-sdk/openai-compatible", "@ai-sdk/openai", "@ai-sdk/anthropic"],
-              "default": "@ai-sdk/openai-compatible"
-            },
-            {
-              "key": "baseURL",
-              "label": "Base URL",
-              "type": "text",
-              "format": "url",
-              "required": true,
-              "help": "The API endpoint, for example http://localhost:11434/v1."
-            },
-            {
-              "key": "models",
-              "label": "Models",
-              "type": "json",
-              "shape": "object",
-              "default": {},
-              "help": "Model IDs mapped to their display names and options, as in OpenCode."
-            },
-            {
-              "key": "env",
-              "label": "Credential environment variables",
-              "type": "json",
-              "shape": "array",
-              "default": [],
-              "help": "Ordered variable names, for example [\"PROVIDER_API_KEY\"]."
-            },
-            {"key": "headers", "label": "Additional headers", "type": "json", "shape": "object", "default": {}},
-            {"key": "options", "label": "Provider options", "type": "json", "shape": "object", "default": {}},
-            {
-              "key": "apiKey",
-              "label": "API key",
-              "type": "secret",
-              "help": "Stored separately. Leave empty to keep the saved key."
-            }
-          ]
-        }
-      },
-      {
-        "id": "skills",
-        "parent": "ai",
-        "title": "Skills",
-        "icon": "file",
-        "description": "Agent Skills stored as standard SKILL.md documents.",
-        "item": {"name": "Skill", "format": "skill"}
-      }
-    ]
-  }
+  "dependencies": {},
+  "permissions": ["net.fetch:*", "graph.read", "graph.write", "library.read", "run.start"]
 }

@@ -225,18 +225,8 @@ function nodeHTML(node) {
   if (node.node_type === 'reroute')
     return `<div class="node reroute" data-id="${esc(node.id)}" title="Reroute point"><span class="sock" data-dir="in" data-port="in"></span><span class="sock" data-dir="out" data-port="out"></span></div>`;
   // The state of a node that runs, or has just run, appears above its right edge.
-  const waitSpec = node.wait?.wait_spec;
   const stateMark = {
-      waiting: [
-        icon('pause'),
-        'Waiting' +
-          (waitSpec?.event
-            ? ' for ' + waitSpec.event
-            : node.wait?.due
-              ? ' until ' + new Date(node.wait.due).toLocaleString()
-              : ''),
-      ],
-      running: ['', 'Running'],
+      running: ['', 'Working'],
       paused: [icon('pause'), 'Paused: the run is paused, this node is still working'],
       completed: [icon('check'), 'Completed'],
       failed: [icon('x'), 'Failed'],

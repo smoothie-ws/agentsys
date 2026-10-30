@@ -1,4 +1,4 @@
-// Evaluates nodes of a snapshot (Run button, the evaluate-node API, runs): the part of the workflow the nodes need is compiled into
+// Evaluates nodes of a snapshot (Run button and evaluate-node API): the part of the workflow the nodes need is compiled into
 // a plan (compilePlan) and carried out by executePlan (executor.js), in a Web Worker (runPlan in backend/scripts.js) or in the tests
 // in this process. This file does not know either: the plan is data and `execute` is a callback.
 'use strict';
@@ -6,7 +6,6 @@
 const MAX_RESULT = 20000000; // characters of one node's result (as JSON)
 const MAX_RUN_BYTES = 100000000; // all results of one evaluation
 const MAX_CHAIN = 1000; // nodes waiting for each other, or signals that follow each other
-const MAX_ROOTS = 200;
 const MAX_PARALLEL = 16; // Custom nodes whose code runs at the same time in one run
 const MAX_DISPLAY = 100000;
 const MAX_DISPLAY_IMAGE = 3000000 + 64; // an image shown with display() is a data URL of at most this many characters
@@ -117,7 +116,7 @@ function wireGraph(snapshot, nodes) {
 function instanceScopes(snapshot) {
   const byId = new Map(snapshot.nodes.map(n => [n.id, n])),
     scopes = new Map();
-  const composites = snapshot.complex.filter(c => c.source).sort((a, b) => b.depth - a.depth);
+  const composites = [...snapshot.complex].sort((a, b) => b.depth - a.depth);
   for (const node of snapshot.nodes) {
     const c = composites.find(cx => cx.members.includes(node.id));
     if (c)
@@ -130,9 +129,9 @@ function instanceScopes(snapshot) {
         inputs: c.interface.inputs.filter(p => !isSignal(p.type)),
         outputs: c.interface.outputs.filter(p => !isSignal(p.type) && !p.bound?.length),
         signals: c.interface.outputs.filter(p => isSignal(p.type) && !p.bound?.length),
-        resource_id: c.source.resource_id,
+        resource_id: composites.find(cx=>cx.source && cx.members.includes(node.id))?.source.resource_id ?? null,
         // The permissions of every placed node around it, the closest first: it can do only what all of them allow.
-        grant_chain: composites.filter(cx => cx.members.includes(node.id)).map(cx => cx.grants ?? null),
+        grant_chain: composites.filter(cx => cx.source && cx.members.includes(node.id)).map(cx => cx.grants ?? []),
       });
   }
   return scopes;
@@ -166,7 +165,7 @@ function customStep(
     targets,
     event,
     context,
-    declared: {capabilities: config.capabilities ?? [], grants: config.grants ?? []},
+    grants: config.grants ?? [],
   };
 }
 
@@ -176,7 +175,7 @@ function customStep(
  * signal output the nodes its signal reaches. A root is a node to fire (an event node), to run (a Script) or to read.
  * `events` is the data the event nodes in the roots carry: {node ID: {output name: value}}.
  */
-function compilePlan(snapshot, roots, {context = {}, events = {}, cache = new Map()} = {}) {
+function compilePlan(snapshot, roots, {context = {}, events = {}} = {}) {
   const nodes = Editor.nodeMap(snapshot),
     {incoming, fallback, signals} = wireGraph(snapshot, nodes),
     issues = firstIssues(snapshot),
@@ -363,55 +362,12 @@ function compilePlan(snapshot, roots, {context = {}, events = {}, cache = new Ma
     });
     return {id: nid, ports};
   });
-  while (stack.length) {
-    const nid = stack.pop();
-    const node = nodes.get(nid),
-      home = scopes.get(nid);
-    // Indexes are rebuilt from the committed document. Executable entries are rebuilt only when their
-    // resolved inputs, scope, signals or diagnostics change; layout never enters this key.
-    const source = (owner, ports) =>
-      ports.map(p => {
-        const wire = incoming.get(key(owner, p.id));
-        return [p.id, wire ? refOf(wire) : null, fallback.get(key(owner, p.id))];
-      });
-    const signature = TextGraph.canonical({
-      kind: node.kind,
-      node_type: node.node_type,
-      config: node.config,
-      inputs: node.inputs,
-      interface: node.interface,
-      label: evalLabel(node),
-      home,
-      sources: source(nid, node.inputs ?? []),
-      scope_sources: home ? source(home.instance_id, home.inputs) : [],
-      targets: targetsOf(node),
-      scope_targets: (home?.signals ?? []).map(p => [p.name, reach(fires.get(key(home.instance_id, p.id)) ?? [])]),
-      readers: readers.get(home?.instance_id ?? nid),
-      widgets: [widgets[nid], ...(home?.widgets ?? []).map(id => widgets[id])],
-    });
-    let cached = cache.get(nid);
-    if (cached?.signature !== signature) {
-      const before = new Set(planned.keys());
-      const step = compileNode(nid);
-      // Include dependencies already planned as well as newly discovered ones.
-      const needs = [
-        ...(step.inputs ?? []).flatMap(p => (p.ref?.n ? [p.ref.n] : [])),
-        ...Object.values(step.targets ?? {}).flat(),
-        ...Object.values(step.scope_signals ?? {}).flat(),
-        ...(readers.get(home?.instance_id ?? nid) ?? []),
-        ...(step.scope ? [step.scope] : []),
-        ...[...planned.keys()].filter(id => !before.has(id)),
-      ];
-      cached = {signature, step, needs};
-      cache.set(nid, cached);
-    }
-    cached.needs.forEach(need);
-    const step = clone(cached.step);
-    step.context = {...step.context, ...context};
-    if (step.event !== null && step.event !== undefined) step.event = events[nid] ?? {};
-    planned.set(nid, step);
+  while(stack.length){
+    const id=stack.pop(),step=compileNode(id),home=scopes.get(id);
+    Object.values(step.targets??{}).flat().forEach(need);
+    for(const reader of readers.get(home?.instance_id??id)??[])need(reader);
+    planned.set(id,step);
   }
-  for (const id of cache.keys()) if (!nodes.has(id) || issues.has(id)) cache.delete(id);
   return {
     nodes: [...planned.values()],
     roots: rootSpecs,
@@ -442,10 +398,9 @@ const planLimits = () => ({
   parallel: MAX_PARALLEL,
 });
 
-/** The nodes to evaluate must be 1 to MAX_ROOTS nodes of this workflow; the error says which of these it is. */
+/** Explicit roots must belong to this workflow. An empty list starts no work. */
 function checkRoots(roots, nodes) {
-  if (!roots.length) throw bad('Nothing to run: pass at least one node ID (node_ids)');
-  if (roots.length > MAX_ROOTS) throw bad(`Run at most ${MAX_ROOTS} nodes at once (got ${roots.length})`);
+  if (!Array.isArray(roots)) throw bad('node_ids must be an array');
   const unknown = roots.filter(id => typeof id !== 'string' || !nodes.has(id));
   if (unknown.length)
     throw bad(
@@ -479,7 +434,6 @@ async function runPlanned(plan, execute, {signal = null, hooks = {}, control = n
         hooks.onNodeStart?.({
           node_id: event.id,
           label: event.label,
-          node_version: event.node_version,
           invocation: event.invocation,
           wave_path: event.wave_path,
         });
@@ -513,13 +467,8 @@ async function runPlanned(plan, execute, {signal = null, hooks = {}, control = n
           node_id: event.id,
           label: event.label,
           reason: event.reason,
-          node_version: event.node_version,
           invocation: event.invocation,
         });
-        break;
-      case 'waiting':
-        running.delete(event.id);
-        hooks.onNodeWait?.({node_id: event.id, label: event.label, wait: event.wait});
         break;
       case 'root':
         // A root that reports again: the last report is its result.

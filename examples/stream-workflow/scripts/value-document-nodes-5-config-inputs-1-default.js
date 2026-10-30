@@ -1,1 +1,0 @@
-const value=context.payload.item.value;if(value.fail)throw Error("Requested failure");const count=await node.state.update("count",n=>(n??0)+1);await node.state.set("last",value);node.display({count:count.value,processed:value});

@@ -64,8 +64,6 @@ const pending = new Map();
 const gate = {paused: false, waiters: []};
 let sequence = 0;
 const call = (node, method, path, body, query, invocation) => new Promise((resolve, reject) => { const id = ++sequence; pending.set(id, {resolve, reject}); send({type: 'call', id, node, invocation, args: [method, path, body, query]}); });
-const authorize = (node, version, invocation) => new Promise((resolve, reject) => { const id = ++sequence; pending.set(id, {resolve, reject}); send({type: 'authorize', id, node, version, invocation}); });
-const checkpoint = value => new Promise((resolve, reject) => { const id = ++sequence; pending.set(id, {resolve, reject}); send({type: 'checkpoint', id, value}); });
 // A script that fails after its node is done must not stop the run.
 self.onerror = () => true;
 self.addEventListener?.('unhandledrejection', event => event.preventDefault());
@@ -74,8 +72,6 @@ for (const name of ['agentsys', 'context'])
 for (const name of ['display', 'emit', 'read', 'output', 'widgets'])
   Object.defineProperty(self, name, {configurable: true, get() { throw new Error(name + ' is not a variable of the node code: it is part of node (node.' + (name === 'read' ? 'input.<name> or node.reread(name)' : name === 'output' ? 'output.<name>' : name) + ').'); }});
 const receive = async ({data}) => {
-  if (data.type === 'patch') return void gate.patch(data.patch);
-  if (data.type === 'cancel_wave') return void gate.cancelWave(data.path);
   if (data.type === 'pause') return void (gate.paused = true);
   if (data.type === 'resume') {
     gate.paused = false;
@@ -87,7 +83,7 @@ const receive = async ({data}) => {
   }
   try {
     gate.paused = data.plan.start_paused === true;
-    const result = await executePlan(data.plan, {AsyncFunction, displayText, call, authorize, checkpoint, limits: data.plan.limits, gate, emit: event => send({type: 'event', event})});
+    const result = await executePlan(data.plan, {AsyncFunction, displayText, call, limits: data.plan.limits, gate, emit: event => send({type: 'event', event})});
     send({type: 'finished', result});
   } catch (error) {
     send({type: 'crash', error: String(error && error.message || error).slice(0, 2000)});
@@ -112,37 +108,25 @@ const liveBridgeFor = context => ({
       else body.workflow_id ??= context.workflow_id;
     }
     await assertScriptPermission(context, method, path, body);
-    const dataRoute = /^workflows\/[^/]+\/(state|queues)(\/|$)/.test(path);
-    if (method !== 'GET' && !dataRoute) {
+    if (method !== 'GET') {
       body = quarantineWrite(body);
       if (path === 'resources') body.payload = {...body.payload, grants: ['graph.read']};
       if (body.config) body.config = {...body.config, grants: ['graph.read']};
       if (path.startsWith('resources/') && body.payload) body.payload = {...body.payload, grants: ['graph.read']};
     }
-    const reservation = await reserveBridge(context, method, path);
-    let result;
-    try {
-      result = await Backend.request(method, path, {body, query, scriptContext: context});
-    } catch (error) {
-      await settleBridge(reservation, null, error);
-      throw error;
-    }
-    await settleBridge(reservation, result, null);
-    return dataRoute ? clone(result) : stripSecrets(result);
+    if (context.signal?.aborted) throw new Error('Execution stopped');
+    return stripSecrets(await Backend.request(method, path, {body, query, scriptContext: context}));
   },
 });
-const bridgeFor = context => ({
-  request: args => {
-    const pending = recordBridge(context, args, () => liveBridgeFor(context).request(args));
-    const run = RUNS.byId.get(context.run_id);
-    if (run) {
-      run.pendingCalls ??= new Set();
-      run.pendingCalls.add(pending);
-      pending.finally(() => run.pendingCalls.delete(pending)).catch(() => {});
-    }
-    return pending;
-  },
-});
+const bridgeFor = liveBridgeFor;
+function planHost(plan, onEvent, control, signal) {
+  const steps = new Map(plan.nodes.map(step=>[step.id,step]));
+  return {
+    attach: send=>control?.attach(send),
+    call: (id,method,path,body,query)=>bridgeFor({...plan.context,node_id:id,step:steps.get(id),signal}).request([method,path,body,query]),
+    emit:onEvent,
+  };
+}
 /** A new Worker running `source`. The headless server (headless.js) supplies its own, with the same interface. */
 function startSourceWorker(source) {
   if (typeof AGENTSYS_SPAWN_WORKER === 'function') return AGENTSYS_SPAWN_WORKER(source);
@@ -150,63 +134,28 @@ function startSourceWorker(source) {
   return new Worker(workerURLs.get(source));
 }
 const startWorker = () => startSourceWorker(WORKER_SOURCE);
-// Every script gets a Worker of its own, so nothing one leaves behind (globals, timers) reaches the next. A Worker
-// takes ~15 ms to start, which a run of many nodes would pay once per node; so while scripts follow each other closely
-// a few fresh ones are started ahead. Idle ones do not keep the process alive and are dropped after a while.
-const SPARE_WORKERS = 2,
-  SPARE_BUSY_MS = 1000,
-  SPARE_IDLE_MS = 10000;
-const spares = [];
-let lastSpawn = 0,
-  spareTimer;
-/** A Worker for one script: a started spare when there is one, else a new one. */
-function spawnWorker() {
-  const now = Date.now(),
-    busy = now - lastSpawn < SPARE_BUSY_MS;
-  lastSpawn = now;
-  let worker;
-  while (spares.length && !worker) {
-    const spare = spares.shift();
-    if (!spare.exited) worker = spare;
-  }
-  if (worker) worker.ref?.();
-  else worker = startWorker();
-  while (busy && spares.length < SPARE_WORKERS) {
-    const spare = startWorker();
-    spare.unref?.();
-    spares.push(spare);
-  }
-  clearTimeout(spareTimer);
-  if (spares.length) {
-    spareTimer = setTimeout(() => spares.splice(0).forEach(spare => spare.terminate()), SPARE_IDLE_MS);
-    spareTimer.unref?.();
-  }
-  return worker;
-}
+const spawnWorker = startWorker;
 /** How long the page waits, beyond a node's own time limit, for a Worker whose code never lets go (an endless loop) before it ends the run. */
 const WATCHDOG_GRACE = 2000;
 /**
  * Carries out a plan in a Worker of its own, so nothing one run leaves behind (globals, timers) reaches the next.
  * `onEvent` is told each event (see executePlan); `signal` (optional AbortSignal) ends the run at once; `control` (optional, see
- * `runControl` in routes-runs.js) pauses and resumes it: no node starts while it is paused. Resolves when the run is
+ * the execution control in execution.js) pauses and resumes it: no node starts while it is paused. Resolves when the run is
  * over; rejects when it was cut short: cancelled, a script that never returned control, or a Worker that died.
  */
 async function runPlan(plan, onEvent, signal = null, control = null) {
-  await preparePlanPermissions(plan);
-  await versionPlan(plan);
+  preparePlanPermissions(plan);
   plan = clone(plan);
-  plan.capture_boundaries = RUNS.byId.has(plan.context.run_id) && !plan.replay;
   plan.start_paused = control?.paused === true;
-  const host = planHost(plan, onEvent, control);
+  const host = planHost(plan, onEvent, control, signal);
   if (signal?.aborted) return Promise.reject(new Error('Run cancelled'));
   // Nothing in the plan has code to run (no Script: value nodes, Reroutes, event nodes, roots with a problem): no Worker is needed.
-  if (!control && !plan.nodes.some(n => n.op === 'script'))
+  if (!plan.roots.length || (!control && !plan.nodes.some(n => n.op === 'script')))
     return executePlan(plan, {
       AsyncFunction: Object.getPrototypeOf(async function () {}).constructor,
       displayText,
       call: () => {},
       emit: host.emit,
-      authorize: host.authorize,
       limits: plan.limits,
     });
   return new Promise((resolve, reject) => {
@@ -239,18 +188,13 @@ async function runPlan(plan, onEvent, signal = null, control = null) {
     };
     worker.onmessage = async ({data}) => {
       if (over) return;
-      if (data.type === 'call' || data.type === 'authorize' || data.type === 'checkpoint') {
+      if (data.type === 'call') {
         let reply;
         try {
           reply = {
             type: 'reply',
             id: data.id,
-            result:
-              data.type === 'checkpoint'
-                ? await host.checkpoint(data.value)
-                : data.type === 'authorize'
-                  ? await host.authorize(data.node, data.version, data.invocation)
-                  : await host.call(data.node, ...data.args, data.invocation),
+            result: await host.call(data.node, ...data.args, data.invocation),
           };
         } catch (error) {
           reply = {type: 'reply', id: data.id, error: error.message || String(error), code: error.code};
@@ -261,7 +205,7 @@ async function runPlan(plan, onEvent, signal = null, control = null) {
         // A node that waits in emit() is not running its code: its time starts again when it goes on.
         if (event.ev === 'start' || event.ev === 'resume')
           started.set(event.invocation ?? event.id, {id: event.id, at: Date.now(), prefix: event.prefix});
-        else if (['done', 'fail', 'skip', 'pause', 'waiting'].includes(event.ev))
+        else if (['done', 'fail', 'skip', 'pause'].includes(event.ev))
           started.delete(event.invocation ?? event.id);
         if (event.ev !== 'root') watch();
         host.emit(event);

@@ -83,19 +83,8 @@ const changeNodeIcon = item =>
   );
 
 /** Menu of a Custom Node. */
-/** A node (or a group) that a plugin put into the Library: it can be read, used and exported, but only the plugin changes it. */
-const pluginTop = path => path.split('/')[0];
-const pluginGroup = path =>
-  !!path && app.resources.some(r => r.payload.plugin && pluginTop(r.payload.folder || '') === pluginTop(path));
 function resourceActions(item, title = () => menuTitle('resource:' + item?.id)) {
   if (!item) return;
-  if (item.payload.plugin)
-    return [
-      ['Export', () => exportResources([item], item.name), {icon: 'upload'}],
-      ['Duplicate', () => duplicateResource(item).catch(fail), {icon: 'copy'}],
-      null,
-      ['Plugin…', () => go(pluginHref(item.payload.plugin)), {icon: 'plug'}],
-    ];
   return [
     ...(developerMode()
       ? [
@@ -134,7 +123,7 @@ const nodesIn = path => app.resources.filter(r => underPath(r.payload.folder || 
 function folderActions(path, title = () => menuTitle('folder:' + path)) {
   const name = baseName(path),
     exportGroup = ['Export group', () => exportResources(nodesIn(path), name), {icon: 'upload'}];
-  if (!developerMode() || pluginGroup(path)) return [exportGroup];
+  if (!developerMode()) return [exportGroup];
   return [
     ...creationActions(path),
     [
@@ -255,7 +244,7 @@ document.addEventListener('drop', event => {
 function exportResources(items, name) {
   const entries = items.map(r => ({
     name: r.name,
-    payload: Object.fromEntries(Object.entries(r.payload).filter(([k]) => k !== 'plugin')),
+    payload: r.payload,
   }));
   const text = JSON.stringify(TextGraph.encode(entries.length === 1 ? entries[0] : entries), null, 2);
   const link = document.createElement('a');
@@ -278,7 +267,7 @@ async function addEntries(entries, source) {
     while (taken.has(name)) name = `${base} ${++n}`;
     taken.add(name);
     // A node keeps its group, so the tree comes back as it was exported.
-    const {plugin: _owner, ...payload} = entry.payload; // only a plugin makes a node that belongs to a plugin
+    const payload = entry.payload;
     const saved = await api('resources', {method: 'POST', body: {name, payload}});
     // The main group of a node carries its name; PUT keeps that in step.
     await api(`resources/${saved.id}`, {method: 'PUT', body: {name, payload: saved.payload}});
@@ -313,14 +302,14 @@ const cardList = rows =>
     : '<span class="preview-empty">Nothing here yet</span>';
 const itemCard = r =>
   card({
-    href: developerMode() && !r.payload.plugin ? resourceHref(r) : null,
+    href: developerMode() ? resourceHref(r) : null,
     glyph: resourceIcon(r),
     title: r.name,
     preview: `<div class="preview-layer">${previewSVG(graphFromBundle(r.payload.bundle))}</div>`,
     facts: r.payload.description ? esc(r.payload.description) : '',
     menu: 'resource:' + r.id,
     tint: 'k-complex',
-    extra: developerMode() && !r.payload.plugin ? `draggable="true" data-drag="${esc(r.id)}"` : '',
+    extra: developerMode() ? `draggable="true" data-drag="${esc(r.id)}"` : '',
   });
 const folderCard = (path, rows) => {
   const groups = app.nodeFolders.filter(f => f !== path && underPath(f, path)).length;

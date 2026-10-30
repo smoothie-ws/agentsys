@@ -1,5 +1,5 @@
 // Tabs of the open graph editors (workflows and Custom Nodes), like files in a code editor; persisted in this browser.
-// Every other page (Dashboard, Projects, a project, Library, Runs, Settings) is reached through the sidebar and the second panel;
+// Every other page (Dashboard, Projects, a project, Library, Settings) is reached through the sidebar and the second panel;
 // it has no tab; Tabs.pages remembers scroll and local filters, while the URL selects the page and subsection.
 'use strict';
 
@@ -24,7 +24,6 @@ const Tabs = {
         resources: ['res', route.section, route.id || (route.folder ? 'in:' + encodeURIComponent(route.folder) : '')]
           .filter(Boolean)
           .join(':'),
-        runs: 'runs',
         api: 'api',
         'not-found': 'missing',
         plugins: ['plugins', route.id, route.view].filter(Boolean).join(':'),

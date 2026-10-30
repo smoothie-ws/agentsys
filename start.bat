@@ -1,4 +1,6 @@
 @echo off
 cd /d "%~dp0"
-start "" http://localhost:8080/editor/
-node server.js
+if not "%~1"=="" set "PORT=%~1"
+if not defined PORT set "PORT=8080"
+start "" "http://localhost:%PORT%/editor/"
+node server.js --port "%PORT%"

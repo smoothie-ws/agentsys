@@ -1,1 +1,0 @@
-const key=String(node.input.key);let duplicate=false;await node.state.update("dedupe",entries=>{entries=entries??[];duplicate=entries.includes(key);return duplicate?entries:[...entries.slice(-999),key];});node.output.result=duplicate;if(!duplicate)await node.emit("out");

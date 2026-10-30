@@ -24,7 +24,7 @@ async function project(app) {
     },
     /** A Library node around a Script that logs; `inputs` are read as variables. */
     log: (code, o = {}) => fn(app, id, q, {code, ...o}),
-    run: () => app.api('POST', `projects/${id}/runs`, {...q, wait: 10}),
+    run: () => app.api('POST', `projects/${id}/execution`, {...q, wait: true}),
   };
   p.start = async (...to) => {
     const go = await p.node(nodes.run());

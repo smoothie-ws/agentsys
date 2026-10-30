@@ -82,7 +82,14 @@ function runHooks(events) {
     HOOKS.queue = HOOKS.queue.then(async () => {
       const started = Date.now();
       try {
-        await runRecordedHook(event.plan);
+        let plan=event.plan;
+        if(event.hook!=='on_deleted'){
+          const snapshot=await Backend.request('GET',`projects/${event.project_id}/workflow`,{query:{workflow_id:event.workflow_id}});
+          plan=hookPlan(snapshot,event.hook,event.group,event.data,{project_id:event.project_id,workflow_id:event.workflow_id});
+        }
+        const result = plan ? await runPlanned(plan, runPlan) : {errors:{}};
+        if (result.crash) throw result.crash;
+        if (Object.keys(result.errors).length) throw new Error(Object.values(result.errors)[0]);
         DB.announce(['wf:' + event.workflow_id]); // the code may have edited the workflow: open editors reload it
       } catch (error) {
         Object.assign(entry, {ok: false, error: error.message || String(error)});
@@ -359,7 +366,7 @@ class Call {
     const event = (hook, group, state, data) => {
       const plan = hookPlan(snapshotOf(state), hook, group, data, context);
       if (plan)
-        this.hookEvents.push({hook, project_id: project, workflow_id: workflow, node_id: 'complex:' + group, plan});
+        this.hookEvents.push({hook, group, data, project_id: project, workflow_id: workflow, node_id: 'complex:' + group, plan});
     };
     for (const id of now.keys()) if (!old.has(id)) event('on_placed', id, doc, {});
     for (const id of old.keys()) if (!now.has(id)) event('on_deleted', id, was, {});
@@ -371,7 +378,9 @@ class Call {
         .sort();
     for (const [id, c] of now) {
       const ids = wiredIds(doc, id);
-      if (!old.has(id) || JSON.stringify(ids) === JSON.stringify(wiredIds(was, id))) continue;
+      const sources = state => state.port_edges.filter(e=>e.target==='complex:'+id)
+        .map(e=>JSON.stringify([e.target_port,e.source,e.source_port])).sort();
+      if (!old.has(id) || JSON.stringify(sources(doc)) === JSON.stringify(sources(was))) continue;
       event('on_wired', id, doc, {wired: ids.map(pid => c.interface.inputs.find(p => p.id === pid)?.name ?? pid)});
     }
     // on_widget: one call for each widget a person changed, on every Library node copy around the node that has the widget.
@@ -423,7 +432,6 @@ class Call {
 const Backend = {
   /** Same contract as the old REST API: resolves with the parsed result or throws an ApiError. */
   async request(method, path, {body = {}, query = {}, edit = null, scriptContext = null} = {}) {
-    await recoverRuns();
     path = path.replace(/^\/+|\/+$/g, '');
     const found = ROUTES.find(r => r.methods.has(method) && r.regex.test(path));
     if (!found) throw missing('API endpoint not found');
@@ -441,8 +449,10 @@ const Backend = {
     );
     const call = new Call(method, body ?? {}, query ?? {}, edit);
     call.scriptContext = scriptContext;
+    if (scriptContext?.signal?.aborted) throw bad('Execution stopped');
     if (found.unlocked) return found.handler(call, params);
     const result = await exclusive(async () => {
+      if (scriptContext?.signal?.aborted) throw bad('Execution stopped');
       const result = await found.handler(call, params);
       if (method !== 'GET') await call.finish(found.pattern.split('/')[2] || found.pattern.split('/')[0]);
       // A read that found something to bring up to date (a copy of a Library node, a type) stores it.
@@ -452,8 +462,11 @@ const Backend = {
     });
     // The code of on_placed / on_deleted / on_wired / on_widget runs after the change is saved and the request lock is free, so it can call the API.
     runHooks(call.hookEvents);
-    if (call.queueFreed) queueMicroWake(call.queueFreed);
-    if (call.workflowMode) applyWorkflowMode(call.workflowMode);
+    if (call.pluginLifecycle) await call.pluginLifecycle();
+    if (call.pluginResult) {
+      const record = ((await DB.get(PLUGIN_INDEX)) ?? []).find(p => p.id === call.pluginResult);
+      if (record) return pluginSummary(record, nodeCount((await DB.get('resources')) ?? [], record.id));
+    }
     return result;
   },
   /** Called with a log entry whenever hook code (on_placed, on_deleted, on_wired, on_widget) fails. Returns the function that stops listening. */
@@ -467,6 +480,13 @@ const Backend = {
   },
   subscribe(listener, options) {
     return DB.subscribe(listener, options);
+  },
+  async shutdownExecutions() {
+    for (const id of EXECUTIONS.keys()) stopExecution(id);
+    await Promise.all([...EXECUTIONS.values()].map(entry=>entry.done));
+  },
+  async shutdownPlugins() {
+    await Promise.all([...PLUGIN_HOSTS.keys()].map(stopPluginRuntime));
   },
   get persistent() {
     return DB.persistent;

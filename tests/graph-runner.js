@@ -6,10 +6,10 @@ async function runGraphFixture(fixture, {verify = true} = {}) {
   const app = createApp(),
     p = await app.api('POST', 'projects', {name: 'Fixture'});
   const wf = await app.api('POST', `projects/${p.id}/workflows/import`, fixture.graph);
-  const run = await app.api('POST', `projects/${p.id}/runs`, {
+  const run = await app.api('POST', `projects/${p.id}/execution`, {
     workflow_id: wf.id,
     payload: fixture.inputs ?? {},
-    wait: 2,
+    wait: true,
   });
   if (verify) assert.equal(run.status, fixture.expected.status ?? 'completed', JSON.stringify(run.errors));
   if (verify && fixture.expected.displays)

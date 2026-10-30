@@ -36,7 +36,7 @@ test('on_run: Run fires it, and a Script after it sees the payload of the trigge
     s = await setup(app);
   const script = await fn(app, s.id, s.q, {code: 'node.display(context.payload.n * 2)'});
   await flow(app, s.id, s.q, [script.step]);
-  const r = await app.api('POST', `projects/${s.id}/runs`, {...s.q, wait: 5, payload: {n: 21}});
+  const r = await app.api('POST', `projects/${s.id}/execution`, {...s.q, wait: true, payload: {n: 21}});
   assert.equal(r.status, 'completed', JSON.stringify(r.errors));
   assert.equal(r.displays[script.id], '42');
 });

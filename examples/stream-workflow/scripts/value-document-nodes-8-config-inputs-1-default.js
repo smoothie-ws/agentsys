@@ -1,1 +1,0 @@
-if(!node.resumed)await node.wait({event:"stream-answer"});await node.state.set("answer",node.resumed.value);node.display(node.resumed.value);

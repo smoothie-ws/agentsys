@@ -1,6 +1,6 @@
 'use strict';
 // Loads the browser-free half of the app (storage, model, backend) into a Node vm context. The script list is read from
-// index.html, so a new backend file only needs to be added there. Used by the server (the HTTP API and the scheduler,
+// index.html, so a new backend file only needs to be added there. Used by the server (the HTTP API,
 // with Script nodes in worker threads and the data folder as the store) and by the tests (in memory, Scripts inline).
 const fs = require('node:fs');
 const path = require('node:path');
@@ -70,22 +70,18 @@ class NodeWorker {
 // A run as plain async code in this process: fast and simple, for tests. No time limit, no isolation (the nodes of a run share
 // one realm, as they do in a Worker).
 const INLINE_RUN_PLAN = `runPlan = async (plan, onEvent, signal, control) => {
-  await preparePlanPermissions(plan);
-  await versionPlan(plan);
+  preparePlanPermissions(plan);
   plan = clone(plan);
-  plan.capture_boundaries = RUNS.byId.has(plan.context.run_id) && !plan.replay;
-  const host = planHost(plan, onEvent, control);
+  const host = planHost(plan, onEvent, control, signal);
   if (signal?.aborted) throw new Error('Run cancelled');
   let over = false;
   const gate = {paused:control?.paused===true,waiters:[]};
-  const receive = message => {if(message.type==='patch')return gate.patch(message.patch);if(message.type==='cancel_wave')return gate.cancelWave(message.path);gate.paused=message.type==='pause';if(!gate.paused)gate.waiters.splice(0).forEach(wake=>wake());};
+  const receive = message => {gate.paused=message.type==='pause';if(!gate.paused)gate.waiters.splice(0).forEach(wake=>wake());};
   const stop = new Promise((_, reject) => signal?.addEventListener('abort', () => { over = true; reject(new Error('Run cancelled')); }, {once: true}));
   const run = executePlan(plan, {
     AsyncFunction: Object.getPrototypeOf(async function () {}).constructor,
     displayText,
     call: host.call,
-    authorize: host.authorize,
-    checkpoint: value => !over && host.checkpoint(value),
     limits: plan.limits,
     gate,
     emit: event => { if (!over) host.emit(event); },

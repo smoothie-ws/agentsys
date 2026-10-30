@@ -54,25 +54,6 @@ async def measure(base):
         elapsed = await page.evaluate("async()=>{const t=performance.now();await go('/');return performance.now()-t}")
         page.remove_listener('request', listener)
         print('dashboard100', json.dumps({'ms': elapsed, 'requests': len(requests)}), flush=True)
-        await page.evaluate("go('/projects')")
-        await page.wait_for_timeout(600)
-        requests.clear()
-        page.on('request', listener)
-        elapsed = await page.evaluate("async()=>{const t=performance.now();await go('/runs');return performance.now()-t}")
-        page.remove_listener('request', listener)
-        print('runs100', json.dumps({'ms': elapsed, 'requests': len(requests)}), flush=True)
-        before = await page.locator('[data-run]').count()
-        result = await page.evaluate('''async()=>{
-            const p=await api('projects',{method:'POST',body:{name:'External activation'}});
-            await api(`projects/${p.id}/typed-nodes`,{method:'POST',body:{node_type:'custom',
-                config:{title:'Start',op:'on_run',inputs:[],outputs:[{id:'out',name:'out',type:'signal'}]},position:{x:0,y:0}}});
-            return api(`projects/${p.id}/runs`,{method:'POST',body:{wait:2}});
-        }''')
-        await page.wait_for_timeout(1500)
-        visible = await page.locator('[data-run]').count()
-        await page.evaluate("async()=>{await go('/');await go('/runs')}")
-        print('runsFreshness', json.dumps({'completedStatus':result['status'], 'rowsBefore':before,
-            'rowsAfter1500ms':visible, 'rowsAfterReopening':await page.locator('[data-run]').count()}), flush=True)
         assert not errors, errors
         await browser.close()
 

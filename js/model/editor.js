@@ -406,7 +406,7 @@ class Editor {
 
   setPortValues(nodeId, values, direction) {
     const noun = direction === 'inputs' ? 'input' : 'output';
-    if (!isObject(values) || !Object.keys(values).length) throw bad(`Give the values as {${noun} ID: value}`);
+    if (!isObject(values)) throw bad(`Give the values as {${noun} ID: value}`);
     const table = this.typeTable(),
       stored = nodeId.startsWith('complex:') ? this.doc.complex.find(c => c.id === nodeId.slice(8)) : null;
     if (nodeId.startsWith('complex:') && !stored) throw missing('Complex Node not found');
@@ -514,7 +514,7 @@ class Editor {
   /** Sets the values of widgets of a Custom node: `values` is {widget ID: value}. */
   setWidgetValues(nodeId, values) {
     this.customNode(nodeId);
-    if (!isObject(values) || !Object.keys(values).length) throw bad('Give the widget values as {widget ID: value}');
+    if (!isObject(values)) throw bad('Give the widget values as {widget ID: value}');
     const list = this.doc.widgets[nodeId] ?? [];
     for (const [id, value] of Object.entries(values)) {
       const widget = list.find(w => w.id === id);
@@ -1238,7 +1238,8 @@ class Editor {
       mapping.set(
         record.id,
         this.saveNode({
-          ...(opts.preserveIds ? {id: record.id} : {}),
+          // Exported catalogs may use symbolic IDs; turn those into valid local record IDs.
+          ...(opts.preserveIds && /^record:[a-f0-9]{32}$/.test(record.id) ? {id: record.id} : {}),
           node_type: record.payload.node_type,
           config: retypeConfig(record.payload.config ?? {}),
         }).id

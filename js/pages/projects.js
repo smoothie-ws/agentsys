@@ -92,38 +92,10 @@ async function newProjectDialog() {
   );
 }
 
-/** Runs a workflow without opening it: the same evaluation as the Run button, result stored as the last run. */
-async function runFromCard(projectId, workflow, button) {
-  if (button?.disabled) return;
-  if (button) {
-    button.disabled = true;
-    button.classList.add('busy');
-  }
-  try {
-    const graph = await api(`projects/${projectId}/workflow`, {query: {workflow_id: workflow.id}});
-    const starts = startNodes(graph.nodes);
-    if (!starts.length) return toast('Add an on_run node to run.');
-    const started = Date.now(),
-      result = await api(`projects/${projectId}/evaluate-node`, {
-        method: 'POST',
-        body: {workflow_id: workflow.id, node_ids: starts.map(n => n.id), collect: true},
-      });
-    const {failed, last, results, log} = runRecord(graph.nodes, result, started);
-    await api(`projects/${projectId}/last-run`, {
-      method: 'PUT',
-      body: {workflow_id: workflow.id, results, status: Object.entries(result.status), last, log},
-    });
-    // The name is a link to the workflow (brackets would end the link early).
-    const link = `“[${workflow.name.replace(/[\[\]]/g, '')}](/p/${encodeURIComponent(projectId)}/w/${encodeURIComponent(workflow.id)})”`;
-    toast(failed.size ? `${link} finished with ${plural(failed.size, 'error')}.` : `${link} done.`, failed.size > 0);
-  } catch (error) {
-    fail(error);
-  } finally {
-    if (button) {
-      button.disabled = false;
-      button.classList.remove('busy');
-    }
-  }
+async function runFromCard(projectId, workflow, button){
+  if(button)button.disabled=true;
+  try{await api('projects/'+projectId+'/execution',{method:'POST',body:{workflow_id:workflow.id}});await go('/p/'+projectId+'/w/'+workflow.id);}
+  finally{if(button)button.disabled=false;}
 }
 
 // ----- project -----
@@ -172,7 +144,8 @@ function workflowActions(projectId, workflow, title) {
     await render();
   };
   return [
-    ['Run', () => runFromCard(projectId, workflow), {icon: 'play'}],
+    ...(app.route?.page === 'workflow' && app.route.project === projectId && app.route.workflow === workflow.id
+      ? [] : [['Run', () => runFromCard(projectId, workflow), {icon: 'play'}]]),
     [
       'Rename',
       () =>

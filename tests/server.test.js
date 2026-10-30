@@ -12,7 +12,7 @@ const {nodes, TYPES} = require('./harness');
 
 async function withServer(options, work) {
   const dataDir = fs.mkdtempSync(path.join(os.tmpdir(), 'agentsys-'));
-  const app = createServer({dataDir, scheduler: false, ...options});
+  const app = createServer({dataDir, ...options});
   const url = await app.listen(0);
   try {
     // The tests build Custom nodes by hand, which needs developer mode.
@@ -41,8 +41,11 @@ const call = async (url, method, route, body, headers = {}) => {
   return {status: response.status, body: text ? JSON.parse(text) : undefined, headers: response.headers};
 };
 /** Gives a workflow the types that the nodes of the harness use. */
-const typed = (url, id, headers = {}) =>
-  call(url, 'PUT', `projects/${id}/types`, {workflow_id: id, types: Object.values(TYPES)}, headers);
+const typed = async (url, id, headers = {}) => {
+  const {body} = await call(url, 'GET', `projects/${id}/types`, undefined, headers);
+  const types=[...body.types,...Object.values(TYPES).filter(t=>!body.types.some(old=>old.id===t.id))];
+  return call(url, 'PUT', `projects/${id}/types`, {workflow_id:id,types}, headers);
+};
 /** An on_run node wired to `ids` (each: [node id, input port, output port] or just the id), one after another; answers its ID. */
 async function startOf(url, id, w, ids, headers = {}) {
   const make = await call(
@@ -90,19 +93,17 @@ test('the API creates, runs and persists: projects become files in the data fold
       call(url, 'POST', `projects/${id}/typed-nodes`, {...w, node_type, config, position: {x: 0, y: 0}}).then(
         r => r.body
       );
-    const script = await node('custom', nodes.script('node.display("hi?" + context.run_id.length)'));
+    const script = await node('custom', nodes.script('node.display("hi?" + context.workflow_id.length)'));
     await startOf(url, id, w, [script.id]);
     // Scripts run in worker threads here.
-    const run = await call(url, 'POST', `projects/${id}/runs`, {...w, wait: 15});
+    const run = await call(url, 'POST', `projects/${id}/execution`, {...w, wait: true});
     assert.equal(run.status, 200);
     assert.equal(run.body.status, 'completed');
     assert.equal(run.body.displays[script.id], 'hi?32');
     // The data is plain JSON files, including the run history.
     assert.ok(fs.existsSync(path.join(dataDir, 'projects.json')));
     assert.ok(fs.existsSync(path.join(dataDir, 'workflows', `${id}.json`)));
-    assert.ok(fs.existsSync(path.join(dataDir, 'runs', run.body.id + '.json')));
-    const history = await call(url, 'GET', `projects/${id}/runs?workflow_id=${id}`);
-    assert.equal(history.body.length, 1);
+    assert.ok(!fs.existsSync(path.join(dataDir, 'runs')));
     assert.equal((await call(url, 'GET', 'openapi.json')).body.info.title, 'AgentSys browser API');
   });
 });
@@ -121,8 +122,9 @@ test('a request writes only what it changed: a default that was only read is not
           : files.push(path.relative(dataDir, path.join(dir, e.name)).split(path.sep).join('/'));
     };
     walk(dataDir);
-    for (const junk of ['other/triggers.json', 'other/node_disabled_folders.json', 'other/node_folder_icons.json'])
+    for (const junk of ['other/triggers.json', 'other/node_disabled_folders.json'])
       assert.ok(!files.includes(junk), `${junk} holds only a default and is not written`);
+    assert.ok(JSON.parse(fs.readFileSync(path.join(dataDir,'other/node_folder_icons.json'),'utf8')).AI,'the installed plugin has a real AI group icon');
     for (const file of files.filter(f => f.endsWith('.json')))
       assert.notEqual(
         fs.readFileSync(path.join(dataDir, file), 'utf8').trim(),
@@ -217,74 +219,6 @@ test('who may use the API: header for changes, Host check, token', async () => {
   });
 });
 
-test('a run can be followed as Server-Sent Events', async () => {
-  await withServer({}, async ({url}) => {
-    const {body: project} = await call(url, 'POST', 'projects', {name: 'SSE'}),
-      id = project.id,
-      w = {workflow_id: id};
-    await typed(url, id);
-    const script = (
-      await call(url, 'POST', `projects/${id}/typed-nodes`, {
-        ...w,
-        node_type: 'custom',
-        config: nodes.script('await new Promise(r => setTimeout(r, 200)); node.display(1)'),
-        position: {x: 0, y: 0},
-      })
-    ).body;
-    await startOf(url, id, w, [script.id]);
-    const run = (await call(url, 'POST', `projects/${id}/runs`, w)).body;
-    const response = await fetch(`${url}/api/runs/${run.id}/stream`, {headers: {'X-AgentSys': '1'}});
-    assert.equal(response.headers.get('content-type'), 'text/event-stream');
-    const text = await response.text(); // ends when the run does
-    const types = [...text.matchAll(/^event: (.+)$/gm)].map(m => m[1]);
-    assert.equal(types[0], 'run_started');
-    assert.equal(types.at(-1), 'run_finished');
-    assert.ok(types.includes('node_completed'));
-    assert.equal((await fetch(`${url}/api/runs/unknown/stream`)).status, 404);
-    assert.ok(script.id);
-  });
-});
-
-test('webhooks start runs with the body as payload, with no other credential', async () => {
-  await withServer({token: 'tok'}, async ({url}) => {
-    const auth = {Authorization: 'Bearer tok'};
-    const {body: project} = await call(url, 'POST', 'projects', {name: 'Hooks'}, auth),
-      id = project.id,
-      w = {workflow_id: id};
-    await typed(url, id, auth);
-    const hook = (
-      await call(
-        url,
-        'POST',
-        `projects/${id}/typed-nodes`,
-        {
-          ...w,
-          node_type: 'custom',
-          config: nodes.script('node.display(context.payload.event)'),
-          position: {x: 0, y: 0},
-        },
-        auth
-      )
-    ).body;
-    await startOf(url, id, w, [hook.id], auth);
-    const trigger = (await call(url, 'POST', 'triggers', {name: 'Push', type: 'webhook', project_id: id}, auth)).body;
-    for (const body of ['{broken', '[]', 'null'])
-      assert.equal((await fetch(`${url}/hooks/${trigger.token}`, {method: 'POST', body})).status, 400);
-    assert.equal((await call(url, 'GET', 'runs', undefined, auth)).body.length, 0,
-      'invalid payloads must not activate a workflow with an empty object');
-    const response = await fetch(`${url}/hooks/${trigger.token}`, {
-      method: 'POST',
-      body: JSON.stringify({event: 'push'}),
-    });
-    assert.equal(response.status, 202);
-    const started = await response.json();
-    const finished = (await call(url, 'GET', `runs/${started.id}?`, undefined, auth)).body;
-    assert.ok(['running', 'completed'].includes(finished.status));
-    assert.equal((await fetch(`${url}/hooks/wrong`, {method: 'POST', body: '{}'})).status, 404);
-    assert.equal((await fetch(`${url}/hooks/${trigger.token}`)).status, 405);
-  });
-});
-
 test("the browser storage and the API see each other's writes", async () => {
   await withServer({}, async ({url, dataDir}) => {
     const first = await call(url, 'POST', 'projects', {name: 'From the API'});
@@ -313,42 +247,62 @@ test("the browser storage and the API see each other's writes", async () => {
   });
 });
 
-test('the interval scheduler runs inside the server', async () => {
-  const dataDir = fs.mkdtempSync(path.join(os.tmpdir(), 'agentsys-'));
-  const app = createServer({dataDir}); // scheduler on
-  const url = await app.listen(0);
-  try {
-    await call(url, 'PUT', 'settings', {developer_mode: true});
-    const {body: project} = await call(url, 'POST', 'projects', {name: 'Timer'}),
-      id = project.id;
-    await typed(url, id);
-    const one = (
-      await call(url, 'POST', `projects/${id}/typed-nodes`, {
-        workflow_id: id,
-        node_type: 'custom',
-        config: nodes.script('node.display(1)'),
-        position: {x: 0, y: 0},
-      })
-    ).body;
-    await startOf(url, id, {workflow_id: id}, [one.id]);
-    const trigger = (
-      await call(url, 'POST', 'triggers', {name: 'Often', type: 'interval', project_id: id, every_seconds: 10})
-    ).body;
-    // Make it due without waiting ten seconds: pretend it last ran long ago.
-    const triggers = JSON.parse(fs.readFileSync(path.join(dataDir, 'other', 'triggers.json'), 'utf8'));
-    triggers[0].last_run_at = Date.now() / 1000 - 3600;
-    fs.writeFileSync(path.join(dataDir, 'other', 'triggers.json'), JSON.stringify(triggers));
-    let runs = [];
-    for (let i = 0; i < 100 && !runs.length; i++) {
-      await new Promise(r => setTimeout(r, 100));
-      runs = (await call(url, 'GET', 'runs')).body;
+test('API and raw-storage commits fingerprint only their own keys, without scanning the data tree', async () => {
+  await withServer({}, async ({url, dataDir}) => {
+    const original = fs.readdirSync;
+    let fullScans = 0;
+    fs.readdirSync = (directory, ...args) => {
+      if (path.resolve(String(directory)) === path.resolve(dataDir)) fullScans++;
+      return original(directory, ...args);
+    };
+    try {
+      const created = await call(url, 'POST', 'projects', {name: 'Fast commit'});
+      assert.equal(created.status, 200);
+      const response = await fetch(`${url}/__data`, {
+        method: 'POST', headers: {'X-AgentSys': '1', 'Content-Type': 'application/json'},
+        body: JSON.stringify({set: {'latency-probe': {value: 1}}}),
+      });
+      assert.equal(response.status, 200);
+      assert.equal(fullScans, 0);
+    } finally {
+      fs.readdirSync = original;
     }
-    assert.ok(runs.length >= 1, 'the scheduler started a run');
-    assert.equal(runs[0].trigger_id, trigger.id);
-  } finally {
-    await app.close();
-    fs.rmSync(dataDir, {recursive: true, force: true});
-  }
+  });
+});
+
+test('asynchronous file polling still detects external Script and layout edits', async () => {
+  await withServer({}, async ({url, dataDir}) => {
+    const {body: project} = await call(url, 'POST', 'projects', {name: 'External files'}),
+      {body: node} = await call(url, 'POST', `projects/${project.id}/primitives`, {primitive: 'script', point: {x: 0, y: 0}});
+    const config = (await call(url, 'GET', `projects/${project.id}/workflow`)).body.nodes.find(n => n.id === node.id).config;
+    config.inputs.find(p => p.id === 'script').default = 'node.display("initial");';
+    await call(url, 'PUT', `projects/${project.id}/typed-nodes/${node.id}`, {node_type: 'custom', config});
+    const controller = new AbortController();
+    const stream = await fetch(`${url}/__data/events`, {signal: controller.signal});
+    try {
+      const graph = JSON.parse(fs.readFileSync(path.join(dataDir, 'workflows', project.id + '.json'), 'utf8')),
+        code = graph.value.nodes.find(n => n.id === node.id).config.inputs.find(p => p.id === 'script').default.$script,
+        sidecar = path.join(dataDir, 'workflows', project.id + '.files');
+      fs.writeFileSync(path.join(sidecar, code), 'node.display("external edit");');
+      const until = async check => {
+        for (let i = 0; i < 40; i++) {
+          if (await check()) return;
+          await new Promise(resolve => setTimeout(resolve, 100));
+        }
+        assert.fail('External file edit was not observed');
+      };
+      await until(async () => (await call(url, 'GET', `projects/${project.id}/workflow`)).body.nodes
+        .find(n => n.id === node.id).config.inputs.find(p => p.id === 'script').default === 'node.display("external edit");');
+      const file = path.join(sidecar, 'layout.json'), layout = JSON.parse(fs.readFileSync(file, 'utf8'));
+      layout['["value","layout"]'][node.id].x = 123;
+      fs.writeFileSync(file, JSON.stringify(layout));
+      await until(async () => (await call(url, 'GET', `projects/${project.id}/workflow`)).body.nodes
+        .find(n => n.id === node.id).position.x === 123);
+    } finally {
+      controller.abort();
+      await stream.body.cancel().catch(() => {});
+    }
+  });
 });
 
 test('the site itself is still served, without the data folder or dotfiles', async t => {
@@ -400,7 +354,7 @@ test('the app is at /editor/ (/ goes there) and everything it loads is under /ed
     assert.match(page, /id="brand"/);
     assert.match(page, /src="\/editor\/js\/app\/router\.js"/);
     assert.equal((await fetch(url + '/editor/js/nothing.js')).status, 404);
-    for (const page of ['api', 'api/', 'settings/', 'runs/', 'projects/', 'library', 'library/nodes', 'library/ai.skills', 'library/ai.providers/provider.example', 'resources/ai.skills', 'p/lib-builtin.delay/w/lib-builtin.delay/']) {
+    for (const page of ['api', 'api/', 'settings/', 'projects/', 'library', 'library/nodes', 'library/ai.providers/provider.example', 'p/lib-builtin.delay/w/lib-builtin.delay/']) {
       const response = await fetch(url + '/editor/' + page);
       assert.equal(response.status, 200, page);
       assert.match(response.headers.get('content-type'), /text\/html/, page);

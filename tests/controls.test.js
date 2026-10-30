@@ -50,6 +50,15 @@ async function project(app, types = [TEXT, COUNT, MODE, PLAIN]) {
   return {id, node, run, echo, snapshot: () => app.api('GET', `projects/${id}/workflow`)};
 }
 
+test('empty port value updates leave the graph and undo history unchanged', async () => {
+  const app=createApp(), p=await project(app), node=await p.echo();
+  const before=await p.snapshot(), history=await app.api('GET',`projects/${p.id}/edit-history`);
+  for(const path of ['input-values','output-values'])
+    await app.api('PUT',`projects/${p.id}/${path}`,{node_id:node.wrapper,values:{}});
+  assert.deepEqual(await p.snapshot(),before);
+  assert.deepEqual(await app.api('GET',`projects/${p.id}/edit-history`),history);
+});
+
 test('a type may have a control; an enum is a select with its options', async () => {
   const app = createApp(),
     p = await project(app);

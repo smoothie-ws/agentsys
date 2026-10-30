@@ -33,13 +33,6 @@ route(
     };
     let next = folders;
     const icons = await c.ctx.get('node_folder_icons', {});
-    // The groups a plugin keeps its nodes in belong to the plugin.
-    const owned = await pluginFolders(c);
-    const inPlugin = p => [...owned].some(f => underPath(p, f) || underPath(f, p));
-    if (['rename', 'delete', 'icon'].includes(action) && inPlugin(path))
-      throw bad('This group belongs to a plugin. Disable or remove the plugin instead.');
-    if (action === 'create' && owned.has(path))
-      throw bad('This group belongs to a plugin; make your own group elsewhere.');
     if (action === 'icon') {
       if (!folders.includes(path)) throw bad('Group not found');
       const icon = String(c.body.icon ?? '');
@@ -94,9 +87,7 @@ route(
       item = items.find(r => r.id === resource_id);
     if (!item) throw missing('Record not found');
     const folder = String(c.body.folder ?? '');
-    if (pluginOwned(item)) throw pluginManaged(item);
     if (folder && !(await nodeFolders(c)).includes(folder)) throw bad('Group not found');
-    if ([...(await pluginFolders(c))].some(f => underPath(folder, f))) throw bad('This group belongs to a plugin.');
     item.payload.folder = folder;
     c.ctx.set('resources', items);
     return {id: item.id, folder};
@@ -115,7 +106,6 @@ route(
     const rid = c.body.resource_id || uid(),
       item = items.find(r => r.id === rid);
     if (c.body.resource_id && !item) throw missing('Record not found');
-    if (item && pluginOwned(item)) throw pluginManaged(item);
     const id = 'lib-' + rid,
       doc = emptyDoc();
     doc.folder = String(c.body.folder ?? '');
@@ -190,12 +180,6 @@ route(
     for (let n = 2; items.some(r => r.name === name); n++) name = `${item.name} copy ${n}`;
     const payload = clone(item.payload),
       top = payload.bundle?.groups?.find(g => !g.parent);
-    // A copy of a plugin's node is the person's own: it leaves the plugin's group and is no longer managed.
-    if (pluginOwned(item)) {
-      delete payload.plugin;
-      payload.folder = '';
-      payload.grants = ['graph.read'];
-    }
     if (top) top.name = name.slice(0, 100);
     const copy = saveResource(c, items, null, name.slice(0, 100), payload);
     return {id: copy.id, name: copy.name};

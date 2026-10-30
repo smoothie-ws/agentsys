@@ -6,7 +6,7 @@ const {createApp} = require('./harness');
 test('notifications: post, list newest first, delete one, clear', async () => {
   const app = createApp();
   assert.deepEqual(await app.api('GET', 'notifications'), {total: 0, items: []});
-  const a = await app.api('POST', 'notifications', {title: 'First', level: 'warn', href: '/runs'});
+  const a = await app.api('POST', 'notifications', {title: 'First', level: 'warn', href: '/projects'});
   const b = await app.api('POST', 'notifications', {title: 'Second', body: 'text', source: 'test'});
   assert.equal('read' in a, false);
   const list = await app.api('GET', 'notifications');

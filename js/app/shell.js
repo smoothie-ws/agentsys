@@ -175,20 +175,20 @@ async function destinations() {
     {label: 'Projects', hint: 'Page', href: '/projects'},
     {label: 'Plugins', hint: 'Page', href: '/plugins'},
     {label: 'Library', hint: 'Page', href: '/library'},
-    {label: 'Runs', hint: 'Page', href: '/runs'},
     {label: 'API', hint: 'Page', href: '/api'},
     {label: 'Settings', hint: 'Page', href: '/settings'},
   ];
   for (const p of app.plugins || []) {
     found.push({label: p.manifest.name, hint: p.enabled ? 'Plugin' : 'Plugin · disabled', href: pluginHref(p.id)});
     if (!p.enabled) continue;
-    for (const x of p.manifest.contributes.pages)
+    for (const x of pluginContributions(p).pages)
       found.push({label: x.title, hint: `Plugin · ${p.manifest.name}`, href: pluginHref(p.id, x.id)});
-    for (const x of p.manifest.contributes.commands)
+    for (const x of pluginContributions(p).commands)
       found.push({
         label: x.title,
         hint: `Command · ${p.manifest.name}`,
         href: x.page ? pluginHref(p.id, x.page) : x.path,
+        ...(x.handler ? {command: {plugin: p.id, id: x.id}} : {}),
       });
   }
   const list = await api('projects'); // fresh: a project made a moment ago by a script is not in the sidebar's list yet
@@ -240,7 +240,7 @@ function openSearch() {
     const found = q ? await api('search/nodes', {query: {q: text, limit: 50}}) : {nodes: []};
     if (mine !== sequence || !input.isConnected) return;
     results.innerHTML =
-      (go_.length ? `<h3>Go to</h3>${go_.map(d => link(d.href, d.label, d.hint)).join('')}` : '') +
+      (go_.length ? `<h3>Go to</h3>${go_.map((d, i) => d.command ? `<a href="#" data-command="${i}"><strong>${esc(d.label)}</strong><span class="muted small">${esc(d.hint)}</span></a>` : link(d.href, d.label, d.hint)).join('')}` : '') +
         (found.nodes.some(n => developerMode() || !n.project_id.startsWith('lib-'))
           ? `<h3>Nodes</h3>${found.nodes
               .filter(n => developerMode() || !n.project_id.startsWith('lib-'))
@@ -253,6 +253,11 @@ function openSearch() {
               )
               .join('')}`
           : '') || '<p class="muted">Nothing matches.</p>';
+    for (const element of $$('[data-command]', results)) element.onclick = event => {
+      event.preventDefault();
+      const command = go_[Number(element.dataset.command)].command;
+      executePluginCommand(command.plugin, command.id).catch(fail);
+    };
   };
   input.oninput = () => {
     sequence++; // invalidate the previous request immediately, including during the debounce
@@ -310,8 +315,7 @@ Backend.subscribe(keys => {
       k =>
         k === 'resources' ||
         k.startsWith('node_folder') ||
-        k.startsWith('library/sections/') ||
-        k.startsWith('library/skills/')
+        k.startsWith('library/sections/')
     )
   )
     loadLibrary()

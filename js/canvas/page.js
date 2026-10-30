@@ -44,19 +44,20 @@ PAGES.workflow = async (view, route) => {
     edges: new Set(),
     results: new Map(),
     runStatus: new Map(),
-    runLog: [],
     history: {undo: 0, redo: 0},
     drag: null,
     spawn: null,
     reloadTimer: null,
+    reloadTask: null,
+    policyDirty: false,
     unsubscribe: null,
     camera: null,
     previewSignature: null,
-    lastRun: null,
     running: false,
-    waitingRun: null,
-    followedRunId: null,
-    observedRun: null,
+    executionEpoch: 0,
+    executionId: null,
+    startRequest: null,
+    runPaused: false,
     mapDrag: null,
     frameWork: new Map(),
     frameHandle: 0,
@@ -109,30 +110,19 @@ PAGES.workflow = async (view, route) => {
   W.world = $('#world');
   wireCanvas();
   Inspector.mount($('#side'));
-  if (!W.library) {
-    // The result of the last run comes back with the workflow.
-    const saved = await api(`projects/${W.project}/last-run`, {query: {workflow_id: W.workflow}}).catch(() => null);
+  // Subscribe before reading the first snapshot: a hook may finish while the page is mounting.
+  W.unsubscribe = Backend.subscribe(keys => {
     if (app.route !== route) return;
-    if (saved?.last) {
-      W.results = new Map(saved.results);
-      W.runStatus = new Map(saved.status);
-      W.lastRun = saved.last;
-      W.runLog = saved.log || [];
-    }
-  }
-  if (!W.library) {
-    const pending = await api(`projects/${W.project}/runs`, {
-      query: {workflow_id: W.workflow, status: 'waiting', limit: 1},
-    });
-    if (app.route !== route) return;
-    if (pending[0]) {
-      W.followedRunId = pending[0].id;
-      const waiting = await api('runs/' + pending[0].id);
-      if (app.route !== route) return;
-      W.waitingRun = waiting;
-      for (const n of W.waitingRun.nodes) if (n.status === 'waiting') W.runStatus.set(n.node_id, 'waiting');
-    }
-  }
+    if (keys.includes('policy:' + route.project)) W.policyDirty = true;
+    if (keys.includes('wf:' + route.workflow) || keys.includes('policy:' + route.project)) scheduleReload();
+  }, {own:true});
+  leaveGuards.push(async () => {
+    for (const element of W.elements.values()) forgetFieldHeights(element);
+    clearTimeout(W.reloadTimer);
+    W.unsubscribe?.();
+    W.unsubscribe = null;
+    return Inspector.leave();
+  });
   await reload(true);
   if (app.route !== route) return;
   if (W.library && W.snapshot.root) select(['frame:' + W.snapshot.root]);
@@ -144,39 +134,9 @@ PAGES.workflow = async (view, route) => {
   else fit();
   const focus = routeQuery().get('node');
   if (focus) reveal(focus);
+  const execution=await api('projects/'+W.project+'/execution',{query:{workflow_id:W.workflow}});
+  if(app.route!==route)return;
+  if(['running','paused'].includes(execution.status)) followExecution(execution).catch(fail);
   const editor = $('.editor', view);
   requestAnimationFrame(() => requestAnimationFrame(() => editor.classList.remove('opening')));
-  // Edits made in another tab arrive through the shared database.
-  // Code that runs by itself (a hook) edits the workflow too: `own` also listens to that.
-  W.unsubscribe = Backend.subscribe(
-    keys => {
-      if (keys.includes('wf:' + route.workflow) || keys.includes('policy:' + route.project)) scheduleReload();
-      if (W.followedRunId && keys.includes('runs/' + W.followedRunId)) {
-        const id = W.followedRunId;
-        api('runs/' + id)
-          .then(detail => {
-            if (W.project !== route.project || W.workflow !== route.workflow) return;
-            W.waitingRun = detail.status === 'waiting' ? detail : null;
-            W.observedRun = detail.status === 'running' ? detail : null;
-            W.runPaused = detail.status === 'running' && !!detail.paused; // paused from the Runs page or elsewhere
-            if (terminalRun(detail.status)) W.followedRunId = null;
-            for (const n of detail.nodes) {
-              if (['waiting', 'running', 'blocked', 'failed'].includes(n.status)) W.runStatus.set(n.node_id, n.status);
-              else W.runStatus.delete(n.node_id);
-            }
-            for (const [node, text] of Object.entries(detail.displays ?? {})) W.results.set(node, {text});
-            scheduleReload();
-          })
-          .catch(fail);
-      }
-    },
-    {own: true}
-  );
-  leaveGuards.push(async () => {
-    for (const element of W.elements.values()) forgetFieldHeights(element);
-    clearTimeout(W.reloadTimer);
-    W.unsubscribe?.();
-    W.unsubscribe = null;
-    return Inspector.leave();
-  });
 };

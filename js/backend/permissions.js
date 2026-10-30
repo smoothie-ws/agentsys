@@ -14,12 +14,8 @@ function checkManifest(manifest) {
 }
 // Every route gets an explicit method -> needs entry. Unknown families are denied to scripts.
 function routeNeeds(pattern, method) {
-  if (/^workflows\/\{workflow_id\}\/(state|queues)(\/|$)/.test(pattern))
-    return [method === 'GET' ? 'graph.read' : 'graph.write'];
-  if (pattern === 'projects/{project_id}/evaluate-node') return ['run.start'];
+  if (pattern === 'projects/{project_id}/evaluate-node' || pattern.startsWith('projects/{project_id}/execution')) return [method === 'GET' ? 'run.read' : 'run.start'];
   if (pattern === 'net') return ['net.fetch:{host}'];
-  if (/^projects\/\{project_id\}\/runs$/.test(pattern)) return [method === 'GET' ? 'run.read' : 'run.start'];
-  if (/^(runs|triggers)(\/|$)/.test(pattern)) return method === 'GET' ? ['run.read'] : ['system.admin'];
   if (pattern === 'notifications') return [method === 'GET' ? 'notifications.read' : method === 'POST' ? 'notifications.write' : 'system.admin'];
   if (/^(resources|library)(\/|$)/.test(pattern)) return [method === 'GET' ? 'library.read' : 'library.write'];
   if (/^projects(\/|$)/.test(pattern) || pattern === 'search/nodes')
@@ -28,45 +24,13 @@ function routeNeeds(pattern, method) {
 }
 const allows = (list, capability) =>
   list.some(value => value === capability || (value.endsWith(':*') && capability.startsWith(value.slice(0, -1))));
-// Every invocation captures its declaration at start. Code that
-// arrives through a wire (not typed into the node) cannot have been reviewed, so it only gets the read grants.
-const grantedBy = (manifest, capability) =>
-  (manifest.chain ?? [manifest.grants ?? []]).every(list => allows(list, capability)) &&
-  (!manifest.limit || allows(manifest.limit, capability));
-const READ_ONLY = ['graph.read', 'library.read', 'run.read'];
-async function preparePlanPermissions(plan) {
-  const resources = (await DB.get('resources')) ?? [];
+// Permissions come from the placed instances. Library defaults are copied on placement, never checked at runtime.
+const grantedBy = (permissions, capability) => permissions.chain.every(list => allows(list, capability));
+function preparePlanPermissions(plan) {
   for (const step of plan.nodes) {
-    if (step.manifest) continue;
-    const resource = resources.find(r => r.id === step.context?.resource_id);
-    const manifest = resource?.payload ?? step.declared ?? {};
-    const dynamic = !!step.inputs?.find(p => p.code)?.ref;
-    const grants = clone(manifest.grants ?? []);
-    step.manifest = {
-      capabilities: clone(manifest.capabilities ?? []),
-      grants,
-      // Placed in a Library node: only what every node around it allows (the node's own declared grants no longer count).
-      // A node placed before permissions moved to the placed node (no list stored on it) still counts the grants it declares.
-      ...(step.context?.grant_chain?.length ? {chain: [...step.context.grant_chain.filter(l => l), ...(step.context.grant_chain.some(l => !l) ? [grants] : [])]} : {}),
-      ...(dynamic ? {limit: READ_ONLY} : {}),
-    };
+    step.permissions = {chain: clone(step.context?.grant_chain?.length
+      ? step.context.grant_chain : [step.grants ?? []])};
   }
-}
-async function nodeStartPermission(plan, step, invocation) {
-  const run = RUNS.byId.get(plan.context.run_id);
-  if (run?.replay) {
-    const entry = run.replay.authorizations?.shift();
-    if (!entry || entry.invocation !== invocation || entry.node_version !== step.content_hash)
-      throw new ApiError('replay_diverged', 'Replay diverged at node authorization: ' + invocation, 409);
-    return entry.reason;
-  }
-  const policy = (await DB.get('policy:' + plan.context.project_id)) ?? {allow: ['graph.read']};
-  const denied = (step.manifest?.capabilities ?? []).find(
-    capability => !grantedBy(step.manifest, capability) || !allows(policy.allow ?? [], capability)
-  );
-  const reason = denied ? 'Permission denied: ' + denied : null;
-  recordPlanEntry(run, 'authorizations', {invocation, node_version: step.content_hash, reason});
-  return reason;
 }
 async function permissionNeeds(method, path, body) {
   const found = ROUTES.find(r => r.methods.has(method) && r.regex.test(path));
@@ -74,18 +38,24 @@ async function permissionNeeds(method, path, body) {
   const params = Object.fromEntries(
     Object.entries(path.match(found.regex).groups ?? {}).map(([k, v]) => [k, decodeURIComponent(v)])
   );
-  if (path === 'net') {
+  let needs = found.needs[method];
+  if (found.pattern === 'plugins/{id}/call/{name}') {
+    const plugin = ((await DB.get(PLUGIN_INDEX)) ?? []).find(p=>p.id===params.id && p.enabled);
+    const endpoint = pluginContributions(plugin).endpoints?.find(e=>e.name===params.name && e.methods.includes(method));
+    needs = endpoint?.permissions ?? needs;
+  }
+  if (needs.some(need=>need.includes('{host}'))) {
     try {
       params.host = new URL(body.url).host;
     } catch {
       throw bad('Invalid network URL');
     }
   }
-  return found.needs[method].map(need => need.replace(/{(\w+)}/g, (_, k) => params[k] ?? '*'));
+  return needs.map(need => need.replace(/{(\w+)}/g, (_, k) => params[k] ?? '*'));
 }
 async function assertScriptPermission(context, method, path, body) {
   const step = context.step;
-  const manifest = step?.manifest ?? {capabilities: [], grants: []};
+  const permissions = step?.permissions ?? {chain: [[]]};
   const policy = (await DB.get('policy:' + context.project_id)) ?? {allow: ['graph.read']};
   let needs = await permissionNeeds(method, path, body);
   if (method !== 'GET' && /^projects\/lib-/.test(path)) needs.push('library.write');
@@ -93,14 +63,11 @@ async function assertScriptPermission(context, method, path, body) {
   needs = [...needs, ...[...usedSecrets].map(m => 'secrets.use:' + m[1])];
   const denied = needs.find(
     need =>
-      !allows(manifest.capabilities, need) || !allows(policy.allow ?? [], need) || !grantedBy(manifest, need)
+      !allows(policy.allow ?? [], need) || !grantedBy(permissions, need)
   );
-  const run = RUNS.byId.get(context.run_id);
   if (denied) {
-    if (run) emit(run, 'permission_denied', {node_id: context.node_id, method, path, needs});
     throw new ApiError('permission_denied', 'Permission denied: ' + denied, 403);
   }
-  if (run && method !== 'GET') emit(run, 'sensitive_action', {node_id: context.node_id, method, path, needs});
 }
 function quarantineWrite(value) {
   if (!value || typeof value !== 'object') return value;

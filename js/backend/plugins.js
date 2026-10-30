@@ -4,8 +4,8 @@
 'use strict';
 
 const PLUGIN_FORMAT = 'agentsys.plugin/1';
-/** The version of the extension points. A plugin that needs a higher one (`engine: ">=2"`) is refused. */
-const PLUGIN_API = 1;
+/** The version of the extension points. A plugin that needs a higher one (`engine: ">=3"`) is refused. */
+const PLUGIN_API = 2;
 const PLUGIN = {
   files: 200,
   fileBytes: 2000000,
@@ -149,7 +149,8 @@ function pluginSettingValues(schema, saved, strict = false) {
  * Checks a package from outside and returns a clean copy: {format, manifest, files}. `manifest.contributes` names files of the package
  * for each extension point; a name that is not a file, a duplicate, or a capability the system does not know is an error.
  */
-function validatePluginPackage(input) {
+function validatePluginPackage(input, runtime = false) {
+  if (input?.format === 'agentsys.plugin/2') return validateRuntimePackage(input);
   if (!isObject(input) || input.format !== PLUGIN_FORMAT || !isObject(input.manifest) || !isObject(input.files))
     throw bad(`A plugin package is {format: "${PLUGIN_FORMAT}", manifest, files}`);
   const files = {};
@@ -276,16 +277,17 @@ function validatePluginPackage(input) {
   out.commands = uniquePluginItems(
     pluginList(contributes.commands, 'commands', 50).map(cmd => {
       if (!isObject(cmd) || typeof cmd.id !== 'string' || !PLUGIN_ITEM.test(cmd.id)) throw bad('A command needs an id');
-      if ((cmd.page === undefined) === (cmd.path === undefined))
+      if ([cmd.page, cmd.path, ...(runtime ? [cmd.handler] : [])].filter(v => v !== undefined).length !== 1)
         throw bad(`Command ${cmd.id}: give either "page" (a page of the plugin) or "path" (a page of the app)`);
       if (cmd.page !== undefined && !out.pages.some(p => p.id === cmd.page))
         throw bad(`Command ${cmd.id}: there is no page "${String(cmd.page).slice(0, 40)}"`);
       if (cmd.path !== undefined && (typeof cmd.path !== 'string' || !/^\/[A-Za-z0-9_\-/?=&%.]{0,198}$/.test(cmd.path)))
-        throw bad(`Command ${cmd.id}: path is a page of the app, like /runs`);
+        throw bad(`Command ${cmd.id}: path is a page of the app, like /projects`);
       return {
         id: cmd.id,
         title: pluginText(cmd.title ?? cmd.id, 'A command title', 100, 1),
-        ...(cmd.page !== undefined ? {page: cmd.page} : {path: cmd.path}),
+        ...(cmd.page !== undefined ? {page: cmd.page} : runtime && cmd.handler !== undefined
+          ? {handler: pluginText(cmd.handler, 'Command handler', 100, 1)} : {path: cmd.path}),
       };
     }),
     'commands'
@@ -297,15 +299,28 @@ function validatePluginPackage(input) {
       const methods = e.methods ?? ['POST'];
       if (!Array.isArray(methods) || !methods.length || methods.some(x => !PLUGIN_METHODS.includes(x)))
         throw bad(`Endpoint ${e.name}: methods is a list of ${PLUGIN_METHODS.join(', ')}`);
+      if (e.permissions !== undefined) {
+        if (!Array.isArray(e.permissions) || !e.permissions.length) throw bad('Endpoint permissions must be nonempty');
+        checkManifest({grants:e.permissions.filter(p=>p!=='net.fetch:{host}')});
+      }
+      if (e.timeout !== undefined && (!Number.isInteger(e.timeout) || e.timeout < 100 || e.timeout > 300000)) throw bad('Endpoint timeout must be 100 to 300000 milliseconds');
       return {
         name: e.name,
         methods: [...new Set(methods)],
-        entry: pluginFile(files, e.entry, '.js', `endpoint ${e.name}`),
+        ...(e.permissions ? {permissions:[...new Set(e.permissions)]} : {}),
+        ...(e.timeout ? {timeout:e.timeout} : {}),
+        ...(runtime && e.handler !== undefined
+          ? {handler: pluginText(e.handler, 'Endpoint handler', 100, 1)}
+          : {entry: pluginFile(files, e.entry, '.js', `endpoint ${e.name}`)}),
       };
     }),
     'endpoints'
   );
   out.settings = validatePluginSettingsSchema(contributes.settings);
+  for (const section of out.library)
+    for (const field of section.item?.fields ?? [])
+      if (field.type === 'list' && !out.endpoints.some(e => e.name === field.endpoint && e.methods.includes('POST')))
+        throw bad('Library list endpoint must support POST: ' + field.endpoint);
   for (const section of out.library)
     for (const action of [...section.actions, ...section.folderActions, ...(section.item?.actions ?? [])])
       if (!out.endpoints.some(e => e.name === action.endpoint && e.methods.includes('POST')))
@@ -326,9 +341,8 @@ async function pluginPackage(c, id) {
   if (!pkg) throw missing('The files of this plugin are missing');
   return pkg;
 }
-const pluginOwned = item => item?.payload?.plugin ?? null;
 function checkPluginGrants(manifest, grants) {
-  if (!Array.isArray(grants) || grants.some(g => typeof g !== 'string' || !manifest.capabilities.includes(g)))
+  if (!Array.isArray(grants) || grants.some(g => typeof g !== 'string' || !pluginCapabilities({manifest}).includes(g)))
     throw bad('grants lists capabilities that the plugin declares');
   return [...new Set(grants)];
 }
@@ -345,7 +359,7 @@ function pluginCatalog(record, pkg) {
   const out = [],
     ids = new Set(),
     folder = pluginFolderName(pkg.manifest);
-  for (const path of pkg.manifest.contributes.nodes) {
+  for (const path of pluginContributions(pkg).nodes) {
     let entries;
     try {
       entries = TextGraph.decode(JSON.parse(pkg.files[path]));
@@ -363,14 +377,12 @@ function pluginCatalog(record, pkg) {
         .split('/')
         .map(p => p.trim())
         .filter(Boolean);
-      const capabilities = entry.payload.capabilities ?? [];
-      checkManifest({capabilities});
+      const defaults = entry.payload.grants ?? entry.payload.capabilities ?? [];
+      checkManifest({grants: defaults});
       const payload = {
         ...clone(entry.payload),
-        plugin: record.id,
         folder: [folder, ...inner].join('/'),
-        capabilities,
-        grants: capabilities.filter(cap => allows(record.grants, cap)),
+        grants: clone(defaults),
       };
       validateResource(payload);
       out.push({id, name, payload});
@@ -378,56 +390,38 @@ function pluginCatalog(record, pkg) {
   }
   return out;
 }
-/** Makes the Library hold exactly the nodes of an enabled plugin (none when it is disabled or gone). Copies already placed keep working. */
-async function syncPluginLibrary(c, record, pkg) {
-  const items = await c.ctx.get('resources', []),
-    wanted = record.enabled && pkg ? pluginCatalog(record, pkg) : [],
-    keep = new Set(wanted.map(w => w.id)),
-    mine = r => pluginOwned(r) === record.id,
-    next = items.filter(r => !mine(r) || keep.has(r.id)),
-    now = Date.now() / 1000;
-  for (const r of items) if (mine(r) && !keep.has(r.id)) await c.ctx.remove('wf:lib-' + r.id);
-  for (const w of wanted) {
-    if (next.some(r => r.name === w.name && r.id !== w.id))
-      throw bad(`The Library already has a node named “${w.name}”. Rename or delete it, then enable the plugin again.`);
-    const have = next.find(r => r.id === w.id);
-    if (!have) next.push({id: w.id, name: w.name, payload: w.payload, created: now, updated: now});
-    else if (JSON.stringify([have.name, have.payload]) !== JSON.stringify([w.name, w.payload]))
-      Object.assign(have, {name: w.name, payload: w.payload, updated: now});
+/** Seed ordinary Library data once, like built-ins. Updates never overwrite edits or restore deleted nodes. */
+async function seedPluginNodes(c, record, pkg) {
+  const items = await c.ctx.get('resources', []);
+  // Migrate old ownership metadata without changing definitions, defaults or update stamps.
+  let migrated = false;
+  for (const item of items) {
+    if (!Object.hasOwn(item.payload, 'plugin')) continue;
+    delete item.payload.plugin;
+    migrated = true;
   }
-  next.sort((a, b) => a.name.localeCompare(b.name, undefined, {sensitivity: 'base'}));
-  if (JSON.stringify(next) !== JSON.stringify(items)) {
-    c.ctx.set('resources', next);
-    c.libraryTouched = true; // the Library's types follow its nodes
+  if (migrated) c.ctx.set('resources', items);
+  if (!record.enabled || !pkg) return nodeCount(items, record.id);
+  const added = new Set(record.nodes_added ?? items.filter(r => r.id.startsWith(`plugin.${record.id}.`)).map(r => r.id));
+  let created = false;
+  for (const node of pluginCatalog(record, pkg)) {
+    if (added.has(node.id)) continue;
+    added.add(node.id);
+    if (items.some(r => r.id === node.id || r.name === node.name)) continue;
+    const now = Date.now() / 1000;
+    items.push({...node, created: now, updated: now});
+    created = true;
   }
-  // The plugin's group wears the plug icon.
-  const icons = await c.ctx.get('node_folder_icons', {}),
-    folderPath = pluginFolderName(pkg?.manifest ?? record.manifest);
-  if (wanted.length && !icons[folderPath]) c.ctx.set('node_folder_icons', {...icons, [folderPath]: 'plug'});
-  else if (!wanted.length && icons[folderPath] === 'plug') {
-    const {[folderPath]: _, ...rest} = icons;
-    c.ctx.set('node_folder_icons', rest);
+  record.nodes_added = [...added];
+  if (created) {
+    items.sort((a, b) => a.name.localeCompare(b.name, undefined, {sensitivity: 'base'}));
+    c.ctx.set('resources', items);
+    c.libraryTouched = true;
+    const icons = await c.ctx.get('node_folder_icons', {}), folder = pluginFolderName(pkg.manifest);
+    if (!icons[folder]) c.ctx.set('node_folder_icons', {...icons, [folder]: 'plug'});
   }
-  return wanted.length;
+  return nodeCount(items, record.id);
 }
-/** The Library groups that hold nodes of plugins, with every level above them: a person cannot rename, delete or add to them. */
-async function pluginFolders(c) {
-  const out = new Set();
-  for (const r of await c.ctx.get('resources', []))
-    if (pluginOwned(r)) {
-      const parts = String(r.payload.folder || '')
-        .split('/')
-        .filter(Boolean);
-      parts.forEach((_, i) => out.add(parts.slice(0, i + 1).join('/')));
-    }
-  return out;
-}
-const pluginManaged = item =>
-  new ApiError(
-    'plugin_managed',
-    `“${item.name}” belongs to the plugin ${pluginOwned(item)}. Disable or remove the plugin instead.`,
-    409
-  );
 
 // ----- settings and data -----
 const pluginSettingsOf = (c, record) => c.ctx.get(pluginKey(record.id, 'settings'), {});
@@ -483,28 +477,29 @@ function logPlugin(id, entry) {
   if (list.length > PLUGIN.log) list.splice(0, list.length - PLUGIN.log);
   PLUGIN_LOG.set(id, list);
 }
+function pluginOwnsCollection(record, path) {
+  const ownSection = /^library\/sections\/([^/]+)\/(items(?:\/[^/]+)?|folders)$/.exec(path);
+  return !!(ownSection &&
+    (pluginContributions(record).library ?? []).some(s => record.id + '.' + s.id === decodeURIComponent(ownSection[1]))
+  );
+}
 /** A plugin may always use its own settings, data, log and endpoints; everything else needs a capability the plugin declares and a person granted. */
 async function assertPluginPermission(record, method, path, body) {
-  if (new RegExp(`^plugins/${record.id}/(data(/[^/]+)?|settings|log|call/[^/]+)$`).test(path)) return;
-  const ownSection = /^library\/sections\/([^/]+)\/(items(?:\/[^/]+)?|folders)$/.exec(path);
-  if (
-    ownSection &&
-    (record.manifest.contributes.library ?? []).some(s => record.id + '.' + s.id === decodeURIComponent(ownSection[1]))
-  )
-    return;
+  if (new RegExp(`^plugins/${record.id}/(data(/[^/]+)?|settings|log|call/[^/]+|commands/[^/]+)$`).test(path)) return;
+  if (pluginOwnsCollection(record, path)) return;
   let needs = await permissionNeeds(method, path, body);
   const secrets = [...JSON.stringify(body).matchAll(/\{\{secret:([A-Za-z0-9_-]+)\}\}/g)].map(
     m => 'secrets.use:' + m[1]
   );
   needs = [...needs, ...secrets];
-  const denied = needs.find(need => !allows(record.manifest.capabilities, need) || !allows(record.grants, need));
+  const denied = needs.find(need => !allows(pluginCapabilities(record), need) || !allows(record.grants, need));
   if (denied) {
     logPlugin(record.id, {kind: 'denied', method, path, needs, error: 'Permission denied: ' + denied});
     throw new ApiError('permission_denied', `The plugin “${record.id}” has no permission: ${denied}`, 403);
   }
 }
 /** One call of a plugin to the API. Rights are read fresh each time, so a revoked grant or a disabled plugin stops at once. */
-async function pluginBridgeRequest(id, method, path, body, query) {
+async function pluginBridgeRequest(id, method, path, body, query, {signal} = {}) {
   const record = ((await DB.get(PLUGIN_INDEX)) ?? []).find(p => p.id === id);
   if (!record?.enabled) throw new ApiError('plugin_disabled', `The plugin “${id}” is not enabled`, 409);
   method = String(method).toUpperCase();
@@ -516,7 +511,7 @@ async function pluginBridgeRequest(id, method, path, body, query) {
   query = {...(query ?? {})};
   await assertPluginPermission(record, method, path, body);
   if (method === 'POST' && path === 'notifications') body.source = 'plugin:' + id; // a plugin cannot sign as someone else
-  const dataRoute = /^(workflows\/[^/]+\/(state|queues)|plugins\/[^/]+\/data)(\/|$)/.test(path);
+  const dataRoute = /^plugins\/[^/]+\/data(\/|$)/.test(path);
   // Code a plugin writes into a graph is quarantined like code a Script writes: it holds no grants until a person gives them.
   if (method !== 'GET' && !dataRoute) {
     body = quarantineWrite(body);
@@ -524,8 +519,8 @@ async function pluginBridgeRequest(id, method, path, body, query) {
     if (body.config) body.config = {...body.config, grants: ['graph.read']};
     if (path.startsWith('resources/') && body.payload) body.payload = {...body.payload, grants: ['graph.read']};
   }
-  const result = await Backend.request(method, path, {body, query});
-  return dataRoute ? clone(result) : stripSecrets(result);
+  const result = await Backend.request(method, path, {body, query,scriptContext:signal?{signal}:null});
+  return dataRoute || pluginOwnsCollection(record, path) ? clone(result) : stripSecrets(result);
 }
 
 // ----- endpoints: plugin code in an isolated Worker -----
@@ -639,7 +634,7 @@ async function callPluginEndpoint(record, endpoint, code, request) {
   const started = Date.now();
   const entry = {kind: 'endpoint', endpoint: endpoint.name, method: request.method};
   try {
-    const schema = record.manifest.contributes.settings,
+    const schema = pluginContributions(record).settings,
       saved = (await DB.get(pluginKey(record.id, 'settings'))) ?? {};
     const host = {
       call: ([method, path, body, query]) => pluginBridgeRequest(record.id, method, path, body, query),

@@ -35,6 +35,7 @@ const TEST_PERMISSIONS = [
 /** A fresh, empty application (new in-memory database) with a Backend and a way to run the code of Scripts in Node. */
 function createApp({scripts = 'inline', developer = true, store = null} = {}) {
   const {Backend, context, eval: evaluate, workerStats} = loadBackend({root, scripts, store});
+  evaluate(`const TEST_OBSERVATIONS = new Map();route('GET PUT','test-observations/{key}','Test-only side effect probe',async(c,{key})=>{if(c.method==='PUT')TEST_OBSERVATIONS.set(key,c.body.value);return {value:TEST_OBSERVATIONS.get(key)};},{needs:{GET:['graph.read'],PUT:['graph.write']}});`);
   // Results are copied out of the vm context so assert.deepEqual compares plain objects of this realm.
   // Developer mode is on unless a test asks otherwise: most tests build Custom nodes.
   const ready = developer ? Backend.request('PUT', 'settings', {body: {developer_mode: true}, query: {}}) : null;

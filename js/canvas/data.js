@@ -18,29 +18,57 @@ function previewHTML(result) {
 }
 
 // ----- data -----
-function scheduleReload(delay = 250) {
-  clearTimeout(W.reloadTimer);
-  W.reloadTimer = setTimeout(() => reload().catch(fail), delay);
+function scheduleReload(delay = 50) {
+  if (W.reloadTask?.canvas === W.canvas) {
+    W.reloadTask.again = true;
+    return;
+  }
+  if (W.reloadTimer) return;
+  W.reloadTimer = setTimeout(() => {
+    W.reloadTimer = null;
+    reload().catch(fail);
+  }, delay);
 }
 
 async function reload(first = false) {
   const canvas = W.canvas;
   if (!canvas?.isConnected) return;
+  clearTimeout(W.reloadTimer);
+  W.reloadTimer = null;
   if (W.drag) return scheduleReload(300);
+  if (W.reloadTask?.canvas === canvas) {
+    W.reloadTask.again = true;
+    return W.reloadTask.promise;
+  }
+  const task = {canvas, again: false, promise: null};
+  W.reloadTask = task;
+  task.promise = (async () => {
+    do {
+      task.again = false;
+      if (await loadWorkflowSnapshot(first, task)) first = false;
+    } while (task.again && W.canvas === canvas && canvas.isConnected);
+  })().finally(() => {
+    if (W.reloadTask === task) W.reloadTask = null;
+  });
+  return task.promise;
+}
+
+async function loadWorkflowSnapshot(first, task) {
+  const canvas = task.canvas;
   const [snapshot, history, policy] = await Promise.all([
     api(`projects/${W.project}/workflow`, {query: {workflow_id: W.workflow}}),
     api(`projects/${W.project}/edit-history`, {query: {workflow_id: W.workflow}}),
-    api(`projects/${W.project}/policy`),
+    W.policy && !W.policyDirty ? W.policy : api(`projects/${W.project}/policy`),
   ]);
   if (canvas !== W.canvas || !canvas.isConnected || snapshot.workflow_id !== W.workflow) return;
+  // An edit arrived after these reads began. Fetch its state before painting, without flashing an older graph.
+  if (task.again) return;
   W.snapshot = snapshot;
   W.policy = policy;
+  W.policyDirty = false;
   W.history = history;
   discardStaleRun();
-  for (const node of W.waitingRun?.nodes ?? []) if (node.status === 'waiting') W.runStatus.set(node.node_id, 'waiting');
   for (const node of snapshot.nodes) if (W.runStatus.has(node.id)) node.status = W.runStatus.get(node.id);
-  for (const node of snapshot.nodes)
-    if (node.status === 'waiting') node.wait = W.waitingRun?.nodes.find(n => n.node_id === node.id)?.wait;
   W.nodes = new Map(snapshot.nodes.map(n => [n.id, n]));
   W.groups = new Map(snapshot.groups.map(g => [g.id, g]));
   W.complex = new Map(snapshot.complex.map(c => [c.id, c]));
@@ -65,6 +93,7 @@ async function reload(first = false) {
   syncToolbar();
   if (!first) Inspector.refresh();
   else Inspector.show();
+  return true;
 }
 
 /** What the canvas does not draw: what a collapsed Complex Node hides (every node and group inside it, including inner Complex Nodes). */

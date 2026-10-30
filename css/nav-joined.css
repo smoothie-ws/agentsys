@@ -149,6 +149,11 @@ body.nav-joined #mobile-secondary > .nav-pill {
 .nav-joined .nav-pill.jump {
   transition: opacity var(--base) var(--ease); /* it moves at once but still fades in */
 }
+/* A dragged boundary and its highlights must use the same frame, including the receiving panel's glow. */
+.resizing-panel .nav-pill,
+.resizing-panel .nav-seam {
+  transition: none !important;
+}
 .nav-joined #sidebar .nav-pill {
   left: var(--edge);
 }

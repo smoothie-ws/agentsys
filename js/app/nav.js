@@ -13,18 +13,18 @@ const applyNavJoined = (on, layoutKey = '') => {
   requestAnimationFrame(() => placePills(true, true));
 };
 
-/** Which primary section owns a route; Dashboard contains its overview, Runs and API. */
+/** Which primary section owns a route; Dashboard contains its overview and API. */
 function sectionOf(route) {
   if (route.project?.startsWith('lib-')) return 'library'; // a Custom Node is edited as a workflow
   if (route.project || route.page === 'projects') return 'projects';
   if (
     route.page === 'plugins' &&
     route.view &&
-    pluginById(route.id)?.manifest.contributes.pages.some(x => x.id === route.view && x.section === 'library')
+    pluginContributions(pluginById(route.id)).pages.some(x => x.id === route.view && x.section === 'library')
   )
     return 'library'; // a page a plugin puts into the Library
   return (
-    {resources: 'library', plugins: 'plugins', settings: 'settings', runs: 'home', api: 'home'}[route.page] || 'home'
+    {resources: 'library', plugins: 'plugins', settings: 'settings', api: 'home'}[route.page] || 'home'
   );
 }
 const SECTION_TITLES = {
@@ -33,7 +33,6 @@ const SECTION_TITLES = {
   projects: 'Projects',
   library: 'Library',
   settings: 'Settings',
-  runs: 'Runs',
   api: 'API reference',
 };
 
@@ -141,9 +140,9 @@ const resourceRow = r => ({
   key: 'r:' + r.id,
   label: r.name,
   icon: resourceIcon(r),
-  href: developerMode() && !r.payload.plugin ? resourceHref(r) : null,
+  href: developerMode() ? resourceHref(r) : null,
   menu: 'resource:' + r.id,
-  drag: developerMode() && !r.payload.plugin ? r.id : undefined,
+  drag: developerMode() ? r.id : undefined,
 });
 /** What each section shows: the open row (`active`), the groups to unfold to reach it, and the rows. */
 // One definition of each primary section. Pages never replace this tree.
@@ -153,12 +152,6 @@ const SECTION_PANELS = {
     ['editing', 'Editing', 'settings'],
     ['appearance', 'Appearance', 'palette'],
     ['keyboard-shortcuts', 'Keyboard shortcuts', 'keyboard'],
-  ],
-  runs: [
-    ['activations', 'Activations', 'activity'],
-    ['workflows', 'Workflows', 'play'],
-    ['versions', 'Versions', 'file'],
-    ['run-limits', 'Run limits', 'settings'],
   ],
 };
 const sectionHref = (section, key) =>
@@ -184,16 +177,10 @@ function selectedPanel(section) {
 }
 const NAV_TREES = {
   home: route => ({
-    active:
-      route.page === 'runs'
-        ? 'panel:' + selectedPanel('runs')
-        : route.page === 'api'
-          ? selectedApiCallKey() ? 'api-call:' + selectedApiCallKey() : 'dashboard:api'
-          : 'panel:overview',
+    active: route.page === 'api' ? 'dashboard:api' : 'panel:overview',
     rows: () => [
       ...panelTree('home').rows(),
-      {key: 'dashboard:runs', label: 'Runs', icon: 'activity', href: '/runs', children: panelTree('runs').rows()},
-      {key: 'dashboard:api', label: 'API', icon: 'code', href: '/api', menu: 'section:api', empty: 'No calls found.', children: apiNavigationRows(route.page === 'api' ? Tabs.stateOf('api')?.apiFilter || '' : '')},
+      {key: 'dashboard:api', label: 'API', icon: 'code', href: '/api', menu: 'section:api'},
     ],
   }),
   settings: () => panelTree('settings'),
@@ -282,7 +269,7 @@ function pageMenu(route = app.route || {}) {
             : catalogSectionMenu(route.section);
   if (route.page === 'plugins' && route.id) return 'plugin:' + route.id;
   if (route.project) return route.workflow ? `workflow:${route.project}:${route.workflow}` : 'project:' + route.project;
-  return ['home', 'runs'].includes(route.page) ? '' : 'section:' + route.page;
+  return route.page === 'home' ? '' : 'section:' + route.page;
 }
 let shownSection = '',
   shownTarget = '';
@@ -292,9 +279,6 @@ function renderSubnav(route) {
     target = Tabs.keyOf(route) + (route.page === 'api' ? ':' + (routeQuery().get('call') || '') : ''),
     changed = section !== shownSection || target !== shownTarget;
   $('#subnav').hidden = false;
-  $('#api-nav-filter').hidden = route.page !== 'api';
-  const apiFilter = Tabs.stateOf('api')?.apiFilter || '';
-  if ($('#api-nav-search').value !== apiFilter) $('#api-nav-search').value = apiFilter;
   if (section !== shownSection) {
     navOpen.clear(); // arriving in a section: its tree starts folded (the Library's one section, Nodes, is open)
     if (section === 'library') navOpen.add('s:nodes');
@@ -309,19 +293,6 @@ function renderSubnav(route) {
       actions: actionButton('plugin:' + override.plugin, 'Section actions'),
       body: `<nav class="subnav-tree">${override.items.map(item => navRow({key: 'pg:' + override.plugin + ':' + item.page, label: item.title, icon: item.icon, href: pluginHref(override.plugin, item.page), menu: 'plugin:' + override.plugin}, pluginActiveKey(route))).join('')}</nav>`,
     });
-  if (changed && route.page === 'runs') navOpen.add('dashboard:runs');
-  if (changed && route.page === 'api') {
-    navOpen.add('dashboard:api');
-    const call = selectedApiCallKey();
-    const path = call?.slice(call.indexOf(' ') + 1).replace(/^\/api/, '');
-    if (path) {
-      let parent = '';
-      for (const segment of path.split('/').filter(Boolean)) {
-        parent += '/' + segment;
-        navOpen.add('api-path:' + parent);
-      }
-    }
-  }
   if (changed && section === 'projects' && route.project) navOpen.add('p:' + route.project);
   if (changed && section === 'library') {
     const item = app.resources.find(
@@ -344,7 +315,7 @@ function renderSubnav(route) {
         navOpen.add(`cf:${route.section}:${parts.slice(0, i).join('/')}`);
   }
   if (changed && section === 'library' && route.page === 'plugins') {
-    const pages = pluginById(route.id)?.manifest.contributes.pages ?? [];
+    const pages = pluginContributions(pluginById(route.id)).pages ?? [];
     let page = pages.find(p => p.id === route.view);
     while (page?.parent) {
       navOpen.add(`pg:${route.id}:${page.parent}`);
@@ -494,8 +465,12 @@ function followPills(ms = 400) {
 addEventListener('resize', () => placePills(true, true));
 // Follow both left highlights on every frame of a panel resize or collapse.
 // Watching the list alone misses changes to the sidebar width and panel padding.
-const pillResizeObserver = new ResizeObserver(() => placePills());
+const pillResizeObserver = new ResizeObserver(() => {
+  const dragging = document.body.classList.contains('resizing-panel');
+  placePills(dragging, dragging);
+});
 for (const pill of Object.values(navPills)) pillResizeObserver.observe(pill);
+for (const panel of [$('#sidebar'), $('#subnav')]) pillResizeObserver.observe(panel);
 // Whatever changes the size of the list (a row added, a group unfolded, the panel folded) moves the rows: the highlight follows.
 pillResizeObserver.observe($('#subnav-list'));
 $('#subnav').addEventListener('transitionend', event => event.target === event.currentTarget && placePills());
@@ -564,7 +539,7 @@ async function resolveMenuItems(spec, owner) {
   if (type === 'plugin-template') {
     const [id, key] = arg.split(':'),
       plugin = pluginById(id),
-      template = plugin?.manifest.contributes.templates.find(t => t.id === key);
+      template = pluginContributions(plugin).templates.find(t => t.id === key);
     return template && templateActions(plugin, template);
   }
   if (type === 'section') return sectionActions(arg);
@@ -704,8 +679,3 @@ $('#subnav').addEventListener('click', event => {
   const group = toggle.closest('.subnav-group');
   setGroupOpen(group, !group.classList.contains('open'));
 });
-
-$('#api-nav-search').oninput = event => {
-  Tabs.stateOf('api').apiFilter = event.target.value;
-  renderSidebar();
-};

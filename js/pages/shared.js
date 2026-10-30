@@ -57,9 +57,9 @@ const COMMON_CAPABILITIES = [
 function permissionChoices(capabilities, grants, attr = 'data-grant', prefix = 'grant') {
   return `<table class="permission-table"><thead><tr><th scope="col">Permission</th><th scope="col">Allow</th><th scope="col">Disallow</th></tr></thead><tbody>${capabilities.map(cap => `<tr><th scope="row">${esc(cap)}</th><td><label class="permission-choice"><input type="radio" name="${prefix}:${esc(cap)}" value="allow" ${attr}="${esc(cap)}" aria-label="Allow ${esc(cap)}" ${grants.includes(cap) ? 'checked' : ''}></label></td><td><label class="permission-choice"><input type="radio" name="${prefix}:${esc(cap)}" value="disallow" aria-label="Disallow ${esc(cap)}" ${grants.includes(cap) ? '' : 'checked'}></label></td></tr>`).join('')}</tbody></table>`;
 }
-function grantControls(grants = [], {hint = 'Permissions are limited by the parent node.', title = 'Permissions'} = {}) {
+function grantControls(grants = [], {hint = 'Permissions are limited by the parent node.', title = 'Permissions', prefix = 'grant'} = {}) {
   const extra = grants.filter(v => !COMMON_CAPABILITIES.includes(v)).join(', ');
-  return `<fieldset class="permission-controls" data-grants><legend>${esc(title)}</legend><p class="permission-hint muted">${esc(hint)}</p><div class="permission-fields">${permissionChoices(COMMON_CAPABILITIES, grants)}<label class="field"><span>Specific permissions</span><input name="extra_grants" value="${esc(extra)}" placeholder="net.fetch:example.com"></label></div></fieldset>`;
+  return `<fieldset class="permission-controls" data-grants><legend>${esc(title)}</legend><p class="permission-hint muted">${esc(hint)}</p><div class="permission-fields">${permissionChoices(COMMON_CAPABILITIES, grants, 'data-grant', prefix)}<label class="field"><span>Specific permissions</span><input name="extra_grants" value="${esc(extra)}" placeholder="net.fetch:example.com"></label></div></fieldset>`;
 }
 function readGrantControls(root) {
   const box = $('[data-grants]', root);

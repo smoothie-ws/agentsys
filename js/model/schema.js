@@ -19,7 +19,7 @@ const CUSTOM_CONFIG_LIMIT = 400000;
 const MAX_PORTS = 256; // per direction
 /** The format of a clipboard / Custom Node bundle (see Editor.copy). Another version is not read. */
 const BUNDLE_VERSION = 3;
-const CUSTOM_KEYS = new Set(['title', 'inputs', 'outputs', 'op', 'widgets', 'capabilities', 'grants']);
+const CUSTOM_KEYS = new Set(['title', 'inputs', 'outputs', 'op', 'widgets', 'grants']);
 const COLOR = /^#(?:[0-9a-fA-F]{6}|[0-9a-fA-F]{8})$/;
 // ----- Widgets: the controls and displays code puts on a Custom node -----
 const WIDGET_KINDS = new Set([
@@ -190,6 +190,7 @@ function ensureAcyclic(adjacency) {
 
 /** The configuration of a Custom node: only the known fields, an operation the engine knows (or none), valid ports. */
 function validateCustomConfig(config, types = NO_TYPES) {
+  delete config.capabilities; // Read older documents without retaining a declaration layer.
   if (typeof checkManifest === 'function') checkManifest(config);
   const unknown = Object.keys(config).find(k => !CUSTOM_KEYS.has(k));
   if (unknown) throw bad(`Unknown Custom node field “${unknown}”`);

@@ -1,7 +1,7 @@
 #!/usr/bin/env node
 // AgentSys local server: serves the site, keeps the data as JSON files in the data/ folder, and runs the same
-// backend the browser has as an HTTP API (/api/…), so runs, triggers and outside programs work with no page open.
-// No dependencies. Run:  node server.js
+// backend the browser has as an HTTP API (/api/…), so workflows can execute with no page open.
+// No dependencies. Run:  node server.js [--port 3000]
 // Environment: PORT, HOST (default 127.0.0.1), DATA_DIR, AGENTSYS_TOKEN (required for API/storage on a non-loopback
 // HOST; optional otherwise), ALLOWED_HOSTS (extra Host header names accepted on loopback, comma separated).
 'use strict';
@@ -29,7 +29,7 @@ const TYPES = {
 //   resources -> library/resources.json        node_folders -> library/node_folders.json
 //   library_types -> library/types.json
 //   wf:<id> -> workflows/<id>.json             wf:lib-<id> -> library/editors/<id>.json
-//   run:<id> -> runs/<id>.json                 anything else -> other/<key>.json
+//   anything else -> other/<key>.json
 const FIXED = {
   prefs: 'settings.json',
   projects: 'projects.json',
@@ -40,29 +40,21 @@ const FIXED = {
 };
 const VALID_KEY = /^(?!.*(?:^|\/)\.\.?($|\/))[A-Za-z0-9:._/-]{1,500}$/;
 const storagePath = key => key.split('/').map(encodeURIComponent).join('/');
-const journalKey = key => /^(workflows\/[^/]+\/queues\/[^/]+\/journal|runs\/[^/]+\/events)$/.test(key);
-const markdownKey = key => /^library\/skills\/[a-z0-9.-]+\/[a-z0-9-]+\/SKILL\.md$/.test(key);
 const fileOf = key => {
-  if (markdownKey(key)) return storagePath(key);
-  if (journalKey(key)) return storagePath(key) + '.jsonl';
   if (key.includes('/')) return storagePath(key) + '.json';
   if (FIXED[key]) return FIXED[key];
   let m = /^wf:lib-(.+)$/.exec(key);
   if (m) return `library/editors/${m[1]}.json`;
   m = /^wf:(.+)$/.exec(key);
   if (m) return `workflows/${m[1]}.json`;
-  m = /^run:(.+)$/.exec(key);
-  if (m) return `last-runs/${m[1]}.json`;
   return `other/${key.replace(/:/g, '__')}.json`;
 };
 const keyOf = file => {
   const rel = file.split(path.sep).map(decodeURIComponent).join('/');
-  if (markdownKey(rel)) return rel;
-  if (rel.endsWith('.jsonl') && journalKey(rel.slice(0, -6))) return rel.slice(0, -6);
   const sidecar = /^(.*)\.files\/(?:layout\.json|scripts\/[A-Za-z0-9_-]+\.js)$/.exec(rel);
   if (sidecar) return keyOf(sidecar[1] + '.json');
   if (
-    (/^(runs|versions|secrets|plugins|library\/(?:sections|credentials))\//.test(rel) && rel.endsWith('.json')) ||
+    (/^(secrets|plugins|library\/(?:sections|credentials))\//.test(rel) && rel.endsWith('.json')) ||
     /^workflows\/[^/]+\/.+\.json$/.test(rel)
   )
     return rel.slice(0, -5);
@@ -71,8 +63,6 @@ const keyOf = file => {
   if (m) return `wf:lib-${m[1]}`;
   m = /^workflows\/(.+)\.json$/.exec(rel);
   if (m) return `wf:${m[1]}`;
-  m = /^last-runs\/(.+)\.json$/.exec(rel);
-  if (m) return `run:${m[1]}`;
   m = /^other\/(.+)\.json$/.exec(rel);
   return m ? m[1].replace(/__/g, ':') : null;
 };
@@ -89,14 +79,30 @@ function walk(dir, out = []) {
     if (e.isDirectory()) walk(p, out);
     else if (
       (e.name.endsWith('.json') ||
-        e.name.endsWith('.jsonl') ||
-        e.name === 'SKILL.md' ||
         (p.includes('.files' + path.sep + 'scripts' + path.sep) && e.name.endsWith('.js'))) &&
       !e.name.includes('.tmp-')
     )
       out.push(p);
   }
   return out;
+}
+// Polling must yield to HTTP edits even when the retained history has many files.
+async function walkAsync(dir) {
+  let entries;
+  try {
+    entries = await fs.promises.readdir(dir, {withFileTypes: true});
+  } catch {
+    return [];
+  }
+  const children = await Promise.all(entries.map(async entry => {
+    const file = path.join(dir, entry.name);
+    if (entry.isDirectory()) return walkAsync(file);
+    return !entry.name.includes('.tmp-') && (
+      entry.name.endsWith('.json') ||
+      (file.includes('.files' + path.sep + 'scripts' + path.sep) && entry.name.endsWith('.js'))
+    ) ? [file] : [];
+  }));
+  return children.flat();
 }
 const stampOf = file => {
   try {
@@ -134,7 +140,7 @@ const same = (a, b) => {
 
 /**
  * Creates the server. Nothing listens until `listen()`.
- * Options: dataDir, host, token, allowedHosts (array), scheduler (false to switch the interval triggers off).
+ * Options: dataDir, host, token, allowedHosts (array).
  */
 function createServer(options = {}) {
   const DATA = path.resolve(options.dataDir || process.env.DATA_DIR || path.join(ROOT, 'data')),
@@ -147,40 +153,59 @@ function createServer(options = {}) {
         .filter(Boolean)
     );
   const abs = key => path.join(DATA, ...fileOf(key).split('/'));
-  const snapshot = () => {
-    const map = new Map();
-    for (const p of walk(DATA)) {
-      const key = keyOf(path.relative(DATA, p)),
-        stamp = key && stampOf(p);
-      if (stamp) map.set(key, (map.get(key) || '') + path.relative(DATA, p) + ':' + stamp + ';');
+  const stamps = entries => {
+    const grouped = new Map();
+    for (const [file, stamp] of entries) {
+      const relative = path.relative(DATA, file), key = keyOf(relative);
+      if (!key || !stamp) continue;
+      if (!grouped.has(key)) grouped.set(key, []);
+      grouped.get(key).push(relative + ':' + stamp + ';');
     }
-    return map;
+    return new Map([...grouped].map(([key, values]) => [key, values.sort().join('')]));
   };
+  const snapshot = () => {
+    return stamps(walk(DATA).map(file => [file, stampOf(file)]));
+  };
+  const snapshotAsync = async () => {
+    const files = await walkAsync(DATA), entries = [];
+    for (let i = 0; i < files.length; i += 128) {
+      entries.push(...await Promise.all(files.slice(i, i + 128).map(async file => {
+        try {
+          const stat = await fs.promises.stat(file);
+          return [file, `${stat.mtimeMs}:${stat.size}`];
+        } catch {return [file, null];}
+      })));
+    }
+    return stamps(entries);
+  };
+  let storageRevision = 0;
+  const changedAt = new Map();
   let known = snapshot();
+  const recordCommit = ({set = {}, remove = []}) => {
+    const revision = ++storageRevision;
+    for (const key of Object.keys(set)) {
+      const file = abs(key),
+        sidecar = key === 'resources' || key.startsWith('wf:'),
+        files = [file, ...(sidecar ? walk(file.replace(/\.json$/, '.files')) : [])];
+      const stamp = stamps(files.map(p => [p, stampOf(p)])).get(key);
+      if (stamp) known.set(key, stamp);
+      else known.delete(key);
+      changedAt.set(key, revision);
+    }
+    for (const key of remove) {
+      known.delete(key);
+      changedAt.set(key, revision);
+    }
+  };
   function readKey(key) {
     let value;
     try {
-      if (markdownKey(key)) return fs.readFileSync(abs(key), 'utf8');
-      if (journalKey(key)) {
-        const text = fs.readFileSync(abs(key), 'utf8'),
-          lines = text.split('\n'),
-          entries = [];
-        for (let i = 0; i < lines.length; i++) {
-          if (!lines[i]) continue;
-          try {
-            entries.push(JSON.parse(lines[i]));
-          } catch (error) {
-            if (i !== lines.length - 1) throw error;
-          }
-        }
-        return entries;
-      }
       value = JSON.parse(fs.readFileSync(abs(key), 'utf8'));
     } catch (error) {
       if (error.code === 'ENOENT') return undefined;
       throw error;
     }
-    if (key === 'resources' || key.startsWith('wf:') || key.startsWith('versions/content/')) {
+    if (key === 'resources' || key.startsWith('wf:')) {
       if (value.format !== TextGraph.FORMAT) throw new Error('Expected canonical graph files: ' + key);
       const folder = abs(key).replace(/\.json$/, '.files');
       const files = {
@@ -246,34 +271,8 @@ function createServer(options = {}) {
     }
   };
   function writeKey(key, value) {
-    if (journalKey(key)) {
-      const file = abs(key),
-        before = readKey(key) ?? [];
-      if (!Array.isArray(value)) throw new Error('Journal entries must be an array');
-      const prefix =
-        before.length <= value.length && before.every((e, i) => JSON.stringify(e) === JSON.stringify(value[i]));
-      if (!prefix) return atomicText(file, value.map(e => JSON.stringify(e) + '\n').join(''));
-      fs.mkdirSync(path.dirname(file), {recursive: true});
-      // Remove a torn final append before retrying the idempotent transaction.
-      const expected = before.map(e => JSON.stringify(e) + '\n').join('');
-      if (fs.existsSync(file) && fs.readFileSync(file, 'utf8') !== expected) atomicText(file, expected);
-      const fd = fs.openSync(file, 'a');
-      try {
-        fs.writeFileSync(
-          fd,
-          value
-            .slice(before.length)
-            .map(e => JSON.stringify(e) + '\n')
-            .join('')
-        );
-        fs.fsyncSync(fd);
-      } finally {
-        fs.closeSync(fd);
-      }
-      return;
-    }
     const file = abs(key);
-    if (key === 'resources' || key.startsWith('wf:') || key.startsWith('versions/content/')) {
+    if (key === 'resources' || key.startsWith('wf:')) {
       const packet = TextGraph.encode(value),
         folder = file.replace(/\.json$/, '.files');
       let previous = [];
@@ -301,13 +300,13 @@ function createServer(options = {}) {
         }
       return;
     }
-    atomicText(file, markdownKey(key) ? String(value) : JSON.stringify(value, null, 2) + '\n');
+    atomicText(file, JSON.stringify(value, null, 2) + '\n');
   }
   function removeKey(key) {
     const file = abs(key),
       folder = file.replace(/\.json$/, '.files');
     if (!path.resolve(folder).startsWith(path.resolve(DATA) + path.sep)) throw new Error('Unsafe storage path');
-    if (key === 'resources' || key.startsWith('wf:') || key.startsWith('versions/content/')) {
+    if (key === 'resources' || key.startsWith('wf:')) {
       try {
         const graph = JSON.parse(fs.readFileSync(file, 'utf8')),
           files = ['layout.json'];
@@ -377,9 +376,7 @@ function createServer(options = {}) {
         },
         commit({set, remove}) {
           commitKeys({set, remove});
-          const current = snapshot();
-          for (const k of Object.keys(set)) known.set(k, current.get(k));
-          for (const k of remove) known.delete(k);
+          recordCommit({set, remove});
           broadcast([...Object.keys(set), ...remove], 'api'); // open pages reload what the API changed
         },
       },
@@ -388,32 +385,29 @@ function createServer(options = {}) {
     backendError = error;
   }
 
-  if (backend) backend.Backend.request('GET', 'runs').catch(error => console.error('Recovery:', error.message));
   // Files are watched by comparing stamps: a page open gets the news within a second, and the backend forgets what it
   // had cached of a file that was edited on disk. With no page open the tree is looked at every few seconds only.
   let ticks = 0;
+  let scanning = false, closing = false;
   const watcher = setInterval(() => {
-    if (!clients.size && ++ticks % 5) return;
-    const now = snapshot(),
-      changed = [];
-    for (const [k, v] of now) if (known.get(k) !== v) changed.push(k);
-    for (const k of known.keys()) if (!now.has(k)) changed.push(k);
-    known = now;
-    if (changed.length) backend?.DB.changed(changed);
-    broadcast(changed);
+    if (scanning || (!clients.size && ++ticks % 5)) return;
+    scanning = true;
+    const revision = storageRevision;
+    snapshotAsync().then(now => {
+      if (closing) return;
+      const changed = [];
+      for (const key of new Set([...known.keys(), ...now.keys()])) {
+        // A commit during this asynchronous scan has a newer, complete fingerprint already.
+        if ((changedAt.get(key) ?? 0) > revision) continue;
+        if (known.get(key) !== now.get(key)) changed.push(key);
+        if (now.has(key)) known.set(key, now.get(key));
+        else known.delete(key);
+      }
+      if (changed.length) backend?.DB.changed(changed);
+      broadcast(changed);
+    }).catch(error => console.error('File watcher:', error.message)).finally(() => {scanning = false;});
   }, 1000);
   watcher.unref();
-
-  // ----- the scheduler: interval triggers fire while the server runs -----
-  let scheduler = null;
-  if (backend && options.scheduler !== false) {
-    scheduler = setInterval(() => {
-      backend.Backend.request('POST', 'scheduler/tick', {body: {}}).catch(error =>
-        console.error('Scheduler:', error.message || error)
-      );
-    }, 1000);
-    scheduler.unref();
-  }
 
   // ----- /__data: raw storage (same Host/token boundary as the API; writes also need X-AgentSys) -----
   async function handleData(req, res, url) {
@@ -425,7 +419,6 @@ function createServer(options = {}) {
     if (req.method === 'GET' && rest === 'events') {
       res.writeHead(200, {'Content-Type': 'text/event-stream', 'Cache-Control': 'no-store', Connection: 'keep-alive'});
       res.write(': connected\n\n');
-      if (!clients.size) known = snapshot(); // the first page back gets a fresh baseline, not a flood
       clients.add(res);
       req.on('close', () => clients.delete(res));
       return;
@@ -454,9 +447,7 @@ function createServer(options = {}) {
       if (!keys.every(k => VALID_KEY.test(k))) return sendJSON(res, 400, {error: 'bad key'});
       commitKeys({set, remove});
       // Only what this request touched can have changed, so the whole tree need not be walked again.
-      const current = snapshot();
-      for (const k of Object.keys(set)) known.set(k, current.get(k));
-      for (const k of remove) known.delete(k);
+      recordCommit({set, remove});
       backend?.DB.changed(keys); // the API's cache must not outlive what the page wrote
       broadcast(keys, String(req.headers['x-client'] || ''));
       return sendJSON(res, 200, {ok: true});
@@ -515,8 +506,6 @@ function createServer(options = {}) {
     const {Backend} = backend;
     if (req.method === 'GET' && rel === 'openapi.json')
       return sendJSON(res, 200, JSON.parse(JSON.stringify(Backend.openapi())));
-    const stream = /^runs\/([^/]+)\/stream$/.exec(rel);
-    if (req.method === 'GET' && stream) return streamRun(req, res, decodeURIComponent(stream[1]));
     if (!['GET', 'POST', 'PUT', 'PATCH', 'DELETE'].includes(req.method))
       return sendJSON(res, 405, {error: {message: 'method not allowed'}});
     const query = Object.fromEntries(url.searchParams);
@@ -535,47 +524,6 @@ function createServer(options = {}) {
       result === undefined ? undefined : JSON.parse(JSON.stringify(result))
     );
   }
-  /** Server-Sent Events of one run: every event as it happens, ending with run_finished. */
-  async function streamRun(req, res, id) {
-    const {Backend} = backend;
-    try {
-      await Backend.request('GET', `runs/${encodeURIComponent(id)}`, {});
-    } catch (error) {
-      return failure(res, error);
-    }
-    res.writeHead(200, {'Content-Type': 'text/event-stream', 'Cache-Control': 'no-store', Connection: 'keep-alive'});
-    let closed = false,
-      after = 0;
-    req.on('close', () => (closed = true));
-    while (!closed) {
-      let batch;
-      try {
-        batch = JSON.parse(
-          JSON.stringify(
-            await Backend.request('GET', `runs/${encodeURIComponent(id)}/events`, {query: {after, wait: 15000}})
-          )
-        );
-      } catch {
-        break;
-      }
-      for (const event of batch.events)
-        res.write(`id: ${event.seq}\nevent: ${event.type}\ndata: ${JSON.stringify(event)}\n\n`);
-      after = batch.next;
-      if (!batch.events.length) res.write(': keep-alive\n\n');
-      if (batch.finished) break;
-    }
-    res.end();
-  }
-  /** POST /hooks/<token>: starts the run of a webhook trigger. The token is the secret, so no other credential. */
-  async function handleHook(req, res, url) {
-    if (!backend) return sendJSON(res, 503, {error: {code: 'unavailable', message: 'The backend is not running'}});
-    if (req.method !== 'POST') return sendJSON(res, 405, {error: {message: 'Use POST'}});
-    const token = decodeURIComponent(url.pathname.slice('/hooks/'.length));
-    const body = await parseJSONBody(req, 64000);
-    const run = await backend.Backend.request('POST', `hooks/${encodeURIComponent(token)}`, {body});
-    sendJSON(res, 202, JSON.parse(JSON.stringify(run)));
-  }
-
   function handleStatic(req, res, url, editor = false) {
     let rel = decodeURIComponent(url.pathname);
     const pageRoute = editor && (!path.extname(rel) || /^\/(?:p|library|resources|plugins)\//.test(rel));
@@ -632,9 +580,7 @@ function createServer(options = {}) {
             ? handleData(req, res, url)
             : url.pathname.startsWith('/api/')
               ? handleApi(req, res, url)
-              : url.pathname.startsWith('/hooks/')
-                ? handleHook(req, res, url)
-                : handleStatic(req, res, url, editor);
+              : handleStatic(req, res, url, editor);
     } catch (error) {
       run = Promise.reject(error);
     }
@@ -657,11 +603,13 @@ function createServer(options = {}) {
         });
       });
     },
-    close() {
+    async close() {
+      closing = true;
       clearInterval(watcher);
-      if (scheduler) clearInterval(scheduler);
+      await backend?.Backend.shutdownExecutions();
       for (const res of clients) res.end();
       clients.clear();
+      await backend?.Backend.shutdownPlugins();
       server.closeAllConnections?.();
       return new Promise(resolve => server.close(() => resolve()));
     },
@@ -673,8 +621,32 @@ function createServer(options = {}) {
 module.exports = {createServer};
 
 if (require.main === module) {
+  function readPort(argv, envPort) {
+    let port = envPort === undefined ? 8080 : Number(envPort);
+    for (let i = 0; i < argv.length; i++) {
+      const arg = argv[i];
+      if (arg === '--port') {
+        if (argv[i + 1] === undefined) throw new Error('Usage: node server.js [--port <number>]');
+        port = Number(argv[++i]);
+      } else if (arg.startsWith('--port=')) {
+        port = Number(arg.slice('--port='.length));
+      } else {
+        throw new Error(`Unknown option: ${arg}. Usage: node server.js [--port <number>]`);
+      }
+    }
+    if (!Number.isInteger(port) || port < 0 || port > 65535)
+      throw new Error(`Invalid port: ${port}. Choose a number from 0 to 65535.`);
+    return port;
+  }
+
+  let port;
+  try {
+    port = readPort(process.argv.slice(2), process.env.PORT);
+  } catch (error) {
+    console.error(error.message);
+    process.exit(2);
+  }
   const app = createServer();
-  const port = process.env.PORT !== undefined ? Number(process.env.PORT) : 8080;
   app
     .listen(port)
     .then(url => {
@@ -682,12 +654,14 @@ if (require.main === module) {
       console.log(`Data folder: ${app.dataDir}`);
       if (!app.api) console.log('The HTTP API is off: the backend could not be loaded.');
       else if (app.apiAvailable)
-        console.log(`HTTP API: ${url}/api/openapi.json (interval triggers run while this server runs)`);
+        console.log(`HTTP API: ${url}/api/openapi.json`);
       else console.log('HTTP API: off. Set AGENTSYS_TOKEN to use it on an address other than 127.0.0.1.');
     })
     .catch(error => {
       console.error(
-        error.code === 'EADDRINUSE' ? `Port ${port} is in use. Set PORT to another number.` : error.message
+        error.code === 'EADDRINUSE'
+          ? `Port ${port} is in use. Choose another port with --port or PORT.`
+          : error.message
       );
       process.exit(1);
     });

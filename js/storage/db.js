@@ -31,6 +31,7 @@ const DB = (() => {
     API = '/__data',
     cache = new Map(),
     listeners = new Set(),
+    committed = new Set(), // plugin events also observe writes made by this backend
     announced = new Set(), // the listeners that also hear about writes made here by hooks
     client = uid(),
     // The headless server (headless.js) hands in its own file store; browsers never define it.
@@ -148,6 +149,7 @@ const DB = (() => {
         });
       for (const key of keys) changes[key] === undefined ? cache.delete(key) : cache.set(key, changes[key]);
       if (!files) channel?.postMessage({keys});
+      for (const listener of committed) listener(keys);
     },
     /** Tells this store that keys were changed from outside (another process wrote the files): cached copies are dropped. */
     changed: notify,
@@ -156,12 +158,14 @@ const DB = (() => {
       for (const listener of announced) listener(keys);
     },
     /** Called with the changed keys when another tab writes or a file is edited on disk. */
-    subscribe(listener, {own = false} = {}) {
+    subscribe(listener, {own = false, commits = false} = {}) {
       listeners.add(listener);
       if (own) announced.add(listener);
+      if (commits) committed.add(listener);
       return () => {
         listeners.delete(listener);
         announced.delete(listener);
+        committed.delete(listener);
       };
     },
   };
@@ -208,6 +212,6 @@ class Context {
     return changes;
   }
   commit() {
-    return versionedCommit(this.changes());
+    return DB.commit(this.changes());
   }
 }

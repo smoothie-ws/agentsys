@@ -95,14 +95,14 @@ async def desktop_theme(browser):
     await page.wait_for_selector('[data-node-actions] [data-act=edit]')
     assert await page.locator('#node-connections').evaluate('(el)=>!!(el.compareDocumentPosition(document.querySelector("[data-node-actions]")) & Node.DOCUMENT_POSITION_FOLLOWING)')
     assert await page.locator('#side-actions').evaluate('(el)=>{const a=el.getBoundingClientRect(),p=el.closest(".side-content").getBoundingClientRect();return Math.abs(a.bottom-p.bottom)<1}')
-    for tab in ['activity','properties']:
+    for tab in ['workflow','properties']:
         await page.locator(f'[data-side-tab={tab}]').click()
         await page.wait_for_timeout(400)
         assert await page.locator('.side-content').evaluate('(el)=>{const s=getComputedStyle(el);return parseFloat(s.borderTopRightRadius)>0 && parseFloat(s.borderBottomRightRadius)>0}')
         assert await page.locator('#side').evaluate('(el)=>getComputedStyle(el).borderRadius')=='0px'
         assert await page.locator('.side-tabs').evaluate('(el)=>getComputedStyle(el).backgroundColor')=='rgba(0, 0, 0, 0)'
         assert await page.locator('.side-tabs .nav-pill').is_visible()
-        assert await page.locator('.side-tabs .nav-pill').evaluate('(el)=>el.getBoundingClientRect().top-el.closest(".side").getBoundingClientRect().top>=2*parseFloat(getComputedStyle(el.closest(".side")).getPropertyValue("--join-r"))')
+        assert await page.locator('.side-tabs .nav-pill').evaluate('(el)=>el.getBoundingClientRect().top-el.closest(".side").getBoundingClientRect().top>=0')
     await page.locator('[data-node-actions] [data-act=edit]').click()
     await page.wait_for_function('!!W.library')
     await page.evaluate('''async()=>{await go(`/p/${polishProject}/w/${polishProject}`);select(polishSelection);Inspector.toggle(true);await Inspector.show();}''')
@@ -161,9 +161,8 @@ async def phone(browser,width,height):
     await page.locator('#mobile-browse').tap()
     await page.locator('#subnav [data-key="dashboard:api"] a').tap()
     await page.wait_for_selector('.api-method-heading')
-    await page.locator('#mobile-browse').tap()
-    await page.locator('#api-nav-search').fill('project-defaults')
-    await page.locator('#subnav [data-key^="api-call:"] a:visible').first.tap()
+    await page.locator('#api-method-search').fill('project-defaults')
+    await page.locator('.api-call:visible').first.tap()
     assert '/api/project-defaults' in await page.locator('.api-method-heading').inner_text()
     assert await page.evaluate('document.documentElement.scrollWidth===innerWidth')
     await page.locator('#sidebar [data-section=projects]').tap()

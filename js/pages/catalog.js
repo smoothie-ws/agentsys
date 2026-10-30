@@ -99,21 +99,19 @@ function catalogCrumbs(section, folder = '') {
 }
 function catalogControls(section, item = {}) {
   const values = item.values ?? {};
-  const fields =
-    section.item.format === 'skill'
-      ? [{key: 'instructions', label: 'Instructions', type: 'textarea', required: true}]
-      : section.item.fields;
+  const fields = section.item.fields;
   return (
     field(
       'Name',
-      `<input name="item_name" required maxlength="${section.item.format === 'skill' ? 64 : 100}" ${section.item.format === 'skill' ? 'pattern="[a-z0-9]+(-[a-z0-9]+)*" placeholder="skill-name"' : ''} value="${esc(item.name ?? '')}" autofocus>`
+      `<input name="item_name" required maxlength="100" value="${esc(item.name ?? '')}" autofocus>`
     ) +
     field(
       'Description',
-      `<textarea name="item_description" rows="2" maxlength="1024" ${section.item.format === 'skill' ? 'required' : ''}>${esc(item.description ?? '')}</textarea>`
+      `<textarea name="item_description" rows="2" maxlength="1024" >${esc(item.description ?? '')}</textarea>`
     ) +
     fields
       .map(f => {
+        if (f.type === 'list') return `<section class="field"><div class="button-row"><strong>${esc(f.label)}</strong><button type="button" class="ghost" data-list-refresh="${esc(f.key)}" ${item.id ? '' : 'disabled'}>${icon('refresh')}Refresh</button></div>${f.help ? `<small>${esc(f.help)}</small>` : ''}<div data-catalog-list="${esc(f.key)}" aria-live="polite"><p class="muted small">Save this resource to load the list.</p></div></section>`;
         const value = values[f.key] ?? f.default ?? '',
           attrs = `name="value_${esc(f.key)}" ${f.required && !(f.type === 'secret' && item.secrets?.[f.key]) ? 'required' : ''}`;
         let control;
@@ -124,7 +122,7 @@ function catalogControls(section, item = {}) {
         else if (f.type === 'json')
           control = `<textarea ${attrs} rows="4" spellcheck="false">${esc(pretty(value === '' ? (f.shape === 'array' ? [] : {}) : value))}</textarea>`;
         else if (f.type === 'textarea')
-          control = `<textarea ${attrs} rows="${f.key === 'instructions' ? 12 : 4}">${esc(value)}</textarea>`;
+          control = `<textarea ${attrs} rows="4">${esc(value)}</textarea>`;
         else if (f.type === 'secret')
           control = `<input ${attrs} type="password" autocomplete="new-password" placeholder="${item.secrets?.[f.key] ? 'Saved key (leave empty to keep)' : 'Not configured'}">${item.secrets?.[f.key] ? `<label class="check small"><input type="checkbox" name="clear_${esc(f.key)}">Remove saved key</label>` : ''}`;
         else
@@ -145,8 +143,9 @@ function catalogControls(section, item = {}) {
 }
 function readCatalogControls(form, section) {
   const values = {},
-    fields = section.item.format === 'skill' ? [{key: 'instructions', type: 'textarea'}] : section.item.fields;
+    fields = section.item.fields;
   for (const field of fields) {
+    if (field.type === 'list') continue;
     const el = form.elements.namedItem('value_' + field.key);
     if (field.type === 'secret' && !el.value && !form.elements.namedItem('clear_' + field.key)?.checked) continue;
     if (field.type === 'json') {
@@ -160,6 +159,24 @@ function readCatalogControls(form, section) {
     if (field.type === 'secret' && form.elements.namedItem('clear_' + field.key)?.checked) values[field.key] = '';
   }
   return {name: form.elements.item_name.value.trim(), description: form.elements.item_description.value, values};
+}
+async function loadCatalogLists(form, section, item) {
+  await Promise.all(section.item.fields.filter(f => f.type === 'list').map(async field => {
+    const host = $(`[data-catalog-list="${field.key}"]`, form), button = $(`[data-list-refresh="${field.key}"]`, form);
+    const revision = host.loadRevision = (host.loadRevision ?? 0) + 1;
+    button.disabled = true;
+    host.innerHTML = '<p class="muted small">Loading…</p>';
+    try {
+      const result = await api(`plugins/${section.plugin}/call/${field.endpoint}`, {method:'POST',body:{item_id:item.id}});
+      if (!host.isConnected || host.loadRevision !== revision) return;
+      if (!Array.isArray(result?.items)) throw new Error('The endpoint did not return a list');
+      host.innerHTML = result.items.length ? `<ul class="catalog-remote-items">${result.items.map(row => `<li><code>${esc(row.id)}</code>${row.label && row.label !== row.id ? ' — ' + esc(row.label) : ''}</li>`).join('')}</ul>` : '<p class="muted small">No items returned.</p>';
+    } catch (error) {
+      if (host.isConnected && host.loadRevision === revision) host.innerHTML = `<p class="form-error">${esc(error.message)}</p>`;
+    } finally {
+      if (host.loadRevision === revision) button.disabled = false;
+    }
+  }));
 }
 function newCatalogItem(section, folder = '') {
   dialog(
@@ -207,23 +224,6 @@ function catalogSectionActions(section, folder = '', actions = section.actions) 
       ? [
           ['New ' + section.item.name, () => newCatalogItem(section, folder), {icon: 'plus'}],
           ['New group', () => newCatalogFolder(section, folder), {icon: 'folder'}],
-        ]
-      : []),
-    ...(section.item?.format === 'skill'
-      ? [
-          [
-            'Import SKILL.md',
-            async () => {
-              const [file] = await pickFiles({accept: '.md,text/markdown'});
-              if (!file) return;
-              await api(`library/sections/${section.id}/items`, {
-                method: 'POST',
-                body: {content: await file.text(), folder},
-              });
-              await catalogRefresh();
-            },
-            {icon: 'download'},
-          ],
         ]
       : []),
     ...catalogCustomActions(section, actions, {folder}),
@@ -296,13 +296,7 @@ async function catalogItemActions(section, id) {
     [
       'Export resource',
       () => {
-        if (section.item.format !== 'skill')
-          return downloadJSON({name: item.name, description: item.description, values: item.values}, item.name);
-        const link = document.createElement('a');
-        link.href = URL.createObjectURL(new Blob([item.content], {type: 'text/markdown'}));
-        link.download = 'SKILL.md';
-        link.click();
-        URL.revokeObjectURL(link.href);
+        return downloadJSON({name:item.name,description:item.description,values:item.values},item.name);
       },
       {icon: 'upload'},
     ],
@@ -342,6 +336,10 @@ async function catalogPage(view, route) {
     ];
     view.innerHTML = `<div class="page resource-settings">${pageHead({title: esc(item.name), crumbs, menu: catalogItemMenu(section.id, item.id), actions: '<span id="save-slot"></span>'})}<form id="catalog-item-form" class="catalog-form">${catalogControls(section, item)}</form></div>`;
     const form = $('#catalog-item-form', view);
+    form.addEventListener('click', event => {
+      if (event.target.closest('[data-list-refresh]')) loadCatalogLists(form, section, item);
+    });
+    loadCatalogLists(form, section, item);
     pageAutosave(
       form,
       () => readCatalogControls(form, section),
@@ -351,6 +349,7 @@ async function catalogPage(view, route) {
         if (form.isConnected) {
           $('.page-head h1', view).textContent = body.name;
           renderSidebar();
+          loadCatalogLists(form, section, item);
         }
       }
     );

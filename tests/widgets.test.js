@@ -20,13 +20,24 @@ async function project(app) {
     values: (node, values) => call('PUT', `widgets/${encodeURIComponent(node)}`, {values}),
     use: (node, values) => call('PUT', 'widget-values', {node_id: node, values}),
     evaluate: ids => call('POST', 'evaluate-node', {node_ids: ids, collect: true}),
-    state: async key => (await app.api('GET', `workflows/${id}/state/${key}`).catch(() => ({}))).value,
+    state: async key => (await app.api('GET', `test-observations/${key}`).catch(() => ({}))).value,
     idle: () => app.Backend.hooksIdle(),
   };
 }
 
 /** The titles of the Scripts that a bundle gets: `scripts` is {title: code}. Each is in the scope of the copy. */
 const titled = (title, code) => ({...nodes.script(code), title});
+
+test('empty widget updates perform no work and add no undo entry',async()=>{
+  const app=createApp(), p=await project(app), node=await p.node(nodes.script(''));
+  const before=await p.snapshot(), history=await p.call('GET','edit-history');
+  await p.values(node.id,{});
+  await p.use(node.id,{});
+  await p.idle();
+  assert.deepEqual(await p.snapshot(),before);
+  assert.deepEqual(await p.call('GET','edit-history'),history);
+  assert.deepEqual(await app.api('GET','node-hooks'),[]);
+});
 
 test('code makes widgets on the copy it is part of when the copy is placed, and reads their values when it runs', async () => {
   const app = createApp(),
@@ -130,7 +141,7 @@ test('a person using a widget fires on_widget of the copy; a Script changing a w
       Echo: titled(
         'Echo',
         `const widget = context.event.widget;
-await agentsys("PUT", "workflows/" + context.workflow_id + "/state/last", {value: widget});
+await agentsys("PUT", "test-observations/last", {value: widget});
 await node.widgets.set({echo: widget.value + "!"});`
       ),
     },

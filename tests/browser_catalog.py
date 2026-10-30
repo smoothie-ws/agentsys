@@ -1,140 +1,121 @@
-"""Native Library and uniform navigation, with real storage and browser interaction."""
+"""MVP integration: plugin-owned Providers and a single controllable graph execution."""
 import asyncio
 import os
-import tempfile
-from pathlib import Path
+import http.server
+import json
+import threading
 from playwright.async_api import async_playwright
 from browser_server import isolated_server
 
 
-async def audit(base, directory):
+async def audit(base, models_url):
     async with async_playwright() as p:
         browser = await p.chromium.launch(executable_path=os.environ.get('PLAYWRIGHT_CHROMIUM_EXECUTABLE'))
-        page = await browser.new_page(viewport={'width':1500,'height':1000})
+        page = await browser.new_page(viewport={'width':1500, 'height':1000})
         page.set_default_timeout(10000)
-        errors = []
-        page.on('pageerror', lambda e: errors.append(str(e)))
+        errors=[]
+        page.on('pageerror', lambda error: errors.append(str(error)))
         await page.goto(base+'/editor/')
         await page.wait_for_selector('.dashboard')
-        assert not errors, errors
-        for path, section in [('/','home'),('/projects','projects'),('/plugins','plugins'),('/library','library'),('/settings','settings'),('/runs','home'),('/api','home')]:
-            await page.evaluate('path=>go(path)',path)
-            assert await page.locator('#sidebar a.active').get_attribute('data-section') == section
-            assert await page.locator('#subnav .subnav-tree').count() == 1
-            assert await page.locator('#subnav-actions [data-menu]').count() == int(section in ('projects','plugins','settings'))
-            assert await page.locator('.page-head > .actions > button').count() == int(path in ('/projects','/plugins','/settings','/api'))
-            assert await page.locator('#subnav [role=tab]').count() == 0
-        print('PASS primary sections and Dashboard pages use one navigation and header format',flush=True)
-        await page.evaluate("go('/settings?section=appearance')")
-        settings_rows = await page.locator('#subnav-list a').evaluate_all('els=>els.map(e=>[e.textContent,linkPath(e)])')
-        await page.locator('#subnav-list a').filter(has_text='Keyboard shortcuts').click()
-        assert 'section=keyboard-shortcuts' in page.url
-        assert await page.locator('#subnav-list a').evaluate_all('els=>els.map(e=>[e.textContent,linkPath(e)])') == settings_rows
-        await page.go_back()
-        await page.wait_for_selector('.appearance-section:not([hidden])')
-        await page.evaluate("go('/projects')")
-        await page.evaluate("go('/settings')")
-        assert 'section=' not in page.url
-        assert await page.locator('#settings-form > section:not([hidden]) h2').inner_text() == 'Editing'
-        print('PASS URL selection, Back and direct section links without hidden redirects',flush=True)
-        await page.evaluate("go('/library')")
-        assert await page.locator('.card').count() == 2
-        assert await page.locator('.card [data-menu]').count() == 2
-        assert await page.locator('.page-head [data-menu]').count() == 0
-        await page.evaluate("go('/library/ai.skills')")
-        library_rows=await page.locator('#subnav-list a').all_text_contents()
-        await page.locator('.page-head [data-menu]').click()
-        await page.get_by_role('menuitem',name='New Skill',exact=True).click()
-        await page.locator('#modal [name=item_name]').fill('review-code')
-        await page.locator('#modal [name=item_description]').fill('Review a change clearly.')
-        await page.locator('#modal [name=value_instructions]').fill('# Review\n\nCheck assumptions and explain findings.')
-        await page.locator('#modal-actions button[type=submit]').click()
-        await page.wait_for_selector('.card h3:has-text("review-code")')
-        await page.locator('.card-main').filter(has_text='review-code').click()
-        await page.wait_for_selector('#catalog-item-form')
-        await page.locator('#view [name=value_instructions]').fill('Updated instructions before navigating.')
-        await page.locator('#subnav-list a').filter(has_text='Providers').click()
-        await page.wait_for_selector('.page-head h1:has-text("Providers")')
-        skill_file=Path(directory)/'library/skills/ai.skills/review-code/SKILL.md'
-        assert skill_file.exists()
-        assert 'Updated instructions before navigating.' in skill_file.read_text(encoding='utf-8')
-        assert 'name: review-code' in skill_file.read_text(encoding='utf-8')
-        assert await page.locator('#subnav-title').text_content() == 'Library', await page.evaluate('({route:app.route,title:document.querySelector("#subnav-title").textContent,section:sectionOf(app.route)})')
-        current_rows=await page.locator('#subnav-list a').all_text_contents()
-        assert all(name in current_rows for name in library_rows)
-        print('PASS native skill creation, Markdown storage and navigation flush',flush=True)
+        assert await page.locator('a[data-link]').filter(has_text='Runs').count() == 0
+        await page.evaluate("go('/library/ai.ai')")
+        assert await page.locator('#view .card h3').all_text_contents() == ['Providers']
+        await page.locator('.card-main').filter(has_text='Providers').click()
         await page.locator('.page-head [data-menu]').click()
         await page.get_by_role('menuitem',name='New Provider',exact=True).click()
-        for name,value in [('item_name','Local Ollama'),('value_providerId','local'),('value_baseURL','http://localhost:11434/v1'),('value_apiKey','super-secret')]:
+        for name,value in [('item_name','Local'),('value_providerId','local'),('value_baseURL','http://localhost:11434/v1'),('value_apiKey','private-key')]:
             await page.locator('#modal [name='+name+']').fill(value)
         await page.locator('#modal-actions button[type=submit]').click()
-        await page.wait_for_selector('.card h3:has-text("Local Ollama")')
-        await page.locator('.card-main').filter(has_text='Local Ollama').click()
+        await page.evaluate("api('plugins/ai',{method:'PUT',body:{grants:['net.fetch:*']}})")
+        await page.locator('.card-main').filter(has_text='Local').click()
         await page.wait_for_selector('#catalog-item-form')
-        assert await page.locator('#view [name=value_apiKey]').input_value() == ''
-        assert 'Saved key' in await page.locator('#view [name=value_apiKey]').get_attribute('placeholder')
-        result=await page.evaluate("api('library/sections/ai.providers/items')")
-        assert 'super-secret' not in str(result)
-        await page.evaluate("go('/plugins/ai')")
-        await page.wait_for_selector('.plugin-readme')
-        assert await page.locator('.plugin-title img').count() == 1
-        assert await page.locator('#subnav-title').text_content() == 'Plugins'
-        plugin_rows=await page.locator('#subnav-list a').all_text_contents()
-        await page.locator('.page-head [data-menu]').click()
-        assert 'Export' not in await page.locator('.popup').inner_text()
-        await page.keyboard.press('Escape')
-        await page.locator('.content-tabs a').filter(has_text='Permissions').click()
-        assert await page.locator('#subnav-list a').all_text_contents() == plugin_rows
-        await page.get_by_text('This plugin requests no permissions.').wait_for()
-        await page.evaluate("go('/plugins/ai')")
-        await page.screenshot(path=str(Path(tempfile.gettempdir())/'agentsys-plugin-desktop.png'))
-        print('PASS provider credentials, custom icon and readable plugin detail with stable navigation',flush=True)
-        # A custom plugin page keeps the standard panel unless it declares an override.
-        package={'format':'agentsys.plugin/1','manifest':{'id':'demo','name':'Demo','version':'1.0.0','contributes':{'pages':[{'id':'main','title':'Demo page','entry':'ui/main.html'}]}},'files':{'ui/main.html':'<p id="ready">Ready</p>'}}
-        await page.evaluate("pkg=>api('plugins',{method:'POST',body:{package:pkg,enable:true}})",package)
-        await page.evaluate("loadPlugins().then(()=>go('/plugins/demo'))")
-        rows=await page.locator('#subnav-list a').all_text_contents()
-        await page.evaluate("go('/plugins/demo/main')")
-        await page.frame_locator('.plugin-frame').locator('#ready').wait_for()
-        assert await page.locator('#subnav-list a').all_text_contents() == rows
-        package['manifest']['version']='1.1.0'
-        package['manifest']['contributes']['pages'][0]['navigation']={'title':'Demo navigation','items':[{'page':'main','title':'Main'}]}
-        await page.evaluate("pkg=>api('plugins',{method:'POST',body:{package:pkg,replace:true}}).then(loadPlugins).then(()=>render())",package)
-        assert await page.locator('#subnav-title').text_content() == 'Demo navigation'
-        await page.evaluate("go('/plugins')")
-        assert await page.locator('#subnav-title').text_content() == 'Plugins'
-        print('PASS default plugin navigation and explicit overrides',flush=True)
-        await page.evaluate("go('/api')")
-        await page.locator('#subnav [data-key^="api-call:"] a:visible').first.click()
-        assert await page.locator('.api-method-heading').inner_text()
-        await page.locator('.page-head [data-menu]').click()
-        async with page.expect_download() as download:
-            await page.get_by_role('menuitem',name='Download OpenAPI',exact=True).click()
-        assert (await download.value).suggested_filename == 'agentsys-openapi.json'
-        await page.set_viewport_size({'width':390,'height':844})
-        for section in ['home','projects','library','plugins','settings']:
-            link=page.locator('#sidebar [data-section='+section+']')
-            box=await link.bounding_box()
-            assert box and box['x']>=0 and box['x']+box['width']<=391,(section,box)
-            await link.click()
-            await page.wait_for_function('(s)=>app.route && sectionOf(app.route)===s',arg=section)
-            await page.locator('#mobile-browse').click()
-            assert await page.locator('#subnav').get_attribute('aria-modal') == 'true'
-            await page.locator('#mobile-subnav-close').click()
-        await page.evaluate("go('/library/ai.skills')")
-        await page.screenshot(path=str(Path(tempfile.gettempdir())/'agentsys-library-mobile.png'))
-        assert await page.evaluate('document.documentElement.scrollWidth<=innerWidth')
+        assert await page.locator('#catalog-item-form [name=value_models]').count()==0
+        await page.locator('#catalog-item-form [name=value_baseURL]').fill(models_url)
+        await page.wait_for_function("document.querySelector('[data-catalog-list=models]')?.textContent.includes('test-model')")
+        await page.locator('#catalog-item-form [data-list-refresh=models]').click()
+        await page.wait_for_function("document.querySelector('[data-catalog-list=models]')?.textContent.includes('test-model')")
+        assert 'private-key' not in str(await page.evaluate("api('library/sections/ai.providers/items')"))
+        print('PASS AI plugin exposes only Providers and keeps credentials separate',flush=True)
+        empty_project=await page.evaluate("async()=>{const p=await api('projects',{method:'POST',body:{name:'Empty graph'}});await go(`/p/${p.id}/w/${p.id}`);return p.id;}")
+        await page.wait_for_selector('#canvas')
+        await page.locator('#start').click()
+        await page.wait_for_function('W.executionId && !W.running')
+        empty=await page.evaluate("id=>api(`projects/${id}/execution`)",empty_project)
+        assert empty['status']=='completed' and empty['evaluated_nodes']==0
+        print('PASS Run starts an empty graph and completes without requiring an on_run Event',flush=True)
+        ids=await page.evaluate("""async()=>{
+          await api('settings',{method:'PUT',body:{developer_mode:true}});
+          const p=await api('projects',{method:'POST',body:{name:'MVP flow'}});
+          const types=(await api(`projects/${p.id}/types`)).types;
+          const numberType=types.find(t=>t.control==='number').id,codeType=types.find(t=>t.control==='code').id;
+          const make=config=>api(`projects/${p.id}/typed-nodes`,{method:'POST',body:{node_type:'custom',config,position:{x:0,y:0}}});
+          const start=await make({title:'Start',op:'on_run',inputs:[],outputs:[{id:'out',name:'out',type:'signal'}]});
+          const duration=await make({title:'Duration',inputs:[],outputs:[{id:'value',name:'value',type:'t:'+numberType,editable:true,default:450}]});
+          const script=await make({title:'Finished',op:'script',inputs:[{id:'in',name:'in',type:'signal'},{id:'script',name:'script',type:'t:'+codeType,default:'node.display("MVP finished");'}],outputs:[]});
+          const resources=await api('resources');
+          if(resources.some(r=>r.payload.folder==='Streams'||r.name==='Wait for event'))throw Error('Removed catalog nodes still exist');
+          const resource=resources.find(r=>r.name==='Delay');
+          const delayOutput=resource.payload.bundle.complex[0].interface.outputs.find(p=>p.name==='out').id;
+          const delay=await api(`projects/${p.id}/custom-nodes/${resource.id}`,{method:'POST',body:{point:{x:300,y:0}}});
+          const wrapper='complex:'+delay.roots[0];
+          await api(`projects/${p.id}/port-connections`,{method:'POST',body:{add:[
+            {source:start.id,source_port:'out',target:wrapper,target_port:'in'},
+            {source:duration.id,source_port:'value',target:wrapper,target_port:'ms'},
+            {source:wrapper,source_port:delayOutput,target:script.id,target_port:'in'}]}});
+          return {project:p.id,script:script.id};
+        }""")
+        await page.evaluate("id=>go(`/p/${id}/w/${id}`)",ids['project'])
+        await page.wait_for_selector('#canvas')
+        assert await page.locator('[data-side-tab]').evaluate_all('els=>els.map(e=>e.dataset.sideTab)') == ['workflow','properties']
+        await page.locator('#start').click()
+        await page.wait_for_function('W.running && W.executionId')
+        await page.locator('#pause').click()
+        await page.wait_for_function('W.runPaused')
+        await page.wait_for_timeout(600)
+        assert await page.locator('#start').inner_text() == 'Stop'
+        assert await page.evaluate('W.running')
+        statuses=await page.evaluate("""async id=>{
+          await api(`projects/${W.project}/node-title`,{method:'PUT',body:wf({node_id:id,title:'Renamed during execution'})});
+          await reload();
+          return W.runStatus.size;
+        }""",ids['script'])
+        assert statuses>0, 'Editing the next graph must not clear active execution statuses'
+        await page.locator('#pause').click()
+        await page.wait_for_function('!W.running')
+        assert await page.evaluate('id=>W.results.get(id)?.text',ids['script']) == 'MVP finished'
+        print('PASS Delay remains active, manual pause/resume and downstream signals complete',flush=True)
+        await page.locator('#start').click()
+        await page.locator('#start').click()
+        await page.wait_for_function('!W.running')
+        await page.wait_for_timeout(550)
+        assert await page.evaluate('id=>W.results.has(id)',ids['script']) is False
+        current=await page.evaluate("id=>api(`projects/${id}/execution`)",ids['project'])
+        assert current['status']=='stopped'
+        print('PASS immediate Stop cancels the execution and pending Delay',flush=True)
         await page.reload()
-        try:
-            await page.wait_for_selector('.card h3:has-text("review-code")')
-        except Exception:
-            print('Reload diagnostic:',page.url,await page.locator('#view').inner_text(),errors,flush=True)
-            raise
+        await page.wait_for_selector('#canvas')
+        assert await page.evaluate('W.results.size') == 0
+        await page.set_viewport_size({'width':390,'height':844})
+        assert await page.evaluate('document.documentElement.scrollWidth<=innerWidth')
+        await page.evaluate("go('/api')")
+        await page.wait_for_selector('#api-method-search')
         assert not errors,errors
-        print('PASS API download, mobile sections, persistent Library resources; no page errors',flush=True)
+        print('PASS no persisted run history, mobile canvas and API; no page errors',flush=True)
         await browser.close()
 
 
 if __name__=='__main__':
-    with isolated_server() as (base,directory):
-        asyncio.run(audit(base,directory))
+    class Models(http.server.BaseHTTPRequestHandler):
+        def do_GET(self):
+            assert self.path=='/v1/models'
+            assert self.headers.get('Authorization')=='Bearer private-key'
+            body=json.dumps({'data':[{'id':'test-model'}]}).encode()
+            self.send_response(200);self.send_header('Content-Type','application/json');self.end_headers();self.wfile.write(body)
+        def log_message(self,*args):pass
+    model_server=http.server.ThreadingHTTPServer(('127.0.0.1',0),Models)
+    threading.Thread(target=model_server.serve_forever,daemon=True).start()
+    try:
+        with isolated_server() as (base,_):
+            asyncio.run(audit(base,f'http://127.0.0.1:{model_server.server_port}/v1'))
+    finally:
+        model_server.shutdown();model_server.server_close()

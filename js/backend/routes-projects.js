@@ -16,16 +16,6 @@ async function nextUntitled(c, projects) {
   return Math.max(meta.project_number || 0, ...numbers) + 1;
 }
 
-/** Deleting a project or workflow also deletes the triggers that would have run it. */
-async function dropTriggers(c, doomed) {
-  const triggers = await c.ctx.get('triggers', []);
-  if (triggers.some(doomed))
-    c.ctx.set(
-      'triggers',
-      triggers.filter(t => !doomed(t))
-    );
-}
-
 route('GET', 'project-defaults', 'Suggest a name for a new project', async c => ({
   name: 'Untitled' + (await nextUntitled(c, await c.projects())),
 }));
@@ -76,12 +66,10 @@ route(
     if (c.method === 'DELETE') {
       for (const wf of project.workflows) {
         await c.ctx.remove('wf:' + wf.id);
-        await c.ctx.remove('run:' + wf.id);
-        await dropWorkflowRuns(c, wf.id);
-        await dropWorkflowState(c, wf.id);
+        stopExecution(wf.id);
+        EXECUTIONS.delete(wf.id);
         histories.delete(wf.id);
       }
-      await dropTriggers(c, t => t.project_id === project_id);
       c.ctx.set(
         'projects',
         projects.filter(p => p !== project)
@@ -145,14 +133,10 @@ route(
       wf = project.workflows.find(w => w.id === workflow_id);
     if (!wf) throw missing('Record not found');
     if (c.method === 'DELETE') {
-      // A Custom Node's editor is its project's only workflow; an ordinary project may have none.
-      if (project_id.startsWith('lib-') && project.workflows.length < 2) throw bad('A Custom Node needs its workflow');
       project.workflows = project.workflows.filter(w => w !== wf);
       await c.ctx.remove('wf:' + workflow_id);
-      await c.ctx.remove('run:' + workflow_id);
-      await dropWorkflowRuns(c, workflow_id);
-      await dropWorkflowState(c, workflow_id);
-      await dropTriggers(c, t => t.workflow_id === workflow_id);
+      stopExecution(workflow_id);
+      EXECUTIONS.delete(workflow_id);
       histories.delete(workflow_id);
       return {deleted: workflow_id};
     }
@@ -183,26 +167,4 @@ route(
     c.ctx.set('wf:' + id, duplicateDocument(await c.ctx.get('wf:' + workflow_id, emptyDoc())));
     return {id, name};
   }
-);
-
-// ----- the result of the last run of a workflow, shown again when it is opened -----
-const MAX_LAST_RUN = 20000000; // characters (images shown with display() are part of it)
-route(
-  'GET PUT',
-  'projects/{project_id}/last-run',
-  'Read or store the result of the last run of a workflow',
-  async (c, {project_id}) => {
-    const project = await c.project(project_id),
-      id = c.body.workflow_id || c.query.workflow_id || project.workflows[0]?.id;
-    if (!project.workflows.some(w => w.id === id)) throw missing('Record not found');
-    if (c.method === 'GET') return (await c.ctx.get('run:' + id, null)) || {};
-    const {results = [], status = [], last = null, log = []} = c.body;
-    if (!Array.isArray(results) || !Array.isArray(status) || !Array.isArray(log) || (last !== null && !isObject(last)))
-      throw bad('results, status and log are lists, last is an object or null');
-    if (JSON.stringify([results, status, last, log]).length > MAX_LAST_RUN)
-      throw bad('The last run is too large to keep');
-    c.ctx.set('run:' + id, {results, status, last, log});
-    return {saved: true};
-  },
-  {body: {results: [], status: [], last: null, log: []}, query: ['workflow_id']}
 );

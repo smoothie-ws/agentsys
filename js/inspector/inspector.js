@@ -1,4 +1,4 @@
-// The right-hand panel: Workflow, available Library nodes, selection Properties and the Activity of the last run.
+// The right-hand panel: workflow settings, available Library nodes and selection properties.
 'use strict';
 
 const SWATCHES = [null, '#3b6ea8', '#3f8f6b', '#a8873b', '#a8513b', '#7c4ea8', '#5b6575'];
@@ -156,7 +156,6 @@ const Inspector = {
     root.innerHTML = `<nav class="side-tabs" aria-label="Canvas panel sections">${[
       ['workflow', 'Workflow settings', 'settings'],
       ['properties', 'Properties', 'node'],
-      ['activity', 'Activity', 'activity'],
     ]
       .map(
         ([id, label, glyph]) =>
@@ -291,7 +290,6 @@ const Inspector = {
       return;
     }
     if (this.tab === 'properties') this.show(true);
-    if (this.tab === 'activity') this.activity();
   },
 
   async show(soft = false) {
@@ -314,7 +312,7 @@ const Inspector = {
     const footer = $('#side-actions', this.root);
     footer.replaceChildren();
     footer.hidden = true;
-    $('#side-heading').textContent = {workflow: 'Workflow settings', properties: 'Properties', activity: 'Activity'}[
+    $('#side-heading').textContent = {workflow: 'Workflow settings', properties: 'Properties'}[
       this.tab
     ];
     $('#side-workflow').hidden = this.tab !== 'workflow';
@@ -427,12 +425,13 @@ const Inspector = {
   workflow() {
     const issues = W.snapshot.diagnostics || [],
       host = $('#side-workflow');
-    const existingPolicy = $('#workflow-policy', host);
+    const existingPolicy = $('#workflow-policy, #library-permissions', host);
     if (existingPolicy && (existingPolicy.contains(document.activeElement) || this.workflowPolicySave?.isDirty())) return;
+    const resource = W.library ? app.resources.find(item => item.id === W.library) : null;
     host.innerHTML = `<h2>${esc(W.snapshot.workflow_name)}</h2>
       ${this.typesSection()}
       <section class="workflow-available"><h3>Available nodes</h3><div data-available-nodes></div></section>
-      ${W.library ? '' : `<form id="workflow-policy">${grantControls(W.policy.allow, {title: 'Project permissions', hint: 'Applies to every workflow in this project, not just this workflow. Nodes are limited by these permissions.'})}</form>`}
+      ${W.library ? resource ? `<form id="library-permissions">${grantControls(resource.payload.grants ?? [], {title: 'Default permissions', hint: 'Copied to new instances when placed on the canvas. Each instance can be changed separately. Existing instances keep their permissions.'})}</form>` : '' : `<form id="workflow-policy">${grantControls(W.policy.allow, {title: 'Project permissions', hint: 'Applies to every workflow in this project, not just this workflow. Nodes are limited by these permissions.'})}</form>`}
       ${
         issues.length
           ? `<h3>Graph problems</h3><ul class="links">${issues
@@ -445,6 +444,19 @@ const Inspector = {
     this.wireReveal();
     this.wireTypes();
     this.availableNodes($('[data-available-nodes]', host));
+    const libraryForm = $('#library-permissions', host), resourceId = resource?.id;
+    if (libraryForm) {
+      this.workflowPolicySave = autoForm(libraryForm, () => ({
+        grants: readGrantControls(libraryForm),
+      }), async permissions => {
+        const latest = await api(`resources/${resourceId}`);
+        await api(`resources/${resourceId}`, {method: 'PUT', body: {
+          name: latest.name, payload: {...latest.payload, ...permissions},
+        }});
+        await loadLibrary();
+      });
+      return;
+    }
     const form = $('#workflow-policy', host), project = W.project;
     this.workflowPolicySave = form ? autoForm(form, () => ({allow: readGrantControls(form)}), async body => {
       const policy = await api(`projects/${project}/policy`, {method: 'PUT', body});
@@ -1148,26 +1160,7 @@ const Inspector = {
 
   // ───── Activity tab (the last run) ─────
 
-  activity() {
-    const log = W.runLog || [];
-    if (!log.length) {
-      this.body().innerHTML = '<h2>Activity</h2><p class="muted">Nothing has run yet.</p>';
-      return;
-    }
-    const summary = log.find(e => e.kind === 'summary');
-    this.body().innerHTML = `<h2>Activity</h2>
-      <p class="muted small">${summary ? `${plural(summary.ran, 'node')} evaluated in ${summary.ms} ms${summary.failed ? `, ${summary.failed} failed` : ''} · ${esc(when(Math.floor(summary.at / 1000)))}` : ''}</p>
-      <ul class="timeline">${
-        log
-          .filter(e => e.kind === 'sink')
-          .map(
-            e => `<li class="${e.error ? 'bad' : 'ok'}"><div><button class="link" data-reveal="${esc(e.id)}">${esc(e.label)}</button>
-        ${e.error ? ` — ${esc(e.error.message || e.error)}` : e.value !== undefined ? `<pre class="preview-text">${esc(previewText(e.value))}</pre>` : ' — done'}</div></li>`
-          )
-          .join('') || '<li class="muted">No outputs.</li>'
-      }</ul>`;
-    this.wireReveal();
-  },
+
 };
 
 /** A name no slot of the list has yet (the names are variables of the code: each is its own): input, input2, input3… */

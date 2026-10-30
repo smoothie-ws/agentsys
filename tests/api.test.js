@@ -240,7 +240,7 @@ test('the code of a Custom node can be a bare expression, and it can run code th
   assert.equal(shown(await p.run(dynamic.step, out.step), out.id), '42');
 });
 
-test('a new connection replaces the one on an occupied input; the last run is kept', async () => {
+test('a new connection replaces the one on an occupied input', async () => {
   const app = createApp(),
     p = await newProject(app);
   const a = await p.node('custom', nodes.value('text', 'a')),
@@ -251,15 +251,7 @@ test('a new connection replaces the one on an occupied input; the last run is ke
   const snap = await p.snapshot();
   assert.equal(snap.edges.length, 1);
   assert.equal(snap.edges[0].source, b.id);
-  await app.api('PUT', `projects/${p.id}/last-run`, {
-    ...p.workflow,
-    results: [['n', {text: '1'}]],
-    status: [],
-    last: {ran: 1, failed: 0},
-    log: [],
-  });
-  const saved = await app.api('GET', `projects/${p.id}/last-run`, {}, p.workflow);
-  assert.equal(saved.results[0][0], 'n');
+
 });
 
 test('a Custom node knows its own node, workflow and project through context', async () => {

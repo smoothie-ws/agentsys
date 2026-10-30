@@ -2,7 +2,7 @@
 'use strict';
 
 // ----- routing -----
-// Pages: / (the dashboard), /projects, /runs, /api, /settings, /p/{project}, /p/{project}/settings, /p/{project}/w/{workflow},
+// Pages: / (the dashboard), /projects, /api, /settings, /p/{project}, /p/{project}/settings, /p/{project}/w/{workflow},
 // /plugins (the installed plugins), /plugins/{id} (one plugin) and /plugins/{id}/{page} (a page it adds),
 // /library (the Library: its sections as cards), /library/nodes[?folder=…] (the Nodes section: nodes and groups as cards)
 // and /library/nodes/{id} (one node).
@@ -39,7 +39,7 @@ function parseRoute(path = routePath(), query = routeQuery()) {
     return {page: 'not-found'};
   }
   const page =
-    {projects: 'projects', settings: 'settings', library: 'resources', resources: 'resources', runs: 'runs', api: 'api', plugins: 'plugins'}[
+    {projects: 'projects', settings: 'settings', library: 'resources', resources: 'resources', api: 'api', plugins: 'plugins'}[
       parts[0]
     ] || 'not-found';
   if (page === 'plugins') return parts.length <= 3 ? {page, id: parts[1], view: parts[2]} : {page: 'not-found'};
@@ -78,10 +78,10 @@ function parentPage(route) {
   }
   if (route.page === 'plugins' && route.view) {
     const plugin = pluginById(route.id),
-      page = plugin?.manifest.contributes.pages.find(p => p.id === route.view);
+      page = pluginContributions(plugin).pages.find(p => p.id === route.view);
     if (page?.parent)
       return [
-        plugin.manifest.contributes.pages.find(p => p.id === page.parent).title,
+        pluginContributions(plugin).pages.find(p => p.id === page.parent).title,
         pluginHref(route.id, page.parent),
       ];
     if (page?.section === 'library') return ['Library', '/library'];

@@ -39,34 +39,6 @@ const GRAPH_RANGES = {node_radius: [0, 42], group_radius: [0, 54], wire_width: [
 const WIRE_STYLE_IDS = ['bezier', 'linear', 'step', 'rounded'];
 const SCRIPT_TIMEOUT = 120000;
 
-/**
- * The limits of runs, state and queues that a person can change: key -> [default, label shown on the Runs page, unit].
- * This table is the only place with their defaults; `limitOf` reads one, `settings` validates and stores them, and
- * `GET settings` returns the table so the page shows every limit with its default.
- */
-const LIMITS = {
-  run_retention: [200, 'Finished runs kept in memory', 'runs'],
-  run_retention_ms: [604800000, 'Age of finished runs kept in memory', 'ms'],
-  run_summary_retention: [2000, 'Run summaries kept in the history', 'runs'],
-  run_summary_retention_ms: [2592000000, 'Age of run summaries kept in the history', 'ms'],
-  run_lifetime_ms: [604800000, 'Longest life of a run or activation', 'ms'],
-  trace_retention_ms: [604800000, 'How long replay data is kept', 'ms'],
-  max_trace_bytes: [100000000, 'Replay data of one run', 'bytes'],
-  max_bridge_calls: [10000, 'API calls of one run', 'calls'],
-  max_checkpoints: [1000, 'Checkpoints of one run', 'checkpoints'],
-  max_checkpoint_bytes: [20000000, 'Size of a run checkpoint', 'bytes'],
-  max_run_events: [20000, 'Events kept for one run', 'events'],
-  max_event_bytes: [20000000, 'Size of the events of one run', 'bytes'],
-  event_dedupe_ms: [86400000, 'Time an event id is remembered (dedupe)', 'ms'],
-  state_value_bytes: [1000000, 'Size of one state value', 'bytes'],
-  state_total_bytes: [100000000, 'All state of a workflow', 'bytes'],
-  state_max_keys: [10000, 'State keys of a workflow', 'keys'],
-  queue_item_bytes: [1000000, 'Size of one queue item', 'bytes'],
-  queue_total_bytes: [100000000, 'All queues of a workflow', 'bytes'],
-};
-const limitOf = (prefs, key) => prefs?.[key] ?? LIMITS[key][0];
-const allLimits = prefs => Object.fromEntries(Object.entries(LIMITS).map(([k, [d, label, unit]]) => [k, {value: limitOf(prefs, k), default: d, label, unit}]));
-
 function validateShortcuts(value) {
   if (!isObject(value) || Object.keys(value).some(k => !(k in DEFAULT_SHORTCUTS))) throw bad('Unknown shortcut action');
   for (const binding of Object.values(value)) {

@@ -23,7 +23,7 @@ async function project(app, name = 'Custom') {
     run: async (...steps) => self.evaluate([await flow(app, id, {}, steps)]),
     remove: ids => app.api('POST', `projects/${id}/delete-nodes`, {node_ids: ids}),
     snapshot: () => app.api('GET', `projects/${id}/workflow`),
-    state: async key => (await app.api('GET', `workflows/${id}/state/${key}`).catch(() => ({}))).value,
+    state: async key => (await app.api('GET', `test-observations/${key}`).catch(() => ({}))).value,
     log: async () => {
       await app.Backend.hooksIdle();
       return app.api('GET', 'node-hooks');
@@ -38,7 +38,7 @@ const hooked = (name, who, hooks = {on_placed: 'placed', on_deleted: 'deleted'},
   for (const [hook, key] of Object.entries(hooks)) {
     members['E' + hook] = nodes.event(hook);
     members['S' + hook] = nodes.script(
-      `${extra}await agentsys("PUT", "workflows/" + context.workflow_id + "/state/${key}", {value: "${who}"})`
+      `${extra}await agentsys("PUT", "test-observations/${key}", {value: "${who}"})`
     );
     wires.push(['E' + hook, 'out', 'S' + hook, 'in']);
   }
@@ -140,7 +140,7 @@ test('on_placed and on_deleted fire for a copy of a Library node when it enters 
   assert.equal(await state('placed'), 'one');
   // Moving or editing the node is not placing it.
   await app.api('PUT', `projects/${p.id}/layout`, {positions: {[one.id]: {x: 40, y: 40}}}).catch(() => {});
-  await app.api('PUT', `workflows/${p.id}/state/placed`, {value: 'untouched'});
+  await app.api('PUT', `test-observations/placed`, {value: 'untouched'});
   await app.Backend.hooksIdle();
   assert.equal(await state('placed'), 'untouched');
 
@@ -150,11 +150,11 @@ test('on_placed and on_deleted fire for a copy of a Library node when it enters 
   assert.equal(await state('deleted'), 'one');
 
   // Undo brings the node back, so on_placed fires again; redo removes it, so on_deleted does.
-  await app.api('PUT', `workflows/${p.id}/state/placed`, {value: 'cleared'});
+  await app.api('PUT', `test-observations/placed`, {value: 'cleared'});
   await app.api('POST', `projects/${p.id}/undo`);
   await app.Backend.hooksIdle();
   assert.equal(await state('placed'), 'one');
-  await app.api('PUT', `workflows/${p.id}/state/deleted`, {value: 'cleared'});
+  await app.api('PUT', `test-observations/deleted`, {value: 'cleared'});
   await app.api('POST', `projects/${p.id}/redo`);
   await app.Backend.hooksIdle();
   assert.equal(await state('deleted'), 'one');
@@ -162,7 +162,7 @@ test('on_placed and on_deleted fire for a copy of a Library node when it enters 
   // Copy and paste places a new copy, so on_placed fires for it.
   const two = await place(app, p.id, {}, hooked('Hooked two', 'two'));
   const bundle = await app.api('POST', `projects/${p.id}/copy`, {node_ids: [], group_ids: [two.group]});
-  await app.api('PUT', `workflows/${p.id}/state/placed`, {value: 'cleared'});
+  await app.api('PUT', `test-observations/placed`, {value: 'cleared'});
   await app.api('POST', `projects/${p.id}/paste`, {clipboard: bundle, point: {x: 100, y: 100}});
   await app.Backend.hooksIdle();
   assert.equal(await state('placed'), 'two');
@@ -177,7 +177,7 @@ test('the hooks of a copy belong to that copy: another copy, or an ordinary work
       Body: {inputs: [], outputs: []},
       E: nodes.event('on_placed'),
       S: nodes.script(
-        'const n = (await agentsys("GET", "workflows/" + context.workflow_id + "/state/n").catch(() => ({}))).value ?? 0; await agentsys("PUT", "workflows/" + context.workflow_id + "/state/n", {value: n + 1}); await agentsys("PUT", "workflows/" + context.workflow_id + "/state/who", {value: context.instance_id})'
+        'const n = (await agentsys("GET", "test-observations/n").catch(() => ({}))).value ?? 0; await agentsys("PUT", "test-observations/n", {value: n + 1}); await agentsys("PUT", "test-observations/who", {value: context.instance_id})'
       ),
     },
     {wires: [['E', 'out', 'S', 'in']]}
@@ -191,7 +191,7 @@ test('the hooks of a copy belong to that copy: another copy, or an ordinary work
   // A plain on_placed on the workflow is never fired (nothing places a workflow); on_run is.
   const loose = await p.node(nodes.event('on_placed'));
   const log = await p.node(
-    nodes.script('await agentsys("PUT", "workflows/" + context.workflow_id + "/state/loose", {value: 1})')
+    nodes.script('await agentsys("PUT", "test-observations/loose", {value: 1})')
   );
   await p.connect(loose.id, 'out', log.id, 'in');
   await app.Backend.hooksIdle();
@@ -353,7 +353,7 @@ const me = (await agentsys("GET", base + "/workflow")).nodes.find(n => n.id === 
 await agentsys("PUT", base + "/typed-nodes/" + context.node_id, {node_type: "custom", config: {...me.config, title: "Edited"}});
 await agentsys("POST", base + "/typed-nodes", {node_type: "custom", config: {title: "Made by code", outputs: []}, position: {x: 10, y: 10}});`)
   );
-  const run = await app.api('POST', `projects/${p.id}/runs`, {node_ids: [editor.id], wait: 10}).catch(e => e);
+  const run = await app.api('POST', `projects/${p.id}/execution`, {node_ids: [editor.id], wait: true}).catch(e => e);
   const snap = await p.snapshot();
   const byTitle = title => snap.nodes.find(n => n.config.title === title);
   assert.ok(
@@ -376,7 +376,7 @@ await agentsys("PUT", base + "/layout", {positions: {[other.id]: {x: 300, y: 120
 await agentsys("PUT", base + "/node-style", {node_id: other.id, color: "#3b6ea8", folded: true});
 await agentsys("PUT", base + "/node-style", {node_id: context.node_id, color: "#aa3333", pinned: true});`)
   );
-  await app.api('POST', `projects/${p.id}/runs`, {node_ids: [editor.id], wait: 10}).catch(e => e);
+  await app.api('POST', `projects/${p.id}/execution`, {node_ids: [editor.id], wait: true}).catch(e => e);
   const snap = await p.snapshot(),
     o = snap.nodes.find(n => n.id === other.id),
     me = snap.nodes.find(n => n.id === editor.id);

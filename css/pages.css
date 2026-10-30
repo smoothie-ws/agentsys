@@ -300,7 +300,24 @@
   margin-top: 1rem;
 }
 
-/* ----- API reference (its call tree is the second panel, see shell.css) ----- */
+/* ----- API reference: method tree and search stay beside the documentation ----- */
+.api-page { max-width: none; }
+#api-box { display: grid; grid-template-columns: minmax(15rem, 20rem) minmax(0, 1fr); gap: 2rem; align-items: start; }
+.api-navigation { position: sticky; top: 0; display: flex; flex-direction: column; gap: 0.7rem; max-height: calc(100dvh - 170px); min-width: 0; }
+.api-search { display: grid; gap: 0.4rem; font-size: 0.8rem; }
+.api-call-tree { overflow: auto; min-height: 0; padding-right: 0.5rem; }
+.api-call-tree details > div { margin-left: 0.55rem; border-left: 1px solid var(--line); padding-left: 0.35rem; }
+.api-call-tree summary { padding: 0.55rem 0.2rem; overflow-wrap: anywhere; font-size: 0.78rem; cursor: pointer; }
+.api-call { display: flex; gap: 0.45rem; padding: 0.6rem 0.4rem; color: inherit; text-decoration: none; border-radius: 8px; }
+.api-call:hover { background: var(--hover); }
+.api-call[aria-current] { background: color-mix(in srgb, var(--accent) 15%, transparent); }
+.api-call > span:last-child { min-width: 0; }
+.api-call code { font-size: 0.72rem; overflow-wrap: anywhere; }
+.api-call small { display: block; color: var(--muted); margin-top: 0.3rem; font-size: 0.72rem; }
+@media (max-width: 800px) {
+  #api-box { grid-template-columns: minmax(0, 1fr); gap: 1rem; }
+  .api-navigation { position: relative; max-height: 40dvh; }
+}
 .method {
   width: 3.6rem;
   flex: none;
@@ -369,7 +386,7 @@
     padding: 1.2rem 1rem 3rem;
   }
 }
-/* Dashboard and Runs share compact, readable tables. */
+/* Compact tables for plugin details. */
 .data-table {
   width: 100%;
   border-collapse: collapse;
@@ -415,122 +432,24 @@
   border-radius: 50%;
   background: var(--idle);
 }
-.status-badge[data-status='completed']::before,
 .status-badge[data-status='enabled']::before {
   background: var(--ok);
 }
-.status-badge[data-status='failed']::before,
-.status-badge[data-status='interrupted']::before {
+.status-badge[data-status='failed']::before {
   background: var(--bad);
 }
-.status-badge[data-status='running']::before {
-  background: var(--accent);
-}
-.status-badge[data-status='waiting']::before,
-.status-badge[data-status='paused']::before {
-  background: var(--warn);
-}
-.runs-page > section {
-  margin-top: 1.5rem;
-}
-.runs-page h2 {
-  margin-bottom: 1rem;
-}
-.runs-page pre {
-  white-space: pre-wrap;
-  overflow-wrap: anywhere;
-  max-height: 480px;
+.catalog-remote-items {
+  max-height: 20rem;
   overflow: auto;
-  padding: 1rem;
-  background: var(--well);
-  border-radius: 12px;
-  font-size: 0.78rem;
-}
-.runs-page .section-head {
-  gap: 1rem;
-  flex-wrap: wrap;
-  margin-bottom: 0.5rem;
-}
-.runs-page .section-head h2 {
-  margin: 0;
-}
-.runs-page .section-head h2 small {
-  font-size: 0.8rem;
-  font-weight: 400;
-  margin-left: 0.4rem;
-}
-.runs-filter {
-  display: flex;
-  align-items: center;
-  gap: 0.6rem;
-  color: var(--muted);
-  font-size: 0.8rem;
-}
-.runs-filter select {
-  width: auto;
-  min-width: 9rem;
-}
-.runs-table {
-  min-width: 520px;
-}
-.runs-table .button-row {
-  margin: 0;
-  flex-wrap: nowrap;
-  gap: 0.3rem;
-}
-.runs-table button {
-  padding: 0.35rem 0.65rem;
-  font-size: 0.78rem;
-}
-.runs-empty {
-  padding-block: 2rem;
-}
-.runs-form {
-  max-width: 640px;
-}
-.workflow-policies {
-  display: grid;
-  gap: 1rem;
-}
-.workflow-policy {
-  padding: 1rem;
-  background: var(--field);
-  border-radius: 16px;
-}
-.workflow-policy-head {
-  display: flex;
-  align-items: center;
-  flex-wrap: wrap;
-  gap: 0.7rem 1rem;
-}
-.workflow-policy-head > div:first-child {
-  flex: 1;
-  min-width: 160px;
-}
-.workflow-policy-head h3 {
-  margin: 0 0 0.3rem;
-  font-size: 0.9rem;
-}
-.workflow-policy-head p,
-.workflow-policy-head .button-row {
-  margin: 0;
-}
-.workflow-policy-details > summary {
-  margin: 0.8rem 0 0;
-  font-size: 0.8rem;
-}
-.workflow-policy-details[open] > summary {
-  margin-bottom: 1rem;
-}
-.workflow-policy-details .field > span {
-  font-size: 0.78rem;
+  overflow-wrap: anywhere;
+  padding-left: 1.5rem;
 }
 .dashboard {
   max-width: 1040px;
 }
 .dashboard-metrics {
   display: grid;
-  grid-template-columns: repeat(4, minmax(0, 1fr));
+  grid-template-columns: repeat(2, minmax(0, 1fr));
   gap: 0.8rem;
   margin: 1.5rem 0 2rem;
 }
@@ -540,11 +459,6 @@
 }
 .dashboard .tile-value {
   font-size: 1.8rem;
-}
-.dashboard-columns {
-  display: grid;
-  grid-template-columns: minmax(0, 0.9fr) minmax(0, 1.1fr);
-  gap: 2rem;
 }
 .dashboard .section-head {
   gap: 0.7rem;
@@ -589,26 +503,8 @@
   height: 16px;
   color: var(--muted);
 }
-.dashboard-notice {
-  padding: 0.8rem 1rem;
-  margin: -0.5rem 0 1.5rem;
-  border-left: 2px solid var(--warn);
-  background: var(--field);
-  font-size: 0.85rem;
-}
 .dashboard-plugins {
   margin-top: 2rem;
-}
-@media (max-width: 1050px) {
-  .dashboard-columns {
-    grid-template-columns: minmax(0, 1fr);
-    gap: 1.8rem;
-  }
-}
-@media (max-width: 600px) {
-  .dashboard-metrics {
-    grid-template-columns: repeat(2, minmax(0, 1fr));
-  }
 }
 
 /* ----- Dashboard: counters, the list of what needs attention, the API reference ----- */
@@ -830,11 +726,5 @@ a.tile:hover {
 }
 .welcome-panel p { max-width: 62ch; }
 .welcome-panel h2 { margin: 8px 0; }
-.run-filters { display: flex; flex-wrap: wrap; align-items: end; gap: 12px; margin: 18px 0; }
-.run-filters .field { flex: 1 1 170px; min-width: 0; margin: 0; }
-.run-filters select { width: 100%; max-width: 100%; }
-.run-pagination { display: flex; align-items: center; justify-content: space-between; flex-wrap: wrap; gap: 12px; margin-top: 16px; }
-.run-started { display: block; color: var(--muted); margin-top: 4px; }
 .live-status { white-space: nowrap; }
 .storage-context { margin: -6px 0 18px; }
-.runs-table a { overflow-wrap: anywhere; }

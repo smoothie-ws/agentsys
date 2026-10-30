@@ -88,7 +88,7 @@ async function api(path, {method = 'GET', body, query, edit} = {}) {
 
 /** Icons a Custom Node or a group of Custom Nodes can wear. */
 const NODE_ICONS =
-  'complex package code spark branch split loop refresh skip exit merge toggle list hash text note eye file folder library server plug terminal user star heart bolt database globe mail cpu filter key lock bell chart cloud flag tag wrench shuffle'.split(
+  'complex package code spark branch split loop refresh skip exit merge toggle list hash text note eye file folder library server plug terminal user star heart bolt database globe mail cpu filter key lock bell chart cloud flag tag wrench shuffle timer'.split(
     ' '
   );
 /** The upload button is not an icon: a wide dashed button with its own caption, so it is never mistaken for one of the icons around it. */

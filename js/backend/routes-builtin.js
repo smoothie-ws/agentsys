@@ -29,7 +29,8 @@ route(
       added.add(id);
       made.push(node.name);
     }
-    if (made.length || added.size !== state.added.length) c.ctx.set(BUILTIN, {added: [...added].sort()});
+    state.added = [...added].sort();
+    c.ctx.set(BUILTIN, state);
     return {added: made, total: BUILTIN_NODES.length};
   },
   {body: {restore: false}}

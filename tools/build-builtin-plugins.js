@@ -4,6 +4,7 @@ const fs = require('node:fs'),
   path = require('node:path');
 const root = path.resolve(__dirname, '..'),
   source = path.join(root, 'plugins', 'ai');
+require('../plugins/ai/nodes/build.cjs');
 const files = {};
 function collect(directory, prefix = '') {
   for (const entry of fs.readdirSync(directory, {withFileTypes: true}).sort((a, b) => a.name.localeCompare(b.name))) {
@@ -18,7 +19,7 @@ function collect(directory, prefix = '') {
 }
 collect(source);
 const pkg = {
-  format: 'agentsys.plugin/1',
+  format: 'agentsys.plugin/2',
   manifest: JSON.parse(fs.readFileSync(path.join(source, 'manifest.json'), 'utf8')),
   files,
 };

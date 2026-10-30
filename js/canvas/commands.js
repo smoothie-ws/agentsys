@@ -5,6 +5,14 @@
 /** The widgets of a Custom node (by node ID). */
 const widgetsOf = id => W.snapshot.widgets?.[id] ?? [];
 
+/** A multi-selection is one edit and one commit, rather than a round trip per selected item. */
+async function applyCanvasEdits(operations, edit = editToken()) {
+  for (let i = 0; i < operations.length; i += 200)
+    await api(`projects/${W.project}/batch`, {
+      method: 'POST', body: wf({operations: operations.slice(i, i + 200)}), edit,
+    });
+}
+
 /** A person used a widget: the node it belongs to gets the value (and its on_widget runs). */
 async function changeWidget(nodeId, widgetId, value) {
   await api(`projects/${W.project}/widget-values`, {
@@ -62,7 +70,7 @@ async function inlineChange(input, captured = input.type === 'checkbox' ? input.
 }
 
 async function setSelectionStyle(style) {
-  const edit = editToken();
+  const edit = editToken(), operations = [];
   for (const node of selectionItems()) {
     const grouped = node.kind === 'group' || node.kind === 'complex';
     if (style.pinned && grouped) {
@@ -71,8 +79,9 @@ async function setSelectionStyle(style) {
     }
     const p = W.pos.get(node.id);
     const target = grouped ? {group_id: node.group_id} : {node_id: node.id, ...(p ? {position: {x: p.x, y: p.y}} : {})};
-    await api(`projects/${W.project}/node-style`, {method: 'PUT', body: wf({...target, ...style}), edit});
+    operations.push({path: 'node-style', body: {...target, ...style}});
   }
+  await applyCanvasEdits(operations, edit);
   await reload();
 }
 const setPinned = pinned => setSelectionStyle({pinned});
@@ -83,9 +92,7 @@ const styleTarget = node => (node.kind === 'complex' || node.kind === 'group' ? 
 const switchableItems = () => selectionItems();
 /** Disables nodes and groups (a run skips them and everything inside, and what they feed gets nothing from them) or enables them again. */
 async function setDisabled(items, disabled) {
-  const edit = editToken();
-  for (const node of items)
-    await api(`projects/${W.project}/node-style`, {method: 'PUT', body: wf({...styleTarget(node), disabled}), edit});
+  await applyCanvasEdits(items.map(node => ({path: 'node-style', body: {...styleTarget(node), disabled}})));
   await reload();
 }
 const toggleDisabled = () => {
@@ -97,9 +104,8 @@ const toggleDisabled = () => {
 const foldableItems = () => selectionItems().filter(n => n.kind !== 'group' || !W.complex.has(n.group_id));
 /** Collapses nodes (only the header and the slots stay) and groups (only the header stays, the members are hidden), or opens them again. */
 async function setFolded(items, folded) {
-  const edit = editToken();
+  await applyCanvasEdits(items.map(node => ({path: 'node-style', body: {...styleTarget(node), folded}})));
   for (const node of items) {
-    await api(`projects/${W.project}/node-style`, {method: 'PUT', body: wf({...styleTarget(node), folded}), edit});
     // What a collapsed group hides cannot stay selected.
     if (node.kind === 'group' && folded) {
       const gone = new Set([...(W.groups.get(node.group_id)?.all_members || [])]);
@@ -113,7 +119,7 @@ const toggleFolded = () => {
   return items.length ? setFolded(items, !items.every(n => n.folded)) : undefined;
 };
 
-/** Nothing runs while the graph is being edited: an edit only discards the results of the last run. */
+/** Editing the next graph discards old results after execution has finished. */
 function discardStaleRun() {
   const signature = JSON.stringify([
     W.snapshot.nodes.map(n => [n.id, n.config, n.inputs]),
@@ -122,7 +128,10 @@ function discardStaleRun() {
   ]);
   if (signature === W.previewSignature) return;
   W.previewSignature = signature;
-  W.runStatus.clear();
+  if (!W.running) {
+    W.runStatus.clear();
+    W.results.clear();
+  }
 }
 
 async function deleteSelection(dissolve = false) {
@@ -131,23 +140,18 @@ async function deleteSelection(dissolve = false) {
     groupIds = selectedGroupIds();
   if (!nodes.length && !groupIds.length) return;
   const edit = editToken(),
-    gone = [];
+    gone = [], operations = [];
   // Outer groups first: deleting one takes the groups inside it with it, so those need no call of their own.
   for (const gid of [...groupIds].sort((a, b) => W.groups.get(a).depth - W.groups.get(b).depth)) {
     if (gone.some(outer => isUnder(W.groups.get(gid), outer))) continue;
-    await api(`projects/${W.project}/groups/${encodeURIComponent(gid)}`, {
-      method: 'DELETE',
-      query: {workflow_id: W.workflow},
-      edit,
-    });
+    operations.push({path: 'groups/' + gid, method: 'DELETE'});
     gone.push(gid);
   }
-  const remaining = new Set(
-    (await api(`projects/${W.project}/workflow`, {query: {workflow_id: W.workflow}})).nodes.map(n => n.id)
-  );
-  const live = nodes.map(n => n.id).filter(id => remaining.has(id));
+  const grouped = new Set(gone.flatMap(id => W.groups.get(id).all_members));
+  const live = nodes.map(n => n.id).filter(id => !grouped.has(id));
   if (live.length)
-    await api(`projects/${W.project}/delete-nodes`, {method: 'POST', body: wf({node_ids: live, dissolve}), edit});
+    operations.push({path: 'delete-nodes', method: 'POST', body: {node_ids: live, dissolve}});
+  await applyCanvasEdits(operations, edit);
   W.selected.clear();
   await reload();
   Inspector.show();

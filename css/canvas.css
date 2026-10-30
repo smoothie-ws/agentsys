@@ -1367,6 +1367,3 @@
 .node.s-waiting {
   outline: 2px solid var(--accent);
 }
-.run-state.waiting {
-  color: var(--accent);
-}

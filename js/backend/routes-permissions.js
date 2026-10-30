@@ -38,7 +38,7 @@ route(
     }
     if (!['https:', 'http:'].includes(url.protocol) || url.username || url.password)
       throw bad('Use an HTTP(S) URL without credentials');
-    const run = RUNS.byId.get(c.scriptContext?.run_id);
+    const executionSignal = c.scriptContext?.signal;
     {
       const request = await injectSecrets(c.body);
       const response = await fetch(url, {
@@ -46,11 +46,10 @@ route(
         headers: request.headers,
         body: request.body,
         redirect: 'manual',
-        signal: run
+        signal: executionSignal
           ? AbortSignal.any([
               AbortSignal.timeout(request.timeout ?? 30000),
-              run.controller.signal,
-              ...(run.callController ? [run.callController.signal] : []),
+              executionSignal,
             ])
           : AbortSignal.timeout(request.timeout ?? 30000),
       });

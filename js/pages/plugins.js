@@ -13,8 +13,8 @@ const pluginById = id => (app.plugins || []).find(p => p.id === id);
 const pluginPages = section =>
   (app.plugins || [])
     .filter(p => p.enabled)
-    .flatMap(p => p.manifest.contributes.pages.filter(x => x.section === section).map(page => ({plugin: p, page})));
-/** Library pages may group related pages under a parent, such as AI / Providers and Skills. */
+    .flatMap(p => pluginContributions(p).pages.filter(x => x.section === section).map(page => ({plugin: p, page})));
+/** Library pages may group related pages under a parent, such as a plugin section and its resources. */
 function pluginSectionRows(section, onlyPlugin) {
   const entries = pluginPages(section);
   const rows = (plugin, parent) =>
@@ -36,10 +36,15 @@ function pluginSectionRows(section, onlyPlugin) {
     .flatMap(p => rows(p, undefined));
 }
 const pluginHref = (id, page) => `/plugins/${encodeURIComponent(id)}${page ? '/' + encodeURIComponent(page) : ''}`;
+async function executePluginCommand(id, command, args = []) {
+  const response = await api(`plugins/${encodeURIComponent(id)}/commands/${encodeURIComponent(command)}`, {method: 'POST', body: {args}});
+  for (const effect of response.effects ?? []) if (effect.type === 'navigate') await go(effect.path);
+  return response.result;
+}
 const pluginIcon = p => p.manifest.icon || 'plug';
 /** What a plugin adds, as short lines for a card. */
 function pluginContents(p) {
-  const c = p.manifest.contributes;
+  const c = pluginContributions(p);
   return [
     [p.nodes ?? c.nodes.length, 'node', 'node'],
     [(c.library ?? []).length, 'collection', 'folder'],
@@ -110,6 +115,7 @@ const FRAME_BRIDGE = `(() => {
     put: (p, b) => request('PUT', p, b), delete: p => request('DELETE', p),
     settings: {get: () => ask('settings'), set: values => ask('settings', {values})},
     data, call: (name, body, method = 'POST') => ask('call', {name, method, body}),
+    commands: {execute: (name, ...args) => ask('command', {name, args})},
     navigate: path => ask('navigate', {path}), toast: (message, error = false) => ask('toast', {message, error}),
     resize: height => ask('resize', {height}), onTheme: fn => { themeListener = fn; },
   };
@@ -205,6 +211,7 @@ async function mountPluginFrame(host, id, entry, {height = 0} = {}) {
         ? api(`plugins/${id}/settings`, {method: 'PUT', body: {values: m.values}}).then(r => r.values)
         : api(`plugins/${id}/settings`).then(r => r.values),
     call: m => api(`plugins/${id}/call/${encodeURIComponent(m.name)}`, {method: m.method, body: m.body}),
+    command: m => executePluginCommand(id, m.name, m.args ?? []),
     navigate: m => {
       if (typeof m.path !== 'string' || !/^\/[A-Za-z0-9_\-/?=&%.]{0,198}$/.test(m.path))
         throw new Error('Not a page of the app');
@@ -245,7 +252,7 @@ const endPluginFrame = () => {
 // ----- install -----
 const packageSummary = pkg => {
   const m = pkg.manifest;
-  return `<div class="plugin-manifest"><h3>${icon(m.icon || 'plug')} ${esc(m.name)} <small class="muted">${esc(m.version)}</small></h3>${m.description ? `<p>${esc(m.description)}</p>` : ''}${m.author ? `<p class="muted small">by ${esc(m.author)}</p>` : ''}</div>`;
+  return `<div class="plugin-manifest"><h3>${icon(m.icon || 'plug')} ${esc(m.name)} <small class="muted">${esc(m.version)}</small></h3>${m.description ? `<p>${esc(m.description)}</p>` : ''}${pluginAuthors(m) ? `<p class="muted small">by ${esc(pluginAuthors(m))}</p>` : ''}</div>`;
 };
 async function installPlugin(pkg, source, replace = false) {
   const m = pkg.manifest,
@@ -255,8 +262,8 @@ async function installPlugin(pkg, source, replace = false) {
       old ? `Update ${m.name}` : `Install ${m.name}`,
       `${packageSummary(pkg)}${old ? `<p class="muted">Installed: ${esc(old.manifest.version)}. Its settings and data are kept.</p>` : ''}
       ${
-        m.capabilities.length
-          ? `<fieldset><legend>The plugin asks for these permissions</legend>${m.capabilities
+        pluginCapabilities({manifest:m}).length
+          ? `<fieldset><legend>The plugin asks for these permissions</legend>${pluginCapabilities({manifest: m})
               .map(
                 cap =>
                   `<label class="check"><input type="checkbox" name="grant" value="${esc(cap)}" ${old ? (old.grants.includes(cap) ? 'checked' : '') : ''}>${esc(cap)}</label>`
@@ -292,7 +299,7 @@ async function importPlugin() {
   } catch {
     throw new Error('That file is not JSON');
   }
-  if (pkg?.format !== 'agentsys.plugin/1') throw new Error('That is not a plugin package (agentsys.plugin/1)');
+  if (!['agentsys.plugin/1', 'agentsys.plugin/2'].includes(pkg?.format)) throw new Error('That is not an AgentSys plugin package');
   await installPlugin(pkg, file.name);
 }
 async function setPluginEnabled(id, enabled) {
@@ -355,7 +362,7 @@ const pluginCard = p =>
       ? `<p class="plugin-about">${esc(p.manifest.description)}</p>${cardList(pluginContents(p))}`
       : cardList(pluginContents(p)),
     previewClass: 'card-note',
-    facts: `${esc(p.manifest.version)} · ${p.enabled ? 'enabled' : 'disabled'}`,
+    facts: `${esc(p.manifest.version)} · ${p.runtime?.status === 'failed' ? 'failed' : p.enabled ? 'enabled' : 'disabled'}`,
     menu: 'plugin:' + p.id,
   }).replace('<article class="card ', `<article class="card ${p.enabled ? '' : 'plugin-off'} `);
 
@@ -410,7 +417,7 @@ async function pluginDetailPage(view, route) {
   await loadPlugins();
   if (app.route !== route) return;
   const m = p.manifest,
-    c = m.contributes,
+    c = pluginContributions(p),
     panels = [
       ['settings', 'Settings'],
       ['permissions', 'Permissions'],
@@ -451,14 +458,19 @@ async function pluginDetailPage(view, route) {
       )
       .join('');
   view.innerHTML = `<div class="page plugin-page">${pageHead({title: `<span class="plugin-title">${icon(pluginIcon(p))}<span>${esc(m.name)}</span></span>`, crumbs: [['Plugins', '/plugins']], sub: esc(m.description), menu: 'plugin:' + p.id})}
-    <p class="plugin-meta">${statusBadge(p.enabled ? 'enabled' : 'disabled')}<span>Version ${esc(m.version)}</span>${m.author ? `<span>${esc(m.author)}</span>` : ''}</p>
-    <section class="plugin-description"><div class="plugin-layout"><article class="plugin-readme">${renderMarkdown(readme || 'No description provided.')}${additions ? `<h2>Library and pages</h2><div class="cards">${additions}</div>` : ''}${templates ? `<h2>Templates</h2><div class="cards">${templates}</div>` : ''}</article><aside class="plugin-facts"><h2>Details</h2><dl><dt>Version</dt><dd>${esc(m.version)}</dd><dt>Publisher</dt><dd>${esc(m.author || 'Not specified')}</dd><dt>Installed</dt><dd>${esc(stamp(p.installed))}</dd><dt>Library nodes</dt><dd>${p.nodes}</dd><dt>Collections</dt><dd>${(c.library ?? []).length}</dd>${m.homepage ? `<dt>Website</dt><dd><a href="${esc(m.homepage)}" target="_blank" rel="noopener noreferrer">Open website</a></dd>` : ''}</dl></aside></div></section>
+    <p class="plugin-meta">${statusBadge(p.runtime?.status === 'failed' ? 'failed' : p.enabled ? 'enabled' : 'disabled')}<span>Version ${esc(m.version)}</span>${pluginAuthors(m) ? `<span>${esc(pluginAuthors(m))}</span>` : ''}</p>
+    <section class="plugin-description"><div class="plugin-layout"><article class="plugin-readme">${renderMarkdown(readme || 'No description provided.')}${additions ? `<h2>Library and pages</h2><div class="cards">${additions}</div>` : ''}${templates ? `<h2>Templates</h2><div class="cards">${templates}</div>` : ''}</article><aside class="plugin-facts"><h2>Details</h2><dl><dt>Version</dt><dd>${esc(m.version)}</dd><dt>Publisher</dt><dd>${esc(pluginAuthors(m) || 'Not specified')}</dd><dt>Installed</dt><dd>${esc(stamp(p.installed))}</dd><dt>Library nodes</dt><dd>${p.nodes}</dd><dt>Collections</dt><dd>${(c.library ?? []).length}</dd>${m.homepage ? `<dt>Website</dt><dd><a href="${esc(m.homepage)}" target="_blank" rel="noopener noreferrer">Open website</a></dd>` : ''}</dl></aside></div></section>
     ${contentTabLinks(panels, selected)}
-    <section data-content-panel="settings" ${selected === 'settings' ? '' : 'hidden'}><h2>Settings</h2>${p.settings.schema.fields.length ? `<form id="plugin-settings" class="catalog-form">${p.settings.schema.fields.map(f => settingField(f, p.settings.values[f.key])).join('')}</form>` : '<p class="muted">This plugin has no additional settings.</p>'}${m.secrets.length ? `<h3>Credentials</h3>${p.secrets.map(secret => `<div class="plugin-secret" data-secret="${esc(secret.name)}"><span>${esc(secret.name)}</span><small class="muted">${secret.present ? 'Configured' : 'Not configured'}</small><button type="button" data-secret-set>${secret.present ? 'Change' : 'Set'}</button>${secret.present ? '<button type="button" data-secret-clear>Clear</button>' : ''}</div>`).join('')}` : ''}</section>
-    <section data-content-panel="permissions" ${selected === 'permissions' ? '' : 'hidden'}><h2>Permissions</h2>${m.capabilities.length ? `<div data-plugin-permissions>${permissionChoices(m.capabilities, p.grants, 'data-plugin-grant', 'plugin-grant')}</div>` : '<p class="muted">This plugin requests no permissions.</p>'}</section>
+    <section data-content-panel="settings" ${selected === 'settings' ? '' : 'hidden'}><h2>Settings</h2>${p.settings.schema.fields.length ? `<form id="plugin-settings" class="catalog-form">${p.settings.schema.fields.map(f => settingField(f, p.settings.values[f.key])).join('')}</form>` : '<p class="muted">This plugin has no additional settings.</p>'}${pluginSecrets(p).length ? `<h3>Credentials</h3>${p.secrets.map(secret => `<div class="plugin-secret" data-secret="${esc(secret.name)}"><span>${esc(secret.name)}</span><small class="muted">${secret.present ? 'Configured' : 'Not configured'}</small><button type="button" data-secret-set>${secret.present ? 'Change' : 'Set'}</button>${secret.present ? '<button type="button" data-secret-clear>Clear</button>' : ''}</div>`).join('')}` : ''}</section>
+    <section data-content-panel="permissions" ${selected === 'permissions' ? '' : 'hidden'}><h2>Permissions</h2>${pluginCapabilities({manifest:m}).length ? `<div data-plugin-permissions>${permissionChoices(pluginCapabilities(p), p.grants, 'data-plugin-grant', 'plugin-grant')}</div>` : '<p class="muted">This plugin requests no permissions.</p>'}</section>
     <section data-content-panel="activity" ${selected === 'activity' ? '' : 'hidden'}><h2>Activity</h2><div id="plugin-log"></div></section>
   </div>`;
   const permissionBox = $('[data-plugin-permissions]', view);
+  if (p.runtime?.status === 'failed') {
+    const notice = document.createElement('p'); notice.className = 'error';
+    notice.textContent = 'Plugin activation failed: ' + p.runtime.error;
+    $('.plugin-meta', view).after(notice);
+  }
   if (permissionBox)
     permissionBox.onchange = () =>
       api(`plugins/${p.id}`, {
@@ -511,7 +523,7 @@ async function pluginDetailPage(view, route) {
 // ----- a page of a plugin -----
 async function pluginFramePage(view, route) {
   const p = pluginById(route.id) || (await loadPlugins(), pluginById(route.id)),
-    page = p?.manifest.contributes.pages.find(x => x.id === route.view);
+    page = pluginContributions(p).pages.find(x => x.id === route.view);
   if (app.route !== route) return;
   if (!p || !page || !p.enabled) {
     view.innerHTML = `<div class="empty"><h2>${p ? 'This page is not available' : 'This plugin is not installed'}</h2><p>${p && !p.enabled ? 'The plugin is disabled.' : ''}</p><a href="/plugins" data-link>Back to Plugins</a></div>`;
@@ -523,7 +535,7 @@ async function pluginFramePage(view, route) {
   const parents = [];
   let ancestor = page;
   while (ancestor.parent) {
-    ancestor = p.manifest.contributes.pages.find(x => x.id === ancestor.parent);
+    ancestor = pluginContributions(p).pages.find(x => x.id === ancestor.parent);
     parents.unshift([ancestor.title, pluginHref(p.id, ancestor.id)]);
   }
   view.innerHTML = `<div class="page plugin-page">${pageHead({

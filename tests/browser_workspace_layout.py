@@ -16,7 +16,7 @@ async def check(base):
         page.on('pageerror', lambda e: errors.append(str(e)))
         await page.goto(base + '/editor/')
         await page.wait_for_selector('.dashboard-metrics')
-        assert await page.locator('.dashboard-metrics .tile').count() == 4
+        assert await page.locator('.dashboard-metrics .tile').count() == 2
         await page.evaluate("api('settings',{method:'PUT',body:{developer_mode:true}}).then(s=>app.preferences=s)")
         ids = await page.evaluate("""async () => {
           const project = await api('projects',{method:'POST',body:{name:'Layout checks'}});
@@ -63,25 +63,15 @@ async def check(base):
         print('PASS workflow subsection, group styling, permission hint, hidden capabilities, height after reopen/reload and port spelling')
         await page.evaluate("go('/library')")
         assert await page.locator('#view .card').filter(has_text='AI').count() == 1
-        await page.evaluate("go('/runs')")
-        await page.wait_for_selector('#runs-runs:not([hidden])')
-        assert not await page.locator('#runs-workflows').is_visible()
-        await page.get_by_role('link', name='Workflows', exact=True).click()
-        assert await page.locator('[data-workflow-control]').count() == 1
-        assert not await page.locator('[name=max_attempts]').is_visible()
-        await page.locator('.workflow-policy-details summary').click()
-        await page.locator('[name=max_attempts]').fill('2')
-        await page.get_by_role('button', name='Save policy', exact=True).click()
-        await page.wait_for_function("document.querySelector('[name=max_attempts]')?.value==='2'")
         for width in (1500, 390):
             await page.set_viewport_size({'width':width,'height':1000})
-            for path, target in [('/', '.dashboard'), ('/runs', '.runs-page')]:
+            for path, target in [('/', '.dashboard')]:
                 await page.evaluate('path=>go(path)', path)
                 await page.wait_for_selector(target)
                 assert await page.locator(target).evaluate('e=>e.scrollWidth<=e.clientWidth'), (width,path)
                 await page.screenshot(path=str(Path(tempfile.gettempdir()) / f'agentsys-{width}-{target[1:]}.png'))
         assert not errors, errors
-        print('PASS compact Dashboard/Runs, workflow policy controls, mobile overflow and no page errors')
+        print('PASS compact Dashboard, mobile overflow and no page errors')
         await browser.close()
 
 

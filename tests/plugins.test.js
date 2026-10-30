@@ -5,13 +5,13 @@ const {createApp, bundleOf} = require('./harness');
 const TextGraph = require('../js/storage/format');
 
 const FORMAT = 'agentsys.plugin/1';
-/** A Library catalog file as an exported one: nodes named `names`, each declaring `capabilities`. */
+/** A Library catalog file: nodes carry default permissions for new instances. */
 const catalog = (names, capabilities = ['graph.read', 'net.fetch:api.example.com']) =>
   JSON.stringify(
     TextGraph.encode(
       names.map(name => ({
         name,
-        payload: {...bundleOf(name, {Body: {inputs: [], outputs: []}}), capabilities, grants: ['graph.write']},
+        payload: {...bundleOf(name, {Body: {inputs: [], outputs: []}}), grants: [...capabilities, 'graph.write']},
       }))
     )
   );
@@ -35,7 +35,7 @@ function pluginPackage(over = {}, files = {}) {
         tiles: [{id: 'status', title: 'Status', entry: 'ui/tile.html', height: 120}],
         commands: [
           {id: 'open', title: 'Open demo', page: 'main'},
-          {id: 'runs', title: 'Open runs', path: '/runs'},
+          {id: 'projects', title: 'Open projects', path: '/projects'},
         ],
         endpoints: [{name: 'echo', methods: ['GET', 'POST'], entry: 'server/echo.js'}],
         templates: [{id: 'starter', name: 'Starter', file: 'templates/starter.json'}],
@@ -77,7 +77,7 @@ test('a package is validated: format, ids, files named by contributions, capabil
   await refuse(pluginPackage({id: 'Bad Id'}), /plugin id/);
   await refuse(pluginPackage({version: 'one'}), /version/);
   await refuse(pluginPackage({capabilities: ['everything']}), /capabilities/);
-  await refuse(pluginPackage({engine: '>=2'}), /needs plugin API 2/);
+  await refuse(pluginPackage({engine: '>=3'}), /needs plugin API 3/);
   await refuse(pluginPackage({engine: '^1'}), /engine/);
   await refuse(
     pluginPackage({contributes: {pages: [{id: 'a', title: 'A', entry: 'missing.html'}]}}),
@@ -110,42 +110,23 @@ test('a package is validated: format, ids, files named by contributions, capabil
   assert.deepEqual((await app.api('GET', 'plugins')).plugins, []);
 });
 
-test('install is disabled by default; enabling puts its nodes in the Library, disabling takes them out', async () => {
+test('enabling seeds ordinary nodes once and plugin grants do not rewrite their defaults', async () => {
   const app = createApp();
   const made = await install(app);
   assert.equal(made.enabled, false);
   assert.equal(made.nodes, 0);
-  assert.deepEqual(
-    (await app.api('GET', 'resources')).filter(r => r.payload.plugin),
-    []
-  );
   const on = await app.api('PUT', 'plugins/demo', {enabled: true});
   assert.equal(on.nodes, 2);
-  const nodes = (await app.api('GET', 'resources')).filter(r => r.payload.plugin === 'demo');
-  assert.deepEqual(
-    nodes.map(n => n.name),
-    ['Demo echo', 'Demo shout']
-  );
-  assert.ok(nodes.every(n => n.payload.folder === 'Demo plugin' && n.id.startsWith('plugin.demo.')));
-  // Nothing is granted yet, whatever the node asked for.
-  assert.ok(nodes.every(n => n.payload.grants.length === 0));
+  const nodes = (await app.api('GET', 'resources')).filter(r => r.id.startsWith('plugin.demo.'));
+  assert.deepEqual(nodes.map(n => n.name), ['Demo echo', 'Demo shout']);
+  assert.ok(nodes.every(n => n.payload.folder === 'Demo plugin' && !('plugin' in n.payload)));
+  assert.ok(nodes.every(n => n.payload.grants.includes('graph.write')));
   assert.equal((await app.api('GET', 'settings')).node_folder_icons['Demo plugin'], 'plug');
-  // Granting reaches the nodes, and only for what the node declares.
   await app.api('PUT', 'plugins/demo', {grants: ['graph.read']});
-  assert.deepEqual((await app.api('GET', 'resources')).find(n => n.name === 'Demo echo').payload.grants, [
-    'graph.read',
-  ]);
   await app.api('PUT', 'plugins/demo', {enabled: false});
-  assert.deepEqual(
-    (await app.api('GET', 'resources')).filter(r => r.payload.plugin),
-    []
-  );
-  // Back on: the same ids, so copies placed meanwhile keep following them.
+  assert.deepEqual(await app.api('GET', 'resources'), nodes);
   await app.api('PUT', 'plugins/demo', {enabled: true});
-  assert.deepEqual(
-    (await app.api('GET', 'resources')).filter(r => r.payload.plugin).map(r => r.id),
-    nodes.map(n => n.id)
-  );
+  assert.deepEqual(await app.api('GET', 'resources'), nodes);
 });
 
 test('grants must be capabilities the plugin declares', async () => {
@@ -155,43 +136,47 @@ test('grants must be capabilities the plugin declares', async () => {
   await assert.rejects(install(app, pluginPackage(), {replace: true, grants: ['library.write']}), /declares/);
 });
 
-test('plugin nodes belong to the plugin: no edit, delete, move, rename of their group; a copy is the person’s own', async () => {
+test('plugin nodes and groups allow normal editing, duplication, moving and deletion', async () => {
   const app = createApp();
   await install(app, pluginPackage(), {enable: true});
   const node = (await app.api('GET', 'resources')).find(r => r.name === 'Demo echo');
-  for (const attempt of [
-    app.api('PUT', `resources/${node.id}`, {name: 'Renamed', payload: node.payload}),
-    app.api('DELETE', `resources/${node.id}`),
-    app.api('POST', `library/custom-nodes/${node.id}/move`, {folder: ''}),
-    app.api('POST', 'library/node-editor', {resource_id: node.id}),
-    app.api('POST', 'library/node-folders', {action: 'rename', path: 'Demo plugin', name: 'Mine'}),
-    app.api('POST', 'library/node-folders', {action: 'delete', path: 'Demo plugin'}),
-    app.api('POST', 'library/node-folders', {action: 'create', path: 'Demo plugin', name: 'Inside'}),
-    app.api('POST', 'resources', {name: 'Fake', payload: {...node.payload, plugin: 'demo'}}),
-  ])
-    await assert.rejects(attempt, error => /plugin/i.test(error.message));
+  const editor = await app.api('POST', 'library/node-editor', {resource_id: node.id});
+  assert.equal(editor.resource_id, node.id);
+  await app.api('PUT', `resources/${node.id}`, {name: 'Renamed', payload: {...node.payload, grants: ['library.read'], description: 'My changes'}});
   const copy = await app.api('POST', `library/custom-nodes/${node.id}/duplicate`, {});
   const mine = await app.api('GET', `resources/${copy.id}`);
   assert.equal(mine.payload.plugin, undefined);
-  assert.equal(mine.payload.folder, '');
-  assert.deepEqual(mine.payload.grants, ['graph.read']);
-  // A user's node cannot take a plugin's name.
-  await install(app, pluginPackage({id: 'other', name: 'Other plugin'}));
-  await app.api('POST', 'resources', {
-    name: 'Same name',
-    payload: bundleOf('Same name', {Body: {inputs: [], outputs: []}}),
+  assert.equal(mine.payload.folder, 'Demo plugin');
+  assert.deepEqual(mine.payload.grants, ['library.read']);
+  await app.api('POST', 'library/node-folders', {action: 'create', path: 'Demo plugin', name: 'Inside'});
+  await app.api('POST', `library/custom-nodes/${node.id}/move`, {folder: 'Demo plugin/Inside'});
+  await app.api('POST', 'library/node-folders', {action: 'rename', path: 'Demo plugin', name: 'Mine'});
+  await app.api('POST', 'library/node-folders', {action: 'icon', path: 'Mine', icon: 'star'});
+  const saved = await app.api('GET', `resources/${node.id}`);
+  assert.equal(saved.payload.folder, 'Mine/Inside');
+  await install(app, pluginPackage({version: '1.1.0'}), {replace: true});
+  assert.deepEqual(await app.api('GET', `resources/${node.id}`), saved, 'update preserves all edits');
+  await app.api('DELETE', `resources/${node.id}`);
+  await app.api('PUT', 'plugins/demo', {enabled: false});
+  await app.api('PUT', 'plugins/demo', {enabled: true});
+  await install(app, pluginPackage({version: '1.2.0'}), {replace: true});
+  await assert.rejects(app.api('GET', `resources/${node.id}`), /not found/);
+  await app.api('POST', 'library/node-folders', {action: 'delete', path: 'Mine'});
+  await assert.rejects(app.api('GET', `resources/${copy.id}`), /not found/);
+  const imported = await app.api('POST', 'resources', {name: 'Legacy export', payload: {...node.payload, plugin: 'demo'}});
+  assert.equal(imported.payload.plugin, undefined, 'legacy ownership is ignored on import');
+});
+
+test('a catalog skips existing names and adds only new nodes on update', async () => {
+  const app = createApp();
+  const existing = await app.api('POST', 'resources', {
+    name: 'Same name', payload: bundleOf('Same name', {Body: {inputs: [], outputs: []}}),
   });
-  await assert.rejects(
-    install(app, pluginPackage({id: 'clash', name: 'Clash'}, {'nodes/basic.json': catalog(['Same name'])}), {
-      enable: true,
-    }),
-    /already has a node named/
-  );
-  assert.equal(
-    (await app.api('GET', 'plugins')).plugins.find(p => p.id === 'clash'),
-    undefined,
-    'a failed install leaves nothing behind'
-  );
+  const first = await install(app, pluginPackage({}, {'nodes/basic.json': catalog(['Same name', 'New node'])}), {enable: true});
+  assert.equal(first.nodes, 1);
+  await app.api('DELETE', `resources/${existing.id}`);
+  await install(app, pluginPackage({version: '1.1.0'}, {'nodes/basic.json': catalog(['Same name', 'New node', 'Another node'])}), {replace: true});
+  assert.deepEqual((await app.api('GET', 'resources')).map(r => r.name), ['Another node', 'New node']);
 });
 
 test('placed copies of a plugin node survive disabling and removing the plugin', async () => {
@@ -207,8 +192,8 @@ test('placed copies of a plugin node survive disabling and removing the plugin',
   assert.equal(snapshot.complex.filter(c => c.source).length, 1, 'the copy is still on the canvas');
   assert.deepEqual((await app.api('GET', 'plugins')).plugins, []);
   assert.deepEqual(
-    (await app.api('GET', 'resources')).filter(r => r.payload.plugin),
-    []
+    (await app.api('GET', 'resources')).filter(r => r.id.startsWith('plugin.demo.')).map(r => r.name),
+    ['Demo echo', 'Demo shout']
   );
 });
 
@@ -236,7 +221,7 @@ test('updating keeps enabled state, narrows grants to what is still declared, an
   assert.equal(updated.enabled, true);
   assert.equal(updated.manifest.version, '1.1.0');
   assert.deepEqual(updated.grants, ['graph.read']);
-  assert.equal((await app.api('GET', 'resources')).filter(r => r.payload.plugin).length, 2);
+  assert.equal((await app.api('GET', 'resources')).filter(r => r.id.startsWith('plugin.demo.')).length, 2);
 });
 
 test('settings are checked against the plugin’s declaration and merged over the defaults', async () => {

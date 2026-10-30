@@ -13,7 +13,7 @@ async function project(app) {
     q,
     node: config => app.api('POST', `projects/${id}/typed-nodes`, {...q, node_type: 'custom', config, position: {x: 0, y: 0}}),
     connect: (from, port, to, target = 'in') => app.api('POST', `projects/${id}/port-connections`, {...q, add: [{source: from, source_port: port, target: to, target_port: target}]}),
-    run: () => app.api('POST', `projects/${id}/runs`, {...q, wait: 10}),
+    run: () => app.api('POST', `projects/${id}/execution`, {...q, wait: true}),
     evaluate: ids => app.api('POST', `projects/${id}/evaluate-node`, {...q, node_ids: ids, collect: true}),
   };
 }

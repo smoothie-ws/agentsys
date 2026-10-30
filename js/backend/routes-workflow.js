@@ -403,33 +403,11 @@ route(
     const body = c.body,
       ids = body.node_ids ?? body.node_id;
     const multiple = Array.isArray(ids);
-    const run = await startRun(c, {
-      project_id,
-      workflow_id: c.workflowId,
-      node_ids: multiple ? ids : [ids],
+    const {editor,meta} = await c.workflow(project_id);
+    const result = await evaluateGraph(editor.snapshot(), multiple ? ids : [ids], runPlan, {
+      collect: body.collect === true, context: {project_id, workflow_id:meta.id}, signal: c.scriptContext?.signal
     });
-    await run.done;
-    if (body.collect !== true) {
-      if (run.error) throw new Error(run.error);
-      const first = run.roots.find(id => id in run.errors);
-      if (first) throw new Error(run.errors[first]);
-    }
-    const result = {
-      outputs: run.outputs ?? {},
-      errors: run.errors,
-      status: Object.fromEntries([...run.nodes].map(([id, node]) => [id, node.status])),
-      evaluated_nodes: run.evaluated_nodes,
-      displays: run.displays,
-    };
-    return {
-      outputs: multiple ? result.outputs : result.outputs[ids],
-      errors: result.errors,
-      status: result.status,
-      evaluated_nodes: result.evaluated_nodes,
-      displays: result.displays,
-      run_id: run.id,
-      run_status: run.status,
-    };
+    return {...result, outputs:multiple ? result.outputs : result.outputs[ids]};
   },
   {
     unlocked: true,

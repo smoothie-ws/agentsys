@@ -1,22 +1,15 @@
-# Decisions
+﻿# Decisions
 
-Settled design decisions. A decision changes only by an explicit new decision written here.
+These MVP decisions supersede the earlier autonomous workflow design.
 
-1. **The graph is interpreted, not compiled.** A running workflow picks up edits without a restart; the plan is live ([Engine](engine.md)). Rejected: "edits take effect only in a new run" (useless for continuous workflows) and "keep the last valid version of a broken node" (hides the error and creates a second path).
-2. **A workflow runs continuously and autonomously, for any computation, not only agents.** "Continuous" is graph + state + queues, not a process: work is a series of short activations; there is no permanent environment between runs. The only way to pass data between activations is `node.state` or a queue. A failing activation does not switch the workflow off: it retries with backoff, then fails and is logged; after K consecutive failures the workflow is paused with a visible reason. Run limits (lifetime, size) apply to one activation, not to the workflow.
-3. **Signals carry no data.** A stream of items is a queue with a limit and an overflow policy; an item starts an activation. Rejected: "signal with a payload" (breaks independence of receivers and durability).
-4. **The core is not agentic.** There is no Initiative, approval entity, budget, AI primitive, linter or eval in the core: they would be imposed on everyone. Agents are built from Custom Nodes now and from plugins later. The core keeps only general mechanisms: the signal engine, flow control, durable waiting, checkpoints and Runs, the permission model, the canonical format, versions, replay.
-5. **The model provider/LLM call and Library providers and skills were removed from the core** (2026-10-28): they belong to the AI-controller plugin.
-6. **Accounting and the journal live on the bridge**, because a node cannot reliably limit the spending of other nodes. Generic units, quotas, a journal of calls (`bridge_call`) that is the basis of replay. The core does not know what a "token" is.
-7. **Human intervention is part of the core**: pause/resume, answering a wait, replacing an invocation's output and restarting from there, cancelling a wave, restoring a node version. "Ask human" is a Library node over `node.wait`, not a core entity.
-8. **Rights are checked at node start** against the current version, so editing the graph cannot bypass them; code written by Scripts is quarantined.
-9. **Related edits are applied as one batch**, so a running graph never sees half of a wiring.
-10. **No legacy.** One way to do a thing; the old way is removed with its code, tests, docs and data.
-11. **Plugins are the way to extend the product** (see [Roadmap](roadmap.md)); the core stays small.
-12. **A plugin is one JSON package with no resident code** ([Plugins](plugins.md)). Server code is an endpoint run in a Worker per call; UI uses native declarative Library collections or a sandboxed iframe whose only door is the checked bridge. Rejected: a folder of files loaded into the page or server (no isolation), a plugin process (an extra runtime to supervise), background hooks (periodic work is a workflow with a trigger).
-13. **A plugin's rights = what it declares ∩ what a person grants**, read on every call; plugin writes are quarantined like Scripts' writes. Management of plugins is `system.admin`.
-14. **Plugin-owned Library nodes are read-only** and follow the plugin (stable ids); disabling a plugin hides them, copies placed in graphs keep working.
-15. **A built-in catalog of Library nodes ships with the app** (`builtin-nodes.js`, generated from a Library by `tools/export-builtin.js`; replaces "nothing ships"). The engine still knows only Script and Event: the catalog is data, added to the Library by name when missing (stable ids `builtin.<name>`), never overwriting a person's edits and not reviving what they deleted. Rejected: nodes in the engine (a second kind of node), read-only built-ins (people adapt them).
-
-16. **One navigation model.** The primary rail selects a section, its permanent second-panel tree selects a subsection or item, and page/header menus share the same action definition. URL destinations are never replaced by remembered addresses. A plugin must explicitly declare a navigation override.
-17. **Library resources belong to the host.** Plugins declare schemas, hierarchy and action endpoints; shared cards, groups, resource API, forms and secret storage belong to the core. Skills use SKILL.md as their source. Graph Nodes keep the existing graph editor.
+1. The core is a general graph editor and executor. AI resource definitions, model behavior and integrations belong to plugins.
+2. Execution is explicit: start, execute the graph, finish or stop. Pause/resume is available at safe execution boundaries.
+3. The graph is captured at start. Edits affect the next execution. Undo/redo remains an editor feature.
+4. Signals control execution; data wires supply values. Signal fan-out may run independent branches concurrently, and an awaited emission joins its branches.
+5. Script and Event are the engine primitives. Custom Nodes implement reusable graph behavior, including branches and loops.
+6. The current execution is transient. There is no persisted history, scheduler, retry supervisor, durable waiting, queue system, checkpoint, live patching or replay.
+7. Each execution uses a fresh isolated Worker. Library defaults initialize new instances; instance permissions and project policy constrain actual API calls. There is no Library declaration gate. Script-created code is quarantined.
+8. Plugins activate imperatively, register their extensions through the public API and release owned resources on deactivation. Manifests describe metadata and loading requirements.
+9. The Library host supplies generic collections, forms, folders, typed JSON data and credential storage. Plugins supply their domain schemas.
+10. The built-in AI plugin owns Provider configuration, model discovery and the Provider/Model/Ask graphs. The core has no AI-specific format, resource or migration.
+11. Removed subsystems are deleted together with their UI, APIs, obsolete tests and examples.
