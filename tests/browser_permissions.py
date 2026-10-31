@@ -5,6 +5,7 @@ import os
 import subprocess
 import tempfile
 from playwright.async_api import async_playwright
+from browser_server import expand_workflow_section
 
 
 async def check(base):
@@ -58,8 +59,9 @@ async def check(base):
         await page.unroute('**/api/**', hold_save)
         await page.locator('[data-side-tab=workflow]').click()
         workflow_policy = page.locator('#workflow-policy')
+        await expand_workflow_section(page, 'permissions')
         await workflow_policy.wait_for()
-        assert 'every workflow in this project' in await workflow_policy.inner_text()
+        assert 'every workflow in this project' in await page.locator('[data-workflow-section=permissions] > summary').inner_text()
         assert await workflow_policy.locator('.permission-table').count() == 1
         assert await workflow_policy.get_by_role('radio',name='Allow graph.read',exact=True).is_checked()
         policy_waiting, policy_release = asyncio.Event(), asyncio.Event()
@@ -89,6 +91,7 @@ async def check(base):
         assert set(policy['allow']) == {'graph.write','notifications.write','net.fetch:example.com'}
         await page.evaluate('id=>go(`/p/${id}/w/${id}`)',project)
         await page.locator('[data-side-tab=workflow]').click()
+        await expand_workflow_section(page, 'permissions')
         await workflow_policy.wait_for()
         assert await workflow_policy.get_by_role('radio',name='Allow graph.write',exact=True).is_checked()
         assert await workflow_policy.get_by_role('radio',name='Disallow graph.read',exact=True).is_checked()
@@ -96,6 +99,7 @@ async def check(base):
         await page.reload()
         await page.wait_for_selector('#canvas')
         await page.locator('[data-side-tab=workflow]').click()
+        await expand_workflow_section(page, 'permissions')
         assert await workflow_policy.get_by_role('radio',name='Allow graph.write',exact=True).is_checked()
         node_state=await page.evaluate("""async()=>{
           await api('settings',{method:'PUT',body:{developer_mode:true}});await loadLibrary();
@@ -106,18 +110,18 @@ async def check(base):
         }""")
         await page.locator('[data-side-tab=workflow]').click()
         library_permissions=page.locator('#library-permissions')
+        await expand_workflow_section(page, 'permissions')
         await library_permissions.wait_for()
         assert await page.locator('#workflow-policy').count()==0
         assert await library_permissions.locator('.permission-table').count()==1
         assert 'Declared permissions' not in await library_permissions.inner_text()
-        assert 'Default permissions' in await library_permissions.inner_text()
+        assert 'Default permissions' in await page.locator('[data-workflow-section=permissions] > summary').inner_text()
         defaults=library_permissions
         await defaults.get_by_role('radio',name='Allow net.fetch:*',exact=True).click()
         await defaults.get_by_role('radio',name='Allow library.read',exact=True).click()
         await defaults.locator('[name=extra_grants]').fill('net.fetch:127.0.0.1:8080')
         await page.evaluate("go('/projects')")
         saved=await page.evaluate('id=>api(`resources/${id}`)',node_state['id'])
-        assert 'capabilities' not in saved['payload']
         assert set(saved['payload']['grants'])=={'library.read','net.fetch:*','net.fetch:127.0.0.1:8080'}
         assert saved['payload']['bundle']==node_state['bundle']
         existing=await page.evaluate("async id=>(await api(`projects/${id}/workflow`,{query:{workflow_id:id}})).complex",project)
@@ -125,11 +129,13 @@ async def check(base):
             assert next(c for c in existing if c['id']==old['id'])['grants']==old['grants']
         await page.evaluate('id=>editInLibrary(id)',node_state['id'])
         await page.locator('[data-side-tab=workflow]').click()
+        await expand_workflow_section(page, 'permissions')
         await library_permissions.wait_for()
         assert await defaults.get_by_role('radio',name='Allow net.fetch:*',exact=True).is_checked()
         assert await defaults.get_by_role('radio',name='Allow library.read',exact=True).is_checked()
         await page.reload();await page.wait_for_selector('#canvas')
         await page.locator('[data-side-tab=workflow]').click()
+        await expand_workflow_section(page, 'permissions')
         assert await defaults.get_by_role('radio',name='Allow net.fetch:*',exact=True).is_checked()
         new_copy=await page.evaluate("""async args=>{
           const placed=await api(`projects/${args.project}/custom-nodes/${args.resource}`,{method:'POST',body:{workflow_id:args.project,point:{x:300,y:0}}});

@@ -67,33 +67,10 @@ class NodeWorker {
   }
 }
 
-// A run as plain async code in this process: fast and simple, for tests. No time limit, no isolation (the nodes of a run share
-// one realm, as they do in a Worker).
-const INLINE_RUN_PLAN = `runPlan = async (plan, onEvent, signal, control) => {
-  preparePlanPermissions(plan);
-  plan = clone(plan);
-  const host = planHost(plan, onEvent, control, signal);
-  if (signal?.aborted) throw new Error('Run cancelled');
-  let over = false;
-  const gate = {paused:control?.paused===true,waiters:[]};
-  const receive = message => {gate.paused=message.type==='pause';if(!gate.paused)gate.waiters.splice(0).forEach(wake=>wake());};
-  const stop = new Promise((_, reject) => signal?.addEventListener('abort', () => { over = true; reject(new Error('Run cancelled')); }, {once: true}));
-  const run = executePlan(plan, {
-    AsyncFunction: Object.getPrototypeOf(async function () {}).constructor,
-    displayText,
-    call: host.call,
-    limits: plan.limits,
-    gate,
-    emit: event => { if (!over) host.emit(event); },
-  });
-  host.attach(receive);
-  return await Promise.race([run, stop]);
-};`;
-
 /**
  * A fresh application backend.
  * `store` ({dir, get(key), commit({set, remove})}) keeps the data somewhere durable; without it the data is in memory.
- * `scripts` is 'worker' (worker threads, with a time limit) or 'inline'.
+ * `scripts` is 'worker' (worker threads) or 'inline'.
  */
 function loadBackend({root, store = null, scripts = 'worker'} = {}) {
   const workerStats = {started: 0, terminated: 0, exited: 0};
@@ -121,7 +98,7 @@ function loadBackend({root, store = null, scripts = 'worker'} = {}) {
   const context = vm.createContext(sandbox);
   context.self = context;
   for (const file of files) vm.runInContext(fs.readFileSync(path.join(root, file), 'utf8'), context, {filename: file});
-  if (scripts === 'inline') vm.runInContext(INLINE_RUN_PLAN, context);
+
   return {
     workerStats,
     context,

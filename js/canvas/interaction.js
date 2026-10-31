@@ -14,7 +14,8 @@ function wireCanvas() {
   });
   $('#undo').onclick = () => undo(false);
   $('#redo').onclick = () => undo(true);
-  $('#start')?.addEventListener('click', () => (W.running ? stopRun() : runAction()).catch(fail));
+  $('#start')?.addEventListener('click', () => runAction().catch(fail));
+  $('#stop')?.addEventListener('click', () => stopRun().catch(fail));
   $('#pause')?.addEventListener('click', () => pauseRun().catch(fail));
   $('#zoom-in').onclick = () =>
     zoomAt(
@@ -35,8 +36,8 @@ function wireCanvas() {
   $('[data-selection-pin]').onclick = () => setPinned(!selectionItems().every(n => n.pinned)).catch(fail);
   $('[data-selection-disable]').onclick = () => toggleDisabled()?.catch(fail);
   $('[data-selection-actions]').onclick = event => {
-    const rect=event.currentTarget.getBoundingClientRect();
-    popup(rect.left,rect.bottom+4,selectionMenu());
+    const rect = event.currentTarget.getBoundingClientRect();
+    popup(rect.left, rect.bottom + 4, selectionMenu());
   };
   $('[data-selection-color]').onclick = event => openColorPicker(event.currentTarget.getBoundingClientRect());
   $('#minimap').onpointerdown = event => {
@@ -165,7 +166,9 @@ function wireCanvas() {
     const binding = event.target.closest('[data-binding-group]');
     if (binding) {
       // A binding wire starts at the dot of its slot: pressing on the dot itself drags a new wire from it (an input may be bound to more ports).
-      const dot = document.elementsFromPoint(event.clientX, event.clientY).find(el => el.matches?.('.frame-ports .port')),
+      const dot = document
+          .elementsFromPoint(event.clientX, event.clientY)
+          .find(el => el.matches?.('.frame-ports .port')),
         frame = dot?.closest('.frame');
       if (frame) return startWire(event, frame.dataset.id, dot.querySelector('.sock.external'));
       select(['frame:' + binding.dataset.bindingGroup]);
@@ -217,7 +220,11 @@ function wireCanvas() {
   canvas.addEventListener('change', event => {
     const select = event.target.closest('select[data-event]');
     if (!select) return;
-    api(`projects/${W.project}/primitives/${encodeURIComponent(select.dataset.event)}/event`, {method: 'PUT', body: wf({event: select.value}), edit: editToken()})
+    api(`projects/${W.project}/primitives/${encodeURIComponent(select.dataset.event)}/event`, {
+      method: 'PUT',
+      body: wf({event: select.value}),
+      edit: editToken(),
+    })
       .then(reload)
       .catch(fail);
   });
@@ -227,7 +234,11 @@ function wireCanvas() {
     window.addEventListener('message', event => {
       const frame = $$('iframe[data-widget-frame]').find(f => f.contentWindow === event.source);
       if (!frame || !event.data || typeof event.data !== 'object' || !('value' in event.data)) return;
-      changeWidget(frame.closest('[data-widget-node]').dataset.widgetNode, frame.dataset.widgetFrame, event.data.value).catch(fail);
+      changeWidget(
+        frame.closest('[data-widget-node]').dataset.widgetNode,
+        frame.dataset.widgetFrame,
+        event.data.value
+      ).catch(fail);
     });
   }
   W.flushInline = () => Promise.all([...inlineEdits.values()].map(entry => entry.flush()));
@@ -456,7 +467,8 @@ function downstreamOf(ids) {
       if (seen.has(target)) continue;
       seen.add(target);
       queue.push(target);
-      if (W.nodes.has(target) && W.pos.has(target) && !W.hidden.nodes.has(target) && !isPinned(target)) found.push(target);
+      if (W.nodes.has(target) && W.pos.has(target) && !W.hidden.nodes.has(target) && !isPinned(target))
+        found.push(target);
     }
   return found;
 }
@@ -704,7 +716,9 @@ function startFrameDrag(event, groupId) {
   W.drag = {ids: new Set(members)};
   setHintMode('frame');
   // The corner of what the group holds is what snaps to the grid.
-  const anchor = origins.size ? {x: Math.min(...[...origins.values()].map(o => o.x)), y: Math.min(...[...origins.values()].map(o => o.y))} : null;
+  const anchor = origins.size
+    ? {x: Math.min(...[...origins.values()].map(o => o.x)), y: Math.min(...[...origins.values()].map(o => o.y))}
+    : null;
   // Like a node, a frame can be dropped into another group, or out of its own through the zone at the top.
   const item = 'frame:' + groupId,
     zone = $('#unparent-zone'),
@@ -876,16 +890,23 @@ function armMarquee(on) {
 function selectionColor() {
   const item = selectionItems()[0];
   if (item?.color) return item.color;
-  const element = item?.kind === 'group'
-    ? $(`.frame[data-frame="${CSS.escape(item.group_id)}"]`, W.canvas)
-    : W.elements.get(item?.id);
+  const element =
+    item?.kind === 'group'
+      ? $(`.frame[data-frame="${CSS.escape(item.group_id)}"]`, W.canvas)
+      : W.elements.get(item?.id);
   const canvas = document.createElement('canvas');
   canvas.width = canvas.height = 1;
   const ctx = canvas.getContext('2d');
   ctx.fillStyle = getComputedStyle(element || W.canvas).backgroundColor;
   ctx.fillRect(0, 0, 1, 1);
   const rgba = [...ctx.getImageData(0, 0, 1, 1).data];
-  return '#' + rgba.slice(0, rgba[3] === 255 ? 3 : 4).map(c => c.toString(16).padStart(2, '0')).join('');
+  return (
+    '#' +
+    rgba
+      .slice(0, rgba[3] === 255 ? 3 : 4)
+      .map(c => c.toString(16).padStart(2, '0'))
+      .join('')
+  );
 }
 function openColorPicker(anchor) {
   colorPicker(anchor, {color: selectionColor(), none: true, onPick: color => setSelectionStyle({color}).catch(fail)});

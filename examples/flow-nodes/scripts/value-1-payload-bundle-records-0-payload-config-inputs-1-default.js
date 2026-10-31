@@ -3,6 +3,6 @@ if (!Array.isArray(list)) throw new Error('For each: list is a list');
 for (let i = 0; i < list.length; i++) {
   node.output.item = list[i];
   node.output.index = i;
-  if ((await node.emit('body', {handles: ['break', 'continue']})) === 'break') break;
+  if ((await node.output.body.emit({handles: ['break', 'continue']})) === 'break') break;
 }
-await node.emit('done');
+await node.output.done.emit();

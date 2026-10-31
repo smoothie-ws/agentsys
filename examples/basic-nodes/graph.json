@@ -62,7 +62,6 @@
           "version": 3,
           "widgets": {}
         },
-        "capabilities": [],
         "description": "",
         "folder": "Value",
         "frame": {
@@ -143,7 +142,6 @@
               "id": "record:3da2ba5d8b7e66b3c67547738d4fe77d",
               "payload": {
                 "config": {
-                  "capabilities": [],
                   "grants": [],
                   "inputs": [
                     {
@@ -161,7 +159,13 @@
                     }
                   ],
                   "op": "script",
-                  "outputs": [],
+                  "outputs": [
+                    {
+                      "id": "out",
+                      "name": "out",
+                      "type": "signal"
+                    }
+                  ],
                   "title": "Script"
                 },
                 "kind": "function",
@@ -207,7 +211,6 @@
           "version": 3,
           "widgets": {}
         },
-        "capabilities": [],
         "description": "",
         "folder": "Flow",
         "frame": {
@@ -257,7 +260,13 @@
                   {
                     "id": "pwf67a",
                     "name": "out",
-                    "type": "signal"
+                    "type": "signal",
+                    "bound": [
+                      {
+                        "node_id": "record:437f16389ab7896219230af0aa9b8668",
+                        "port_id": "out"
+                      }
+                    ]
                   },
                   {
                     "id": "pxltyf",
@@ -287,7 +296,6 @@
               "id": "record:437f16389ab7896219230af0aa9b8668",
               "payload": {
                 "config": {
-                  "capabilities": [],
                   "grants": [],
                   "inputs": [
                     {
@@ -305,7 +313,13 @@
                     }
                   ],
                   "op": "script",
-                  "outputs": [],
+                  "outputs": [
+                    {
+                      "id": "out",
+                      "name": "out",
+                      "type": "signal"
+                    }
+                  ],
                   "title": "Script"
                 },
                 "kind": "function",
@@ -344,7 +358,6 @@
           "version": 3,
           "widgets": {}
         },
-        "capabilities": [],
         "description": "",
         "folder": "",
         "frame": {
@@ -417,7 +430,6 @@
           "version": 3,
           "widgets": {}
         },
-        "capabilities": [],
         "description": "",
         "folder": "Value",
         "frame": {
@@ -484,7 +496,6 @@
               "id": "record:6e4208dbb04e871621658a22ae312dca",
               "payload": {
                 "config": {
-                  "capabilities": [],
                   "grants": [],
                   "inputs": [
                     {
@@ -502,7 +513,13 @@
                     }
                   ],
                   "op": "script",
-                  "outputs": [],
+                  "outputs": [
+                    {
+                      "id": "out",
+                      "name": "out",
+                      "type": "signal"
+                    }
+                  ],
                   "title": "Script"
                 },
                 "kind": "function",
@@ -541,7 +558,6 @@
           "version": 3,
           "widgets": {}
         },
-        "capabilities": [],
         "description": "",
         "folder": "",
         "frame": {
@@ -611,7 +627,6 @@
           "version": 3,
           "widgets": {}
         },
-        "capabilities": [],
         "description": "",
         "folder": "Value",
         "frame": {

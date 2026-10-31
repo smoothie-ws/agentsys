@@ -34,8 +34,8 @@ function highlightJS(code) {
   }
   return html + esc(code.slice(offset)) + '\n';
 }
-function codeEditorHTML(code, attrs = '') {
-  return `<div class="code-editor"><pre aria-hidden="true">${highlightJS(code || '')}</pre><textarea spellcheck="false" autocapitalize="off" autocomplete="off" ${attrs}>${esc(code)}</textarea></div>`;
+function codeEditorHTML(code, attrs = '', help = true) {
+  return `${help ? '<button type="button" class="link code-api-help" data-script-api>Script API</button>' : ''}<div class="code-editor"><pre aria-hidden="true">${highlightJS(code || '')}</pre><textarea spellcheck="false" autocapitalize="off" autocomplete="off" ${attrs}>${esc(code)}</textarea></div>`;
 }
 function wireCodeEditors(root) {
   for (const area of $$('.code-editor textarea', root)) {

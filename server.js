@@ -94,14 +94,17 @@ async function walkAsync(dir) {
   } catch {
     return [];
   }
-  const children = await Promise.all(entries.map(async entry => {
-    const file = path.join(dir, entry.name);
-    if (entry.isDirectory()) return walkAsync(file);
-    return !entry.name.includes('.tmp-') && (
-      entry.name.endsWith('.json') ||
-      (file.includes('.files' + path.sep + 'scripts' + path.sep) && entry.name.endsWith('.js'))
-    ) ? [file] : [];
-  }));
+  const children = await Promise.all(
+    entries.map(async entry => {
+      const file = path.join(dir, entry.name);
+      if (entry.isDirectory()) return walkAsync(file);
+      return !entry.name.includes('.tmp-') &&
+        (entry.name.endsWith('.json') ||
+          (file.includes('.files' + path.sep + 'scripts' + path.sep) && entry.name.endsWith('.js')))
+        ? [file]
+        : [];
+    })
+  );
   return children.flat();
 }
 const stampOf = file => {
@@ -156,7 +159,8 @@ function createServer(options = {}) {
   const stamps = entries => {
     const grouped = new Map();
     for (const [file, stamp] of entries) {
-      const relative = path.relative(DATA, file), key = keyOf(relative);
+      const relative = path.relative(DATA, file),
+        key = keyOf(relative);
       if (!key || !stamp) continue;
       if (!grouped.has(key)) grouped.set(key, []);
       grouped.get(key).push(relative + ':' + stamp + ';');
@@ -167,14 +171,21 @@ function createServer(options = {}) {
     return stamps(walk(DATA).map(file => [file, stampOf(file)]));
   };
   const snapshotAsync = async () => {
-    const files = await walkAsync(DATA), entries = [];
+    const files = await walkAsync(DATA),
+      entries = [];
     for (let i = 0; i < files.length; i += 128) {
-      entries.push(...await Promise.all(files.slice(i, i + 128).map(async file => {
-        try {
-          const stat = await fs.promises.stat(file);
-          return [file, `${stat.mtimeMs}:${stat.size}`];
-        } catch {return [file, null];}
-      })));
+      entries.push(
+        ...(await Promise.all(
+          files.slice(i, i + 128).map(async file => {
+            try {
+              const stat = await fs.promises.stat(file);
+              return [file, `${stat.mtimeMs}:${stat.size}`];
+            } catch {
+              return [file, null];
+            }
+          })
+        ))
+      );
     }
     return stamps(entries);
   };
@@ -347,10 +358,18 @@ function createServer(options = {}) {
     for (const k of remove) removeKey(k);
     fs.unlinkSync(transactionFile);
   }
-  function commitKeys({set = {}, remove = []}) {
+  function commitKeys({set = {}, remove = [], if_versions = {}}) {
     const keys = [...Object.keys(set), ...remove];
-    if (!keys.every(k => VALID_KEY.test(k))) throw new Error('Invalid storage key');
+    if (![...keys, ...Object.keys(if_versions)].every(k => VALID_KEY.test(k))) throw new Error('Invalid storage key');
     if (fs.existsSync(transactionFile)) applyTransaction(JSON.parse(fs.readFileSync(transactionFile, 'utf8')));
+    for (const [key, version] of Object.entries(if_versions)) {
+      if (!Number.isSafeInteger(version) || version < 0) throw new Error('Invalid storage version');
+      if ((readKey(key)?.version ?? 0) !== version)
+        throw Object.assign(new Error('Stored version changed; read again and retry.'), {
+          status: 409,
+          code: 'conflict',
+        });
+    }
     atomicText(transactionFile, JSON.stringify({set, remove}));
     const transactionFd = fs.openSync(transactionFile, 'r+');
     try {
@@ -379,6 +398,11 @@ function createServer(options = {}) {
           recordCommit({set, remove});
           broadcast([...Object.keys(set), ...remove], 'api'); // open pages reload what the API changed
         },
+        compareAndSet(key, version, value) {
+          commitKeys({set: {[key]: value}, if_versions: {[key]: version}});
+          recordCommit({set: {[key]: value}, remove: []});
+          broadcast([key], 'api');
+        },
       },
     });
   } catch (error) {
@@ -388,24 +412,30 @@ function createServer(options = {}) {
   // Files are watched by comparing stamps: a page open gets the news within a second, and the backend forgets what it
   // had cached of a file that was edited on disk. With no page open the tree is looked at every few seconds only.
   let ticks = 0;
-  let scanning = false, closing = false;
+  let scanning = false,
+    closing = false;
   const watcher = setInterval(() => {
     if (scanning || (!clients.size && ++ticks % 5)) return;
     scanning = true;
     const revision = storageRevision;
-    snapshotAsync().then(now => {
-      if (closing) return;
-      const changed = [];
-      for (const key of new Set([...known.keys(), ...now.keys()])) {
-        // A commit during this asynchronous scan has a newer, complete fingerprint already.
-        if ((changedAt.get(key) ?? 0) > revision) continue;
-        if (known.get(key) !== now.get(key)) changed.push(key);
-        if (now.has(key)) known.set(key, now.get(key));
-        else known.delete(key);
-      }
-      if (changed.length) backend?.DB.changed(changed);
-      broadcast(changed);
-    }).catch(error => console.error('File watcher:', error.message)).finally(() => {scanning = false;});
+    snapshotAsync()
+      .then(now => {
+        if (closing) return;
+        const changed = [];
+        for (const key of new Set([...known.keys(), ...now.keys()])) {
+          // A commit during this asynchronous scan has a newer, complete fingerprint already.
+          if ((changedAt.get(key) ?? 0) > revision) continue;
+          if (known.get(key) !== now.get(key)) changed.push(key);
+          if (now.has(key)) known.set(key, now.get(key));
+          else known.delete(key);
+        }
+        if (changed.length) backend?.DB.changed(changed);
+        broadcast(changed);
+      })
+      .catch(error => console.error('File watcher:', error.message))
+      .finally(() => {
+        scanning = false;
+      });
   }, 1000);
   watcher.unref();
 
@@ -445,7 +475,17 @@ function createServer(options = {}) {
         return sendJSON(res, 400, {error: 'bad body'});
       const keys = [...Object.keys(set), ...remove];
       if (!keys.every(k => VALID_KEY.test(k))) return sendJSON(res, 400, {error: 'bad key'});
-      commitKeys({set, remove});
+      try {
+        if (
+          body.if_versions !== undefined &&
+          (typeof body.if_versions !== 'object' || body.if_versions === null || Array.isArray(body.if_versions))
+        )
+          return sendJSON(res, 400, {error: 'bad versions'});
+        commitKeys({set, remove, if_versions: body.if_versions});
+      } catch (error) {
+        if (error.status === 409) return sendJSON(res, 409, {error: 'conflict'});
+        throw error;
+      }
       // Only what this request touched can have changed, so the whole tree need not be walked again.
       recordCommit({set, remove});
       backend?.DB.changed(keys); // the API's cache must not outlive what the page wrote
@@ -530,11 +570,11 @@ function createServer(options = {}) {
     if (rel.endsWith('/')) rel += 'index.html';
     let file = path.join(ROOT, rel);
     // Windows resolves directory names case-insensitively and ignores trailing dots/spaces.
-    const normalized = value => process.platform === 'win32'
-      ? value.replace(/[. ]+(?=[\\/]|$)/g, '').toLowerCase()
-      : value;
+    const normalized = value =>
+      process.platform === 'win32' ? value.replace(/[. ]+(?=[\\/]|$)/g, '').toLowerCase() : value;
     const inside = (target, directory) => {
-      const name = normalized(target), root = normalized(directory);
+      const name = normalized(target),
+        root = normalized(directory);
       return name === root || name.startsWith(root + path.sep);
     };
     if (
@@ -653,15 +693,12 @@ if (require.main === module) {
       console.log(`AgentSys: ${url}`);
       console.log(`Data folder: ${app.dataDir}`);
       if (!app.api) console.log('The HTTP API is off: the backend could not be loaded.');
-      else if (app.apiAvailable)
-        console.log(`HTTP API: ${url}/api/openapi.json`);
+      else if (app.apiAvailable) console.log(`HTTP API: ${url}/api/openapi.json`);
       else console.log('HTTP API: off. Set AGENTSYS_TOKEN to use it on an address other than 127.0.0.1.');
     })
     .catch(error => {
       console.error(
-        error.code === 'EADDRINUSE'
-          ? `Port ${port} is in use. Choose another port with --port or PORT.`
-          : error.message
+        error.code === 'EADDRINUSE' ? `Port ${port} is in use. Choose another port with --port or PORT.` : error.message
       );
       process.exit(1);
     });

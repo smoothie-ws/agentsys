@@ -66,8 +66,7 @@ route(
     if (c.method === 'DELETE') {
       for (const wf of project.workflows) {
         await c.ctx.remove('wf:' + wf.id);
-        stopExecution(wf.id);
-        EXECUTIONS.delete(wf.id);
+        await deleteGraphRuntime(wf.id);
         histories.delete(wf.id);
       }
       c.ctx.set(
@@ -100,7 +99,14 @@ route('POST', 'projects/{project_id}/duplicate', 'Duplicate a project with its w
   for (const wf of source.workflows) {
     const wid = copy.workflows.length ? uid() : id;
     copy.workflows.push({id: wid, name: wf.name, created: Date.now() / 1000});
-    c.ctx.set('wf:' + wid, duplicateDocument(await c.ctx.get('wf:' + wf.id, emptyDoc())));
+    let ids;
+    c.ctx.set(
+      'wf:' + wid,
+      duplicateDocument(await c.ctx.get('wf:' + wf.id, emptyDoc()), map => {
+        ids = map;
+      })
+    );
+    await duplicateGraphData(c, wf.id, wid, ids);
   }
   projects.push(copy);
   c.ctx.set('projects', projects);
@@ -135,8 +141,7 @@ route(
     if (c.method === 'DELETE') {
       project.workflows = project.workflows.filter(w => w !== wf);
       await c.ctx.remove('wf:' + workflow_id);
-      stopExecution(workflow_id);
-      EXECUTIONS.delete(workflow_id);
+      await deleteGraphRuntime(workflow_id);
       histories.delete(workflow_id);
       return {deleted: workflow_id};
     }
@@ -164,7 +169,14 @@ route(
     while (existing.has(name)) name = base.slice(0, 100 - ` ${n}`.length).trimEnd() + ` ${n++}`;
     const id = uid();
     project.workflows.push({id, name, created: Date.now() / 1000});
-    c.ctx.set('wf:' + id, duplicateDocument(await c.ctx.get('wf:' + workflow_id, emptyDoc())));
+    let ids;
+    c.ctx.set(
+      'wf:' + id,
+      duplicateDocument(await c.ctx.get('wf:' + workflow_id, emptyDoc()), map => {
+        ids = map;
+      })
+    );
+    await duplicateGraphData(c, workflow_id, id, ids);
     return {id, name};
   }
 );

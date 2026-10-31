@@ -135,6 +135,15 @@ declare module '@agentsys/plugin' {
       ): Promise<Json>;
       run(project: string, workflow: string, options?: object): Promise<Json>;
       inspect(project: string, workflow: string): Promise<Json>;
+      stop(project: string, workflow: string): Promise<Json>;
+      dispatch(project: string, workflow: string, id: string): Promise<Json>;
+      trace(
+        project: string,
+        workflow: string,
+        filters?: {run_id?: string; dispatch_id?: string; node_id?: string; after?: number; limit?: number}
+      ): Promise<Json>;
+      getScope(project: string, workflow: string, id: string): Promise<Json>;
+      setScope(project: string, workflow: string, id: string, value: Json, version: number): Promise<Json>;
     };
   }
   export interface ExtensionContext {

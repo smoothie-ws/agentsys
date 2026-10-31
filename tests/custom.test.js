@@ -37,9 +37,7 @@ const hooked = (name, who, hooks = {on_placed: 'placed', on_deleted: 'deleted'},
     wires = [];
   for (const [hook, key] of Object.entries(hooks)) {
     members['E' + hook] = nodes.event(hook);
-    members['S' + hook] = nodes.script(
-      `${extra}await agentsys("PUT", "test-observations/${key}", {value: "${who}"})`
-    );
+    members['S' + hook] = nodes.script(`${extra}await agentsys("PUT", "test-observations/${key}", {value: "${who}"})`);
     wires.push(['E' + hook, 'out', 'S' + hook, 'in']);
   }
   return bundleOf(name, members, {wires});
@@ -48,12 +46,7 @@ const hooked = (name, who, hooks = {on_placed: 'placed', on_deleted: 'deleted'},
 test('a Script runs when its signal arrives; it sends Out only with emit, and what it sets in output.<name> is its result', async () => {
   const app = createApp(),
     p = await project(app);
-  const a = await fn(
-      app,
-      p.id,
-      {},
-      {code: 'node.output.result = 1 + 1; await node.emit("out")', outputs: ['result'], signals: ['out']}
-    ),
+  const a = await fn(app, p.id, {}, {code: 'node.output.result = 1 + 1', outputs: ['result'], signals: ['out']}),
     show = await fn(app, p.id, {}, {code: 'node.display(String(v))', inputs: ['v']});
   await p.connect(a.wrapper, 'result', show.wrapper, 'v');
   const r = await p.run(a.step, show.step);
@@ -97,13 +90,13 @@ test('node.display() shows text on the node: a string as it is, anything else as
   assert.equal((await p.evaluate([s.id])).displays[s.id], 'plain');
 });
 
-test('node.display() shows an image ({mime_type, data}) as a data URL and refuses one that is too large or not base64', async () => {
+test('node.display() shows an image ({mime_type, data}) as a data URL and validates its encoding', async () => {
   const app = createApp(),
     p = await project(app);
   const n = await p.node(nodes.script('node.display({mime_type: "image/png", data: "iVBORw0KGgo="})', [], 'void'));
   assert.equal((await p.evaluate([n.id])).displays[n.id], 'data:image/png;base64,iVBORw0KGgo=');
   const bad = await p.node(nodes.script('node.display({mime_type: "image/png", data: "not base64!"})', [], 'void'));
-  assert.match((await p.evaluate([bad.id])).errors[bad.id], /cannot be displayed/);
+  assert.match((await p.evaluate([bad.id])).errors[bad.id], /base64/);
   const text = await p.node(nodes.script('node.display({mime_type: "text/plain", data: "x"})', [], 'void'));
   assert.match((await p.evaluate([text.id])).displays[text.id], /mime_type/);
 });
@@ -115,7 +108,7 @@ test('a node can have several outputs of any kind; one it does not set is undefi
     app,
     p.id,
     {},
-    {code: 'node.output.a = 2; node.output.b = "y"; await node.emit("out")', outputs: ['a', 'b'], signals: ['out']}
+    {code: 'node.output.a = 2; node.output.b = "y"', outputs: ['a', 'b'], signals: ['out']}
   );
   const second = await fn(app, p.id, {}, {code: 'node.display(String(v))', inputs: ['v']});
   await p.connect(ok.wrapper, 'b', second.wrapper, 'v');
@@ -190,9 +183,7 @@ test('the hooks of a copy belong to that copy: another copy, or an ordinary work
   await app.Backend.hooksIdle();
   // A plain on_placed on the workflow is never fired (nothing places a workflow); on_run is.
   const loose = await p.node(nodes.event('on_placed'));
-  const log = await p.node(
-    nodes.script('await agentsys("PUT", "test-observations/loose", {value: 1})')
-  );
+  const log = await p.node(nodes.script('await agentsys("PUT", "test-observations/loose", {value: 1})'));
   await p.connect(loose.id, 'out', log.id, 'in');
   await app.Backend.hooksIdle();
   assert.equal(await p.state('loose'), undefined);
@@ -331,7 +322,7 @@ test('a Script reads its inputs as variables; code can change the nodes of the g
     p.id,
     {},
     {
-      code: 'node.output.sum = a + b; node.output.twice = (a + b) * 2; await node.emit("out")',
+      code: 'node.output.sum = a + b; node.output.twice = (a + b) * 2',
       inputs: ['a', 'b'],
       outputs: ['sum', 'twice'],
       signals: ['out'],
@@ -348,10 +339,10 @@ test('a Script reads its inputs as variables; code can change the nodes of the g
 // another node of the graph: a new title and a new output
 const other = (await agentsys("GET", base + "/workflow")).nodes.find(n => n.config.title === "Before");
 await agentsys("PUT", base + "/typed-nodes/" + other.id, {node_type: "custom", config: {...other.config, title: "After", outputs: [{id: "r", name: "r"}]}});
+await agentsys("POST", base + "/typed-nodes", {node_type: "custom", config: {title: "Made by code", outputs: []}, position: {x: 10, y: 10}});
 // its own properties: the title
 const me = (await agentsys("GET", base + "/workflow")).nodes.find(n => n.id === context.node_id);
-await agentsys("PUT", base + "/typed-nodes/" + context.node_id, {node_type: "custom", config: {...me.config, title: "Edited"}});
-await agentsys("POST", base + "/typed-nodes", {node_type: "custom", config: {title: "Made by code", outputs: []}, position: {x: 10, y: 10}});`)
+await agentsys("PUT", base + "/typed-nodes/" + context.node_id, {node_type: "custom", config: {...me.config, title: "Edited"}});`)
   );
   const run = await app.api('POST', `projects/${p.id}/execution`, {node_ids: [editor.id], wait: true}).catch(e => e);
   const snap = await p.snapshot();

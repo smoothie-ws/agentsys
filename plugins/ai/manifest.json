@@ -1,7 +1,7 @@
 {
   "id": "ai",
   "name": "AI",
-  "version": "2.2.1",
+  "version": "2.3.0",
   "engine": ">=2",
   "main": "main.js",
   "description": "AI Providers, model selection and text requests on the graph.",
@@ -13,5 +13,11 @@
   "icon": "icon.svg",
   "readme": "README.md",
   "dependencies": {},
-  "permissions": ["net.fetch:*", "graph.read", "graph.write", "library.read", "run.start"]
+  "permissions": [
+    "net.fetch:*",
+    "graph.read",
+    "graph.write",
+    "library.read",
+    "run.start"
+  ]
 }

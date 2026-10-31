@@ -51,12 +51,15 @@ async function project(app, types = [TEXT, COUNT, MODE, PLAIN]) {
 }
 
 test('empty port value updates leave the graph and undo history unchanged', async () => {
-  const app=createApp(), p=await project(app), node=await p.echo();
-  const before=await p.snapshot(), history=await app.api('GET',`projects/${p.id}/edit-history`);
-  for(const path of ['input-values','output-values'])
-    await app.api('PUT',`projects/${p.id}/${path}`,{node_id:node.wrapper,values:{}});
-  assert.deepEqual(await p.snapshot(),before);
-  assert.deepEqual(await app.api('GET',`projects/${p.id}/edit-history`),history);
+  const app = createApp(),
+    p = await project(app),
+    node = await p.echo();
+  const before = await p.snapshot(),
+    history = await app.api('GET', `projects/${p.id}/edit-history`);
+  for (const path of ['input-values', 'output-values'])
+    await app.api('PUT', `projects/${p.id}/${path}`, {node_id: node.wrapper, values: {}});
+  assert.deepEqual(await p.snapshot(), before);
+  assert.deepEqual(await app.api('GET', `projects/${p.id}/edit-history`), history);
 });
 
 test('a type may have a control; an enum is a select with its options', async () => {
@@ -150,7 +153,9 @@ const echoNode = suffix =>
     'Echo',
     {
       Body: {inputs: [], outputs: []},
-      S: nodes.script(`node.output.out = node.input.text + ${JSON.stringify(suffix)}; await node.emit("done")`),
+      S: nodes.script(
+        `node.output.result = node.input.text + ${JSON.stringify(suffix)}; await node.output.done.emit()`
+      ),
     },
     {
       types: [TEXT],
@@ -159,7 +164,7 @@ const echoNode = suffix =>
         {id: 'go', name: 'in', type: 'signal', node: 'S', port: 'in'},
       ],
       outputs: [
-        {id: 'out', name: 'out', node: false},
+        {id: 'out', name: 'result', node: false},
         {id: 'done', name: 'done', type: 'signal', node: false},
       ],
     }

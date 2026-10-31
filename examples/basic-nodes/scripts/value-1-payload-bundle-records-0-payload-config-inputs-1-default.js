@@ -1,1 +1,1 @@
-node.input.condition ? await node.emit("if_true") : await node.emit("if_false");
+node.input.condition ? await node.output.if_true.emit() : await node.output.if_false.emit();

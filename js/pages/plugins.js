@@ -13,7 +13,11 @@ const pluginById = id => (app.plugins || []).find(p => p.id === id);
 const pluginPages = section =>
   (app.plugins || [])
     .filter(p => p.enabled)
-    .flatMap(p => pluginContributions(p).pages.filter(x => x.section === section).map(page => ({plugin: p, page})));
+    .flatMap(p =>
+      pluginContributions(p)
+        .pages.filter(x => x.section === section)
+        .map(page => ({plugin: p, page}))
+    );
 /** Library pages may group related pages under a parent, such as a plugin section and its resources. */
 function pluginSectionRows(section, onlyPlugin) {
   const entries = pluginPages(section);
@@ -37,7 +41,10 @@ function pluginSectionRows(section, onlyPlugin) {
 }
 const pluginHref = (id, page) => `/plugins/${encodeURIComponent(id)}${page ? '/' + encodeURIComponent(page) : ''}`;
 async function executePluginCommand(id, command, args = []) {
-  const response = await api(`plugins/${encodeURIComponent(id)}/commands/${encodeURIComponent(command)}`, {method: 'POST', body: {args}});
+  const response = await api(`plugins/${encodeURIComponent(id)}/commands/${encodeURIComponent(command)}`, {
+    method: 'POST',
+    body: {args},
+  });
   for (const effect of response.effects ?? []) if (effect.type === 'navigate') await go(effect.path);
   return response.result;
 }
@@ -262,7 +269,7 @@ async function installPlugin(pkg, source, replace = false) {
       old ? `Update ${m.name}` : `Install ${m.name}`,
       `${packageSummary(pkg)}${old ? `<p class="muted">Installed: ${esc(old.manifest.version)}. Its settings and data are kept.</p>` : ''}
       ${
-        pluginCapabilities({manifest:m}).length
+        pluginCapabilities({manifest: m}).length
           ? `<fieldset><legend>The plugin asks for these permissions</legend>${pluginCapabilities({manifest: m})
               .map(
                 cap =>
@@ -299,7 +306,7 @@ async function importPlugin() {
   } catch {
     throw new Error('That file is not JSON');
   }
-  if (!['agentsys.plugin/1', 'agentsys.plugin/2'].includes(pkg?.format)) throw new Error('That is not an AgentSys plugin package');
+  if (pkg?.format !== 'agentsys.plugin/2') throw new Error('That is not an AgentSys plugin package');
   await installPlugin(pkg, file.name);
 }
 async function setPluginEnabled(id, enabled) {
@@ -324,7 +331,9 @@ function removePlugin(p) {
 }
 function pluginActions(p) {
   return [
-    ['Open', () => go(pluginHref(p.id)), {icon: 'eye'}],
+    ...(app.route?.page === 'plugins' && app.route.id === p.id && !app.route.view
+      ? []
+      : [['Open', () => go(pluginHref(p.id)), {icon: 'eye'}]]),
     [p.enabled ? 'Disable' : 'Enable', () => setPluginEnabled(p.id, !p.enabled).catch(fail), {icon: 'power'}],
     ['Remove', () => removePlugin(p), {icon: 'trash', danger: true}],
   ];
@@ -462,12 +471,13 @@ async function pluginDetailPage(view, route) {
     <section class="plugin-description"><div class="plugin-layout"><article class="plugin-readme">${renderMarkdown(readme || 'No description provided.')}${additions ? `<h2>Library and pages</h2><div class="cards">${additions}</div>` : ''}${templates ? `<h2>Templates</h2><div class="cards">${templates}</div>` : ''}</article><aside class="plugin-facts"><h2>Details</h2><dl><dt>Version</dt><dd>${esc(m.version)}</dd><dt>Publisher</dt><dd>${esc(pluginAuthors(m) || 'Not specified')}</dd><dt>Installed</dt><dd>${esc(stamp(p.installed))}</dd><dt>Library nodes</dt><dd>${p.nodes}</dd><dt>Collections</dt><dd>${(c.library ?? []).length}</dd>${m.homepage ? `<dt>Website</dt><dd><a href="${esc(m.homepage)}" target="_blank" rel="noopener noreferrer">Open website</a></dd>` : ''}</dl></aside></div></section>
     ${contentTabLinks(panels, selected)}
     <section data-content-panel="settings" ${selected === 'settings' ? '' : 'hidden'}><h2>Settings</h2>${p.settings.schema.fields.length ? `<form id="plugin-settings" class="catalog-form">${p.settings.schema.fields.map(f => settingField(f, p.settings.values[f.key])).join('')}</form>` : '<p class="muted">This plugin has no additional settings.</p>'}${pluginSecrets(p).length ? `<h3>Credentials</h3>${p.secrets.map(secret => `<div class="plugin-secret" data-secret="${esc(secret.name)}"><span>${esc(secret.name)}</span><small class="muted">${secret.present ? 'Configured' : 'Not configured'}</small><button type="button" data-secret-set>${secret.present ? 'Change' : 'Set'}</button>${secret.present ? '<button type="button" data-secret-clear>Clear</button>' : ''}</div>`).join('')}` : ''}</section>
-    <section data-content-panel="permissions" ${selected === 'permissions' ? '' : 'hidden'}><h2>Permissions</h2>${pluginCapabilities({manifest:m}).length ? `<div data-plugin-permissions>${permissionChoices(pluginCapabilities(p), p.grants, 'data-plugin-grant', 'plugin-grant')}</div>` : '<p class="muted">This plugin requests no permissions.</p>'}</section>
+    <section data-content-panel="permissions" ${selected === 'permissions' ? '' : 'hidden'}><h2>Permissions</h2>${pluginCapabilities({manifest: m}).length ? `<div data-plugin-permissions>${permissionChoices(pluginCapabilities(p), p.grants, 'data-plugin-grant', 'plugin-grant')}</div>` : '<p class="muted">This plugin requests no permissions.</p>'}</section>
     <section data-content-panel="activity" ${selected === 'activity' ? '' : 'hidden'}><h2>Activity</h2><div id="plugin-log"></div></section>
   </div>`;
   const permissionBox = $('[data-plugin-permissions]', view);
   if (p.runtime?.status === 'failed') {
-    const notice = document.createElement('p'); notice.className = 'error';
+    const notice = document.createElement('p');
+    notice.className = 'error';
     notice.textContent = 'Plugin activation failed: ' + p.runtime.error;
     $('.plugin-meta', view).after(notice);
   }

@@ -5,7 +5,7 @@ import json
 import os
 import threading
 from playwright.async_api import async_playwright
-from browser_server import isolated_server
+from browser_server import isolated_server, expand_workflow_section
 
 async def check(base,model_base):
     async with async_playwright() as p:
@@ -48,9 +48,9 @@ async def check(base,model_base):
         await provider_select.select_option(label='two')
         await page.wait_for_function("() => [...document.querySelectorAll('select[data-literal=model] option')].some(o=>o.textContent==='two-model')")
         assert await model_select.locator('option').all_text_contents()==['two-model']
-        await page.locator('#start').click();await page.wait_for_function('W.executionId && !W.running')
+        await page.locator('#start').click();await page.wait_for_function('W.results.size>0 && !W.running')
         current=await page.evaluate('api(`projects/${W.project}/execution`)')
-        assert current['status']=='completed',current['errors']
+        assert current['status']=='idle',current['errors']
         assert 'Reply from two-model' in await page.locator(f'[data-id="{ids["preview"]}"]').inner_text()
         await page.reload();await page.wait_for_selector('#canvas')
         assert await provider_select.locator('option:checked').inner_text()=='two'
@@ -67,6 +67,7 @@ async def check(base,model_base):
         await page.wait_for_function("W.library && W.project==='lib-plugin.ai.provider'")
         await page.locator('[data-side-tab=workflow]').click()
         permissions=page.locator('#library-permissions')
+        await expand_workflow_section(page, 'permissions')
         await permissions.wait_for()
         await permissions.get_by_role('radio',name='Allow run.read',exact=True).click()
         await page.evaluate("go('/projects')")
@@ -87,7 +88,7 @@ async def check(base,model_base):
         }""")
         assert any(r['payload'].get('config',{}).get('title')=='My Provider script' for r in graph_edit['payload']['bundle']['records'])
         await page.reload();await page.wait_for_selector('#canvas')
-        assert await page.evaluate("W.snapshot.nodes.some(n=>n.config?.title==='My Provider script')")
+        await page.wait_for_function("W.snapshot?.nodes.some(n=>n.config?.title==='My Provider script')")
         print('PASS plugin nodes have editable cards, menus, default permissions and persistent graph edits')
         assert not errors,errors
         await browser.close()

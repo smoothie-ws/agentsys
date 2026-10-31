@@ -3,7 +3,7 @@
 const CAPABILITY =
   /^(graph\.(read|write)|library\.(read|write)|net\.fetch:[A-Za-z0-9.*:\[\]-]+|run\.(read|start)|notifications\.(read|write)|secrets\.use:[A-Za-z0-9_-]+)$/;
 function checkManifest(manifest) {
-  for (const field of ['capabilities', 'grants'])
+  for (const field of ['grants'])
     if (
       manifest[field] !== undefined &&
       (!Array.isArray(manifest[field]) ||
@@ -14,9 +14,11 @@ function checkManifest(manifest) {
 }
 // Every route gets an explicit method -> needs entry. Unknown families are denied to scripts.
 function routeNeeds(pattern, method) {
-  if (pattern === 'projects/{project_id}/evaluate-node' || pattern.startsWith('projects/{project_id}/execution')) return [method === 'GET' ? 'run.read' : 'run.start'];
+  if (pattern === 'projects/{project_id}/evaluate-node' || pattern.startsWith('projects/{project_id}/execution'))
+    return [method === 'GET' ? 'run.read' : 'run.start'];
   if (pattern === 'net') return ['net.fetch:{host}'];
-  if (pattern === 'notifications') return [method === 'GET' ? 'notifications.read' : method === 'POST' ? 'notifications.write' : 'system.admin'];
+  if (pattern === 'notifications')
+    return [method === 'GET' ? 'notifications.read' : method === 'POST' ? 'notifications.write' : 'system.admin'];
   if (/^(resources|library)(\/|$)/.test(pattern)) return [method === 'GET' ? 'library.read' : 'library.write'];
   if (/^projects(\/|$)/.test(pattern) || pattern === 'search/nodes')
     return [method === 'GET' ? 'graph.read' : 'graph.write'];
@@ -26,12 +28,6 @@ const allows = (list, capability) =>
   list.some(value => value === capability || (value.endsWith(':*') && capability.startsWith(value.slice(0, -1))));
 // Permissions come from the placed instances. Library defaults are copied on placement, never checked at runtime.
 const grantedBy = (permissions, capability) => permissions.chain.every(list => allows(list, capability));
-function preparePlanPermissions(plan) {
-  for (const step of plan.nodes) {
-    step.permissions = {chain: clone(step.context?.grant_chain?.length
-      ? step.context.grant_chain : [step.grants ?? []])};
-  }
-}
 async function permissionNeeds(method, path, body) {
   const found = ROUTES.find(r => r.methods.has(method) && r.regex.test(path));
   if (!found) return ['system.admin'];
@@ -40,11 +36,13 @@ async function permissionNeeds(method, path, body) {
   );
   let needs = found.needs[method];
   if (found.pattern === 'plugins/{id}/call/{name}') {
-    const plugin = ((await DB.get(PLUGIN_INDEX)) ?? []).find(p=>p.id===params.id && p.enabled);
-    const endpoint = pluginContributions(plugin).endpoints?.find(e=>e.name===params.name && e.methods.includes(method));
+    const plugin = ((await DB.get(PLUGIN_INDEX)) ?? []).find(p => p.id === params.id && p.enabled);
+    const endpoint = pluginContributions(plugin).endpoints?.find(
+      e => e.name === params.name && e.methods.includes(method)
+    );
     needs = endpoint?.permissions ?? needs;
   }
-  if (needs.some(need=>need.includes('{host}'))) {
+  if (needs.some(need => need.includes('{host}'))) {
     try {
       params.host = new URL(body.url).host;
     } catch {
@@ -61,10 +59,7 @@ async function assertScriptPermission(context, method, path, body) {
   if (method !== 'GET' && /^projects\/lib-/.test(path)) needs.push('library.write');
   const usedSecrets = JSON.stringify(body).matchAll(/\{\{secret:([A-Za-z0-9_-]+)\}\}/g);
   needs = [...needs, ...[...usedSecrets].map(m => 'secrets.use:' + m[1])];
-  const denied = needs.find(
-    need =>
-      !allows(policy.allow ?? [], need) || !grantedBy(permissions, need)
-  );
+  const denied = needs.find(need => !allows(policy.allow ?? [], need) || !grantedBy(permissions, need));
   if (denied) {
     throw new ApiError('permission_denied', 'Permission denied: ' + denied, 403);
   }

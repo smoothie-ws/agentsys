@@ -11,8 +11,11 @@ function graph(name,key,inputs,outputs,grants){
 }
 function node(entry,key,title,op,code,widgets){
   const b=entry.payload.bundle,id='record:'+key;
-  const config={title,op,inputs:op==='script'?[signal('in'),{id:'script',name:'script',type:CODE,default:read(code)}]:[],outputs:op==='script'?[]:[signal('out')],...(widgets?{widgets}: {})};
-  b.records.push({id,payload:{kind:'function',node_type:'custom',label:'Custom',status:'ready',config}});b.groups[0].members.push(id);b.positions[id]={x:b.records.length*260,y:40};return id;
+  const config={title,op,inputs:op==='script'?[signal('in'),{id:'script',name:'script',type:CODE,default:read(code)}]:[],outputs:[signal('out')],...(widgets?{widgets}: {})};
+  b.records.push({id,payload:{kind:'function',node_type:'custom',label:'Custom',status:'ready',config}});b.groups[0].members.push(id);b.positions[id]={x:b.records.length*260,y:40};
+  const out=b.complex[0].interface.outputs.find(port=>port.name==='out'&&port.type==='signal');
+  if(op==='script'&&out&&!out.bound)bind(out,id,'out');
+  return id;
 }
 function wire(entry,source,source_port,target,target_port){const b=entry.payload.bundle;b.port_edges.push({id:'wire-'+b.port_edges.length,source,source_port,target,target_port});}
 function bind(port,node_id,port_id){port.bound=[{node_id,port_id}];return port;}
@@ -29,7 +32,7 @@ for(const event of ['on_placed','on_widget'])wire(provider,node(provider,'ai-pro
 const pr=node(provider,'ai-provider-read','Read provider','script','provider-read');wire(provider,node(provider,'ai-provider-on_read','on_read','on_read'),'out',pr,'in');
 const model=graph('Model','model',[text('provider')],[text('model')],['graph.read','graph.write','library.read']);
 const mi=node(model,'ai-model-init','Initialize model','script','model-init',[{id:'model',kind:'select',label:'Model',value:'',options:[{value:'',label:'Connect a Provider'}]}]);
-for(const event of ['on_placed','on_wired'])wire(model,node(model,'ai-model-'+event,event,event),'out',mi,'in');
+for(const event of ['on_placed','on_input_connected'])wire(model,node(model,'ai-model-'+event,event,event),'out',mi,'in');
 const mr=node(model,'ai-model-read','Read model','script','model-read');wire(model,node(model,'ai-model-on_read','on_read','on_read'),'out',mr,'in');
 const ask=graph('Ask','ask',[signal('in'),text('url'),text('model'),text('prompt'),text('provider')],[signal('out'),text('response')],['library.read','net.fetch:*']);
 const prepare=graph('Prepare request','prepare-request',[signal('in'),text('url'),text('model'),text('prompt'),text('provider')],[signal('out'),{id:'request',name:'request'}],[]);

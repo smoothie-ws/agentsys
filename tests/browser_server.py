@@ -6,6 +6,12 @@ import subprocess
 import tempfile
 
 
+async def expand_workflow_section(page, name):
+    section = page.locator(f'[data-workflow-section="{name}"]')
+    if await section.get_attribute('open') is None:
+        await section.locator(':scope > summary').click()
+
+
 @contextmanager
 def isolated_server():
     with tempfile.TemporaryDirectory(prefix='agentsys-browser-') as directory:

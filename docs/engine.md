@@ -1,43 +1,60 @@
-﻿# Engine
+# Live graph interpreter
 
-Execution is explicit: start a workflow, execute its graph, then finish or stop. A workflow has at most one active execution. Each start captures the current graph into an execution plan and uses a fresh isolated Worker. Edits made during execution take effect on the next start.
+A workflow owns one live runtime. The runtime remains available when no work is active. It retains port values, previews, errors and shared JSON state. An isolated JavaScript host is created when work needs it and is reused by subsequent signals.
+
+Run sends a signal to every enabled `on_run` Event. There is no special execution admission path: the same interpreter handles Run, editor events and signals emitted by nodes. A graph without an enabled `on_run` receives no work from Run. Repeated Run signals are allowed while other work is active.
+
+## Current graph
+
+The interpreter indexes the current graph for port lookup and describes nodes as they are reached. It does not construct an immutable execution plan. Edits update the live view: the next invocation reads current code and inputs, the next emission follows current connections, and `node.reread(name)` resolves the current input connection again. Code already executing retains its function and initial `node.input` values until that invocation returns. Explicit rereads can observe newer values.
+
+Changing a saved Library definition refreshes its live placed instances. Disabled nodes do not receive signals; their data connections behave as disconnected inputs. Removing nodes removes their runtime values and previews. Deletion-event handlers temporarily retain their detached node data until those handlers finish.
 
 ## Data and signals
 
-Data inputs read their connected values when a node needs them. Pure value nodes and Reroutes are computed on read. Running nodes keep their latest output values within the current execution. Values crossing node boundaries are copied as JSON.
+Data wires supply values when an input is read. Pure values and Reroutes compute on read. Running nodes and Custom Node scopes retain their latest JSON output values. Values crossing a node boundary are JSON copies, so changing a received object does not change another node's data.
 
-Signals carry no data. A signal starts every connected receiver; independent branches may execute in parallel. `await node.emit(name)` waits for all work started by that emission. Nothing is implicitly emitted when a Script returns. Execution ends when all started work has settled.
+Signals carry control, not a data payload. An output signals all connected receivers concurrently. `await node.output.name.emit(options?)` waits for the work started by that emission. An unawaited emission still registers its child work with the dispatch that started it. Separate dispatches do not wait for each other; a nested API evaluation cannot wait on its own caller.
 
-## Primitives
+Every Script has a concrete `out` signal output. It emits automatically once after successful completion, including `return`. Errors and flow cancellation do not emit it. Calling `node.output.out.emit()` manually sends an additional signal; it does not suppress automatic completion. A Custom Node may publish the Script's completion port by binding a signal output to it. The name `out` in a Script's output API is reserved for this completion signal.
 
-- Script executes JavaScript when a signal arrives.
-- Event starts a signal chain: `on_run` at explicit start; `on_read` when a Custom Node's outputs are needed; placement, deletion, wiring and widget events for Library copies.
-- Custom Nodes are reusable graphs of these primitives, not additional engine operations.
+Free data outputs of the enclosing Custom Node use `node.output.name = value`. Free named signal outputs use `node.output.name.emit()`. Names are exact and case-sensitive. Unknown outputs and assigning a data value to a signal are errors.
 
-Nested Custom Nodes have their own input/output scopes, including helpers built inside another Library graph. Permissions still come from the enclosing placed instances. Editor hooks capture current graph/widget state when their queued execution starts; deletion hooks retain the removed graph. Reconnecting an input to a different source fires `on_wired` even if the input port itself is unchanged.
+## Events and reads
 
-A read scope containing `on_read` refreshes its dependencies before executing. It caches outputs within the current execution until a dependency produces a different value. Data cycles and excessive dependency chains are errors.
+Script executes JavaScript when signalled. Event fires its signal outputs for its selected operation:
 
-## Script interface
+- `on_run`: an explicit Run signal, carrying `{payload}`.
+- `on_read`: a Custom Node's values are needed.
+- `on_placed`: a Library instance is placed.
+- `on_deleted`: a Library instance is removed.
+- `on_input_connected`: an instance's input connections change, carrying `{connected: [input names]}`. Replacing a source counts as a change; the list describes the current connections, including after disconnection.
+- `on_widget`: a user changes a widget, carrying `{widget: {id, kind, label, value}}`.
 
-Code receives `node`, `agentsys(method, path, body, query)` and `context`.
+Custom Nodes compose these primitives and provide input/output scopes. Nested instances retain their own scopes and enclosing permission chain. Library events and Run use the same live runtime and shared `context.state`.
 
-- `node.input` holds the Custom Node's data inputs.
-- `node.output` writes its free data outputs.
-- `node.emit(name, {handles, failFast})` fires a free signal output and waits for its branches.
-- `node.reread(name)` reads an input again.
-- `node.flow.break()` and `continue()` reach the nearest emission that handles that control signal.
-- `node.flow.cancel()` cancels the current emission's work; `abort()` cancels the entire graph's flow.
-- `node.sleep(ms)` waits within the current execution. The node remains working, and continuation respects manual pause.
-- `node.cancelled` lets long-running code observe cancellation of its flow.
-- `node.display()` and `node.widgets()` update the node's presentation.
+Editor events dispatch independently. A paused workflow does not block events in another workflow. Event diagnostics belong to that dispatch; retained errors from earlier work remain visible on the graph without marking a successful later event as failed.
 
-Context identifies the project, workflow, node and Library instance. Explicit workflow starts can supply `payload`. No execution-history entity is exposed.
+An `on_read` scope caches computed outputs until its data dependencies or graph definition change. Dependencies are brought up to date before computing the scope. A changed shared JSON context also invalidates read caches. Data-dependency cycles and cyclic interface/group bindings are invalid graph structure.
 
-## Pause and stop
+## Shared state and presentation
 
-Pause prevents new node code from starting and prevents continuation after an awaited emission or `node.sleep`. Code already running may finish its current segment. Resume releases those boundaries.
+`context.state` is the workflow's shared JSON object. Scripts change it by assigning or deleting properties; nested objects and arrays are observed. Values must be JSON data. Functions, symbols, bigint and non-finite numbers cannot be assigned. Object keys `__proto__`, `prototype` and `constructor` are reserved. Concurrent Scripts share the object; their multi-step changes are not transactions.
 
-Stop terminates the Worker, cancels pending model-independent network requests from that execution and prevents downstream nodes from starting. Already completed external actions are not reversed. Starting again creates independent execution state.
+Output assignments publish values immediately. Emissions, API calls, delays and completion also publish current output objects. `node.display()` publishes text, JSON or base64 image previews immediately. The host saves JSON state, outputs and previews independently of editor undo history. Import/export and workflow/project duplication carry these values; duplicated node IDs are remapped in output/preview maps.
 
-Script errors are shown on the canvas. There are no automatic restarts, recovery segments or background activations. Limits on script time, result size, graph depth and parallel code prevent runaway execution.
+`globalThis` is shared JavaScript memory for the current workflow host. Run does not replace that host. Stop or application restart loses these globals. Durable application data belongs in `context.state`.
+
+## Pause, cancellation and Stop
+
+Pause prevents new node code and continuations after an awaited emission or `node.sleep` from starting. The pause request is accepted immediately; synchronous code already executing is not frozen. Run while paused queues its ordinary signals. Resume releases the gate. Timer time can elapse while paused; continuation waits for Resume.
+
+`node.flow.break()` and `continue()` end the current Script and reach the nearest emission whose `handles` includes that control. `cancel()` cancels the current wave. `abort()` cancels currently dispatched graph flow. Code can inspect `node.cancelled`. An emission's `{failFast: true}` cancels further work in that wave after a branch error.
+
+Stop terminates the host and aborts its outstanding checked network operations. It preserves acknowledged JSON state, outputs and previews. A later signal creates a host initialized from those values. External actions already completed are not reversed. Application restart restores data but does not reconstruct pending JavaScript calls, timers or requests.
+
+## Resource behavior
+
+Ordinary execution has no configured Script timeout, chain-depth, concurrency, result-size or total-result quota. Infinite synchronous code can occupy the host until Stop terminates it. Controlled API dispatches may opt into inherited budgets; a host-side watchdog can stop synchronous code. Hardware, JavaScript and storage/transport behavior still determine what can be represented. Permissions and graph/JSON validity remain enforced.
+
+Each invocation exposes causal identity through `context.execution`. Read computations inherit their caller's dispatch; concurrent dispatches remain separate. Independent JSON areas, checkpoints and traces are described in [Durable execution](durable-execution.md). Removing a node or replacing/stopping its host fences late state/API/output writes. Hard cancellation acts on the workflow's shared Worker; it can stop other dispatches in that host.

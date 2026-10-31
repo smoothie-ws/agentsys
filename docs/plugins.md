@@ -10,11 +10,16 @@ Import a JSON package from the Plugins menu:
 {
   "format": "agentsys.plugin/2",
   "manifest": {
-    "id": "example", "name": "Example", "version": "1.0.0", "engine": ">=2",
-    "authors": [{"name":"Example author"}], "main":"main.js",
-    "permissions": [], "dependencies": {}
+    "id": "example",
+    "name": "Example",
+    "version": "1.0.0",
+    "engine": ">=2",
+    "authors": [{"name": "Example author"}],
+    "main": "main.js",
+    "permissions": [],
+    "dependencies": {}
   },
-  "files": {"main.js":"exports.activate = context => {};"}
+  "files": {"main.js": "exports.activate = context => {};"}
 }
 ```
 
@@ -24,23 +29,25 @@ JavaScript modules use CommonJS. Relative packaged JavaScript and JSON modules a
 
 The context supplies `app`, `id`, dependency metadata, `subscriptions.add(disposable)` and `onReady(callback)`.
 
-| Namespace | Operations |
-|---|---|
-| `app.library` | Register sections, typed JSON collections and node catalogs; list/create/update/delete own items |
-| `app.commands` | Register function handlers and execute owned commands |
-| `app.endpoints` | Register request handlers with method lists |
-| `app.views` | Register packaged HTML pages and Dashboard tiles |
-| `app.templates` | Register exported project templates |
-| `app.events` | Subscribe to workspace, Library, settings and private-storage changes |
-| `app.timers` | Owned timeout/interval callbacks |
-| `app.settings` | Register fields and read/write validated settings |
-| `app.storage` | Private bounded JSON store with compare-and-set versions |
-| `app.secrets` | Obtain a granted credential placeholder without reading its value |
-| `app.navigation` | Return a navigation effect from a user command |
-| `app.notifications` | Post through the checked notifications API |
-| `app.workflows` | Read/edit graphs, start an explicit execution and inspect the current execution |
+| Namespace           | Operations                                                                                       |
+| ------------------- | ------------------------------------------------------------------------------------------------ |
+| `app.library`       | Register sections, typed JSON collections and node catalogs; list/create/update/delete own items |
+| `app.commands`      | Register function handlers and execute owned commands                                            |
+| `app.endpoints`     | Register request handlers with method lists                                                      |
+| `app.views`         | Register packaged HTML pages and Dashboard tiles                                                 |
+| `app.templates`     | Register exported project templates                                                              |
+| `app.events`        | Subscribe to workspace, Library, settings and private-storage changes                            |
+| `app.timers`        | Owned timeout/interval callbacks                                                                 |
+| `app.settings`      | Register fields and read/write validated settings                                                |
+| `app.storage`       | Private bounded JSON store with compare-and-set versions                                         |
+| `app.secrets`       | Obtain a granted credential placeholder without reading its value                                |
+| `app.navigation`    | Return a navigation effect from a user command                                                   |
+| `app.notifications` | Post through the checked notifications API                                                       |
+| `app.workflows`     | Read/edit graphs, signal workflows and inspect their live runtime                                |
 
 `app.request(method,path,body,query)` provides other checked application operations. Lifecycle handlers stage registrations, validate them and publish them atomically. Failed activation clears partial registrations and displays its error. Each enabled plugin has an isolated Worker retaining callback closures. Disable/update/removal calls cleanup and terminates owned work. Stable collection IDs keep resource data across disable/re-enable.
+
+`app.workflows` also exposes `stop`, `dispatch`, `trace`, `getScope` and `setScope`. Durable checkpoint routes use ordinary `app.request` with `run.read`/`run.start`; see [Durable execution](durable-execution.md). A package can include the universal `sdk/operations.js` CommonJS library for callback orchestration. Nested checked endpoint calls retain their originating execution identity, inherited budgets and Stop signal. Plugin storage and checkpoint writes queued after callback cancellation are rejected. None of these interfaces expose internal server state.
 
 An endpoint may declare `permissions` required from a calling Script, for example `{permissions:['library.read']}`. Without a declaration it remains unavailable to Scripts. `net.fetch:{host}` resolves the host from the request body's URL. These checks do not replace the plugin's own API grants. Optional `timeout` sets a bounded callback budget (100–300000 ms). Calls made from an execution propagate Stop to the plugin's outstanding checked network operations.
 
@@ -54,9 +61,13 @@ The installation remembers which catalog nodes it has already added. Reactivatio
 
 ```js
 exports.activate = ({app}) => {
-  const group = app.library.registerSection({id:'tools',title:'Tools'});
-  app.library.registerCollection({id:'notes',title:'Notes',parent:group,
-    item:{name:'Note',format:'json',fields:[{key:'body',label:'Text',type:'textarea'}]}});
+  const group = app.library.registerSection({id: 'tools', title: 'Tools'});
+  app.library.registerCollection({
+    id: 'notes',
+    title: 'Notes',
+    parent: group,
+    item: {name: 'Note', format: 'json', fields: [{key: 'body', label: 'Text', type: 'textarea'}]},
+  });
 };
 ```
 
@@ -77,5 +88,3 @@ Commands are available in Ctrl+K and at `POST plugins/{id}/commands/{command}`. 
 ## Bundled plugin
 
 `plugins/ai` registers AI / Providers plus the AI node group (Provider, Model, Ask). Its module, schemas and graph scripts own model discovery and text requests; the core does not interpret models or provider options. Rebuild the distributable and node catalog with `npm run build:plugins`. Bundled updates preserve Provider data and disabled state. User-installed replacements are not overwritten.
-
-The previous package format remains available through a [compatibility adapter](plugins-legacy.md).

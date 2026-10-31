@@ -71,7 +71,7 @@ function widgetRowHTML(w) {
       const text = (w.options || []).map(optionLine).join('\n');
       return `<textarea ${attr(key)} rows="3" spellcheck="false" aria-label="${WIDGET_FIELD_LABELS[key]}" data-text="${esc(text)}" data-raw="${esc(JSON.stringify(w.options || []))}">${esc(text)}</textarea>`;
     }
-    if (key === 'html') return codeEditorHTML(value ?? '', `${attr(key)} aria-label="HTML" rows="6"`);
+    if (key === 'html') return codeEditorHTML(value ?? '', `${attr(key)} aria-label="HTML" rows="6"`, false);
     if (key === 'text' || (key === 'value' && (kind === 'textarea' || kind === 'markdown')))
       return `<textarea ${attr(key)} rows="3" aria-label="${WIDGET_FIELD_LABELS[key]}">${esc(value ?? '')}</textarea>`;
     if (key === 'value' && kind === 'checkbox')
@@ -249,6 +249,8 @@ const Inspector = {
   },
 
   async leave() {
+    await this.flushPermissions?.();
+    this.flushPermissions = null;
     if (this.workflowPolicySave && !(await leaveAutosave(this.workflowPolicySave))) return false;
     await this.flushConnections?.();
     await this.pending?.();
@@ -267,7 +269,7 @@ const Inspector = {
     if (this.root.dataset.collapsed === 'true') return;
     if (this.tab === 'workflow') return this.workflow();
     // A completed permission save must not replace a radio during the next pointer click.
-    if ($('#placed-grants', this.body())?.contains(document.activeElement)) {
+    if ($('#placed-grants, #script-grants', this.body())?.contains(document.activeElement)) {
       this.connections();
       return;
     }
@@ -300,6 +302,8 @@ const Inspector = {
       return;
     }
     if (!soft) {
+      await this.flushPermissions?.();
+      this.flushPermissions = null;
       await this.flushConnections?.();
       await this.workflowPolicySave?.();
     }
@@ -312,9 +316,7 @@ const Inspector = {
     const footer = $('#side-actions', this.root);
     footer.replaceChildren();
     footer.hidden = true;
-    $('#side-heading').textContent = {workflow: 'Workflow settings', properties: 'Properties'}[
-      this.tab
-    ];
+    $('#side-heading').textContent = {workflow: 'Workflow settings', properties: 'Properties'}[this.tab];
     $('#side-workflow').hidden = this.tab !== 'workflow';
     $('#side-selection').hidden = this.tab === 'workflow';
     if (this.tab === 'workflow') return this.workflow();
@@ -426,42 +428,82 @@ const Inspector = {
     const issues = W.snapshot.diagnostics || [],
       host = $('#side-workflow');
     const existingPolicy = $('#workflow-policy, #library-permissions', host);
-    if (existingPolicy && (existingPolicy.contains(document.activeElement) || this.workflowPolicySave?.isDirty())) return;
+    if (existingPolicy && (existingPolicy.contains(document.activeElement) || this.workflowPolicySave?.isDirty()))
+      return;
     const resource = W.library ? app.resources.find(item => item.id === W.library) : null;
-    host.innerHTML = `<h2>${esc(W.snapshot.workflow_name)}</h2>
-      ${this.typesSection()}
-      <section class="workflow-available"><h3>Available nodes</h3><div data-available-nodes></div></section>
-      ${W.library ? resource ? `<form id="library-permissions">${grantControls(resource.payload.grants ?? [], {title: 'Default permissions', hint: 'Copied to new instances when placed on the canvas. Each instance can be changed separately. Existing instances keep their permissions.'})}</form>` : '' : `<form id="workflow-policy">${grantControls(W.policy.allow, {title: 'Project permissions', hint: 'Applies to every workflow in this project, not just this workflow. Nodes are limited by these permissions.'})}</form>`}
+    const opened = (this.workflowSections ??= new Set()),
+      key = id => `${W.project}/${W.workflow}/${id}`,
+      section = (id, title, glyph, note, content) =>
+        `<details class="workflow-section" data-workflow-section="${id}" ${opened.has(key(id)) ? 'open' : ''}><summary>${icon(glyph)}<span><strong>${esc(title)}</strong><small>${esc(note)}</small></span>${icon('chevron')}</summary><div class="workflow-section-body">${content}</div></details>`;
+    host.innerHTML = `<div class="workflow-heading"><h2>${esc(W.snapshot.workflow_name)}</h2><p class="muted small">${plural(W.snapshot.nodes.length, 'node')} · ${plural(W.snapshot.edges.length, 'connection')}</p></div>
       ${
         issues.length
-          ? `<h3>Graph problems</h3><ul class="links">${issues
-              .slice(0, 20)
-              .map(i => `<li><button class="link" data-reveal="${esc(i.node_id)}">${esc(i.message)}</button></li>`)
-              .join('')}</ul>`
+          ? section(
+              'problems',
+              'Graph problems',
+              'x',
+              plural(issues.length, 'problem'),
+              `<ul class="links">${issues
+                .slice(0, 20)
+                .map(i => `<li><button class="link" data-reveal="${esc(i.node_id)}">${esc(i.message)}</button></li>`)
+                .join('')}</ul>`
+            )
           : ''
       }
-`;
+      ${section('execution', 'Execution', 'play', 'Signals, values and pause', `<div class="workflow-guide"><p><strong>Run</strong> signals every enabled on_run Event. Further signals use the same mechanism, including while other work is active.</p><p><strong>Pause</strong> keeps variables and outputs in memory. New code and continuations wait for Resume. Switching tabs keeps this execution.</p><p><strong>Stop</strong> cancels active work and keeps graph values. Graph edits affect the next node or emission; code already executing finishes its current invocation.</p><div class="execution-legend"><span>${icon('play')}Running code</span><span>${icon('timer')}Waiting for a timer</span><span>${icon('chevron')}Waiting for a branch</span></div><p class="muted">A Script emits its own <code>out</code> automatically after success. <code>await node.output.name.emit()</code> emits a signal from its code and waits for that branch. <code>context.state</code> is the shared JSON context saved with the workflow.</p></div>`)}
+      ${section('available', 'Available nodes', 'package', plural(W.snapshot.library_nodes?.length ?? 0, 'Library node') + ' included in the Add menu', '<div data-available-nodes></div>')}
+      ${W.library ? (resource ? section('permissions', 'Default permissions', 'lock', 'For new copies of this Library node', `<form id="library-permissions">${grantControls(resource.payload.grants ?? [], {title: 'Allowed operations', hint: 'Copied to new instances. Existing instances keep their own permissions.'})}</form>`) : '') : section('permissions', 'Project permissions', 'lock', 'Shared by every workflow in this project', `<form id="workflow-policy">${grantControls(W.policy.allow, {title: 'Allowed operations', hint: 'Nodes can only perform operations allowed by both the project and the node.'})}</form>`)}
+      ${developerMode() ? section('types', 'Types', 'code', plural(W.snapshot.types.length, 'type'), this.typesSection()) : ''}`;
+    for (const details of $$('[data-workflow-section]', host)) {
+      const remember = open =>
+        open ? opened.add(key(details.dataset.workflowSection)) : opened.delete(key(details.dataset.workflowSection));
+      // The native toggle event is queued; remember a click before a reload can replace this section.
+      $(':scope > summary', details).addEventListener('click', () => remember(!details.open));
+      details.addEventListener('toggle', () => {
+        if (details.isConnected) remember(details.open);
+      });
+    }
     this.wireReveal();
     this.wireTypes();
+    const executionSection = $('[data-workflow-section=execution] .workflow-section-body', host);
+    const history = Object.assign(document.createElement('button'), {type: 'button', textContent: 'Execution history'});
+    history.onclick = () => showExecutionHistory().catch(fail);
+    executionSection?.append(history);
     this.availableNodes($('[data-available-nodes]', host));
-    const libraryForm = $('#library-permissions', host), resourceId = resource?.id;
+    const libraryForm = $('#library-permissions', host),
+      resourceId = resource?.id;
     if (libraryForm) {
-      this.workflowPolicySave = autoForm(libraryForm, () => ({
-        grants: readGrantControls(libraryForm),
-      }), async permissions => {
-        const latest = await api(`resources/${resourceId}`);
-        await api(`resources/${resourceId}`, {method: 'PUT', body: {
-          name: latest.name, payload: {...latest.payload, ...permissions},
-        }});
-        await loadLibrary();
-      });
+      this.workflowPolicySave = autoForm(
+        libraryForm,
+        () => ({
+          grants: readGrantControls(libraryForm),
+        }),
+        async permissions => {
+          const latest = await api(`resources/${resourceId}`);
+          await api(`resources/${resourceId}`, {
+            method: 'PUT',
+            body: {
+              name: latest.name,
+              payload: {...latest.payload, ...permissions},
+            },
+          });
+          await loadLibrary();
+        }
+      );
       return;
     }
-    const form = $('#workflow-policy', host), project = W.project;
-    this.workflowPolicySave = form ? autoForm(form, () => ({allow: readGrantControls(form)}), async body => {
-      const policy = await api(`projects/${project}/policy`, {method: 'PUT', body});
-      if (W.project === project) W.policy = policy;
-    }) : null;
+    const form = $('#workflow-policy', host),
+      project = W.project;
+    this.workflowPolicySave = form
+      ? autoForm(
+          form,
+          () => ({allow: readGrantControls(form)}),
+          async body => {
+            const policy = await api(`projects/${project}/policy`, {method: 'PUT', body});
+            if (W.project === project) W.policy = policy;
+          }
+        )
+      : null;
   },
 
   /** The types of the workflow: what they are made of, where they came from, and (in developer mode) how to change them. */
@@ -482,7 +524,7 @@ const Inspector = {
             ? `<button type="button" class="icon" data-type-source title="A Library type: it is changed in the Custom Node that defines it" aria-label="Open the Custom Node">${icon('package')}</button>`
             : `<button type="button" class="icon" data-type-edit title="${t.library ? 'Edit: changes it for every Custom Node and workflow' : 'Edit'}" aria-label="Edit">${icon('pencil')}</button>`
         }${t.library ? '' : `<button type="button" class="icon" data-type-delete ${used.has(t.id) ? 'disabled title="In use"' : 'title="Delete"'} aria-label="Delete">${icon('trash')}</button>`}</span></li>`;
-    return `<h3>Types</h3>${types.length ? `<ul class="type-list">${types.map(row).join('')}</ul>` : '<p class="muted small">No types yet. A type groups named fields. A type a Custom Node of the Library uses is available in every workflow; the others belong to this workflow.</p>'}${
+    return `${types.length ? `<ul class="type-list">${types.map(row).join('')}</ul>` : '<p class="muted small">No types yet. A type groups named fields. A type a Custom Node of the Library uses is available in every workflow; the others belong to this workflow.</p>'}${
       dev
         ? `<div class="button-row"><button type="button" class="dashed-action" data-type-new>${icon('plus')}New type</button></div>`
         : ''
@@ -619,6 +661,36 @@ const Inspector = {
     this.body().innerHTML = `${this.nameHeading(nodeLabel(node))}<form id="node-form" class="stack">${slots}
       <h3>Widgets</h3><div class="widget-rows" data-widget-rows>${(W.snapshot.widgets?.[node.id] || []).map(widgetRowHTML).join('')}</div>
       <button type="button" class="dashed-action" data-add-widget>${icon('plus')}Add widget</button></form>`;
+    if (config.op === 'script') {
+      const panel = document.createElement('div');
+      panel.id = 'script-grants';
+      panel.className = 'stack';
+      this.body().append(panel);
+      const project = W.project,
+        workflow_id = W.workflow;
+      const permissionPath = `projects/${project}/node-permissions/${encodeURIComponent(node.id)}`;
+      const showPermissions = detail => {
+        if (!panel.isConnected) return;
+        panel.innerHTML = `<h3>Permissions</h3>${detail.editable ? grantControls(detail.grants) : '<p class="muted small">Permissions come from the enclosing Custom Nodes.</p>'}<p class="small" data-effective-permissions>Effective: ${esc(detail.effective.join(', ') || 'none')}</p><details><summary>Permission constraints</summary><p class="small">Project: ${esc(detail.project_allow.join(', ') || 'none')}</p>${detail.layers.map((layer, i) => `<p class="small">Layer ${i + 1}: ${esc(layer.join(', ') || 'none')}</p>`).join('')}</details>`;
+      };
+      api(permissionPath, {query: {workflow_id}}).then(showPermissions).catch(fail);
+      let permissionSave = Promise.resolve();
+      panel.addEventListener('change', () => {
+        const grants = readGrantControls(panel);
+        permissionSave = permissionSave
+          .catch(() => {})
+          .then(async () => {
+            const detail = await api(permissionPath, {method: 'PUT', body: {workflow_id, grants}});
+            if (panel.isConnected)
+              $('[data-effective-permissions]', panel).textContent =
+                'Effective: ' + (detail.effective.join(', ') || 'none');
+            await reload();
+          });
+        this.flushPermissions = () => permissionSave;
+        permissionSave.catch(fail);
+      });
+      this.flushPermissions = () => permissionSave;
+    }
     const form = $('#node-form');
     wireCodeEditors(form);
     this.wireName(async title => {
@@ -1126,7 +1198,7 @@ const Inspector = {
     const sections = {inputs: section('Inputs', 'inputs'), outputs: section('Outputs', 'outputs')};
     for (const host of hosts) host.innerHTML = sections[host.dataset.connHost];
     root.innerHTML = `${hosts.length ? '' : sections.inputs + sections.outputs}${bindings.length ? `<h4>Group bindings</h4><ul class="links">${bindings.join('')}</ul>` : ''}<small class="connection-status muted" role="status"></small>`;
-    const tail = $('#placed-grants', body) || $('[data-node-actions]', body);
+    const tail = $('#placed-grants, #script-grants', body) || $('[data-node-actions]', body);
     if (tail) tail.before(root);
     else body.append(root);
     wireCodeEditors(body);
@@ -1159,8 +1231,6 @@ const Inspector = {
   },
 
   // ───── Activity tab (the last run) ─────
-
-
 };
 
 /** A name no slot of the list has yet (the names are variables of the code: each is its own): input, input2, input3… */

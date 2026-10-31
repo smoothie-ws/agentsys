@@ -199,7 +199,7 @@ function layoutFoldedPorts(element) {
 
 /** The state a node shows: while the run is paused, a node that was running shows paused (it finishes, nothing new starts). */
 function shownStatus(node) {
-  return node.status === 'running' && W.runPaused ? 'paused' : node.status;
+  return ['running', 'sleeping', 'waiting'].includes(node.status) && W.runPaused ? 'paused' : node.status;
 }
 
 function nodeHTML(node) {
@@ -226,8 +226,11 @@ function nodeHTML(node) {
     return `<div class="node reroute" data-id="${esc(node.id)}" title="Reroute point"><span class="sock" data-dir="in" data-port="in"></span><span class="sock" data-dir="out" data-port="out"></span></div>`;
   // The state of a node that runs, or has just run, appears above its right edge.
   const stateMark = {
-      running: ['', 'Working'],
-      paused: [icon('pause'), 'Paused: the run is paused, this node is still working'],
+      running: ['', 'Running code'],
+      sleeping: [icon('timer'), 'Delay: waiting for the timer'],
+      waiting: [icon('chevron'), 'Waiting for the downstream branch to finish'],
+      paused: [icon('pause'), 'Paused: new code and continuations wait for Resume'],
+      stopped: [icon('stop'), 'Stopped'],
       completed: [icon('check'), 'Completed'],
       failed: [icon('x'), 'Failed'],
       blocked: [icon('lock'), 'Blocked: permission denied'],

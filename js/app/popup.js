@@ -45,7 +45,8 @@ function popup(x, y, items, {search = false, searchItems = items} = {}) {
         button.setAttribute('role', 'menuitemradio');
         button.setAttribute('aria-checked', String(!!meta.checked));
       }
-      button.innerHTML = `<span class="menu-label">${meta.icon ? icon(meta.icon) : ''}<span>${esc(label)}</span></span>${children ? icon('chevron') : meta.hint ? `<kbd>${esc(meta.hint)}</kbd>` : ''}`;
+      const glyph = meta.icon || ('checked' in meta ? null : children ? 'folder' : 'play');
+      button.innerHTML = `<span class="menu-label">${glyph ? icon(glyph) : ''}<span>${esc(label)}</span></span>${children ? icon('chevron') : meta.hint ? `<kbd>${esc(meta.hint)}</kbd>` : ''}`;
       row.append(button);
       root.append(row);
       if (children) {
@@ -71,20 +72,40 @@ function popup(x, y, items, {search = false, searchItems = items} = {}) {
             const field = $('input', sub);
             field.oninput = () => {
               const q = field.value.trim().toLocaleLowerCase();
-              renderItems(list, q ? flatten(meta.searchItems || children).filter(item => item[0].toLocaleLowerCase().includes(q)) : children);
+              renderItems(
+                list,
+                q
+                  ? flatten(meta.searchItems || children).filter(item => item[0].toLocaleLowerCase().includes(q))
+                  : children
+              );
             };
-            if (!phoneLayout.matches) setTimeout(() => field.focus(), 0);
+            if (!phoneLayout.matches)
+              Promise.resolve().then(() => {
+                if (sub.isConnected && !sub.contains(document.activeElement)) field.focus();
+              });
           }
           button.setAttribute('aria-expanded', 'true');
           const r = button.getBoundingClientRect(),
             sr = sub.getBoundingClientRect();
           if (phoneLayout.matches) {
-            const back=document.createElement('button');back.type='button';back.className='submenu-back';
-            back.innerHTML=`${icon('chevron')}<span>Back</span>`;
-            back.onclick=event=>{event.stopPropagation();sub.remove();button.setAttribute('aria-expanded','false');button.focus();};
+            const back = document.createElement('button');
+            back.type = 'button';
+            back.className = 'submenu-back';
+            back.innerHTML = `${icon('chevron')}<span>Back</span>`;
+            back.onclick = event => {
+              event.stopPropagation();
+              sub.remove();
+              button.setAttribute('aria-expanded', 'false');
+              button.focus();
+            };
             sub.prepend(back);
           }
-          sub.style.left = (phoneLayout.matches ? Math.max(8,(innerWidth-sr.width)/2) : r.right + sr.width + 8 > innerWidth ? Math.max(8, r.left - sr.width) : r.right - 2) + 'px';
+          sub.style.left =
+            (phoneLayout.matches
+              ? Math.max(8, (innerWidth - sr.width) / 2)
+              : r.right + sr.width + 8 > innerWidth
+                ? Math.max(8, r.left - sr.width)
+                : r.right - 2) + 'px';
           sub.style.top = Math.max(8, Math.min(r.top, innerHeight - sr.height - 8)) + 'px';
         };
         row.onpointerenter = open;
@@ -134,8 +155,12 @@ function popup(x, y, items, {search = false, searchItems = items} = {}) {
     const i = buttons.indexOf(document.activeElement);
     if (event.key === 'ArrowDown' || event.key === 'ArrowUp') {
       event.preventDefault();
-      const next = i < 0 ? (event.key === 'ArrowDown' ? 0 : buttons.length - 1) :
-        (i + (event.key === 'ArrowDown' ? 1 : -1) + buttons.length) % buttons.length;
+      const next =
+        i < 0
+          ? event.key === 'ArrowDown'
+            ? 0
+            : buttons.length - 1
+          : (i + (event.key === 'ArrowDown' ? 1 : -1) + buttons.length) % buttons.length;
       buttons[next]?.focus();
     }
     if (event.key === 'ArrowLeft' && submenu) {
@@ -192,7 +217,8 @@ document.addEventListener(
 
 // ----- Drop-down lists: a <select> opens one of these menus instead of the browser's own list -----
 // The <select> stays the source of truth (its value, its change event, options that code rewrites), so nothing that uses it changes.
-const selectable = element => element instanceof HTMLSelectElement && !element.disabled && !element.multiple && !(element.size > 1);
+const selectable = element =>
+  element instanceof HTMLSelectElement && !element.disabled && !element.multiple && !(element.size > 1);
 let selectMenuOf = null; // the <select> whose menu is open
 let toggledOff = false; // the pointer went down on a <select> whose menu was open: that click closes it
 /** The entries of a <select>: its options, with the label of each <optgroup> as a heading over its options. */
@@ -262,7 +288,12 @@ document.addEventListener(
   event => {
     const select = event.target;
     if (!selectable(select) || select.matches('[data-no-menu]')) return;
-    if (event.key === ' ' || event.key === 'Enter' || (event.altKey && event.key === 'ArrowDown') || event.key === 'F4') {
+    if (
+      event.key === ' ' ||
+      event.key === 'Enter' ||
+      (event.altKey && event.key === 'ArrowDown') ||
+      event.key === 'F4'
+    ) {
       // Space and Alt+Down open the list natively; Enter only does inside a form. All open ours.
       if (event.key === 'Enter' && !event.target.closest('.port-row, .widget, .slot-field')) return;
       event.preventDefault();

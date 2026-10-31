@@ -2,7 +2,8 @@
 'use strict';
 
 // ----- projects -----
-const EMPTY_PROJECTS = '<div class="empty"><h2>Start your first project</h2><p class="muted">Projects keep related workflows together. Create one or explore a working example.</p><div class="button-row"><button type="button" class="primary" data-new-project>New project</button><button type="button" data-example>Open example</button></div></div>';
+const EMPTY_PROJECTS =
+  '<div class="empty"><h2>Start your first project</h2><p class="muted">Projects keep related workflows together. Create one or explore a working example.</p><div class="button-row"><button type="button" class="primary" data-new-project>New project</button><button type="button" data-example>Open example</button></div></div>';
 PAGES.projects = async (view, route) => {
   await loadProjects();
   if (app.route !== route) return;
@@ -39,6 +40,7 @@ function projectActions(project, title = $(`[data-project-title="${CSS.escape(pr
           renderSidebar();
           if (app.route.project === project.id) await render();
         }),
+      {icon: 'pencil'},
     ],
     [
       'Duplicate',
@@ -50,10 +52,11 @@ function projectActions(project, title = $(`[data-project-title="${CSS.escape(pr
         await loadProjects();
         await render();
       },
+      {icon: 'copy'},
     ],
     ['Export project', () => exportProject(project), {icon: 'upload'}],
     ['Import workflow', () => importWorkflows(project.id), {icon: 'download'}],
-    ['Settings', () => go(`/p/${project.id}/settings`)],
+    ['Settings', () => go(`/p/${project.id}/settings`), {icon: 'settings'}],
     null,
     [
       'Delete',
@@ -70,7 +73,7 @@ function projectActions(project, title = $(`[data-project-title="${CSS.escape(pr
           },
           'Delete project'
         ),
-      {danger: true},
+      {danger: true, icon: 'trash'},
     ],
   ];
 }
@@ -92,10 +95,14 @@ async function newProjectDialog() {
   );
 }
 
-async function runFromCard(projectId, workflow, button){
-  if(button)button.disabled=true;
-  try{await api('projects/'+projectId+'/execution',{method:'POST',body:{workflow_id:workflow.id}});await go('/p/'+projectId+'/w/'+workflow.id);}
-  finally{if(button)button.disabled=false;}
+async function runFromCard(projectId, workflow, button) {
+  if (button) button.disabled = true;
+  try {
+    await api('projects/' + projectId + '/execution', {method: 'POST', body: {workflow_id: workflow.id}});
+    await go('/p/' + projectId + '/w/' + workflow.id);
+  } finally {
+    if (button) button.disabled = false;
+  }
 }
 
 // ----- project -----
@@ -145,7 +152,8 @@ function workflowActions(projectId, workflow, title) {
   };
   return [
     ...(app.route?.page === 'workflow' && app.route.project === projectId && app.route.workflow === workflow.id
-      ? [] : [['Run', () => runFromCard(projectId, workflow), {icon: 'play'}]]),
+      ? []
+      : [['Run', () => runFromCard(projectId, workflow), {icon: 'play'}]]),
     [
       'Rename',
       () =>
@@ -155,6 +163,7 @@ function workflowActions(projectId, workflow, title) {
           Tabs.rename(workflow.id, name);
           await refresh();
         }),
+      {icon: 'pencil'},
     ],
     [
       'Duplicate',
@@ -162,6 +171,7 @@ function workflowActions(projectId, workflow, title) {
         await api(`projects/${projectId}/workflows/${workflow.id}/duplicate`, {method: 'POST', body: {}});
         await refresh();
       },
+      {icon: 'copy'},
     ],
     ['Export workflow', () => exportWorkflow(projectId, workflow), {icon: 'upload'}],
     ['Import workflow', () => importWorkflows(projectId), {icon: 'download'}],
@@ -181,7 +191,7 @@ function workflowActions(projectId, workflow, title) {
           },
           'Delete workflow'
         ),
-      {danger: true},
+      {danger: true, icon: 'trash'},
     ],
   ];
 }

@@ -39,10 +39,10 @@ async def audit(base, models_url):
         empty_project=await page.evaluate("async()=>{const p=await api('projects',{method:'POST',body:{name:'Empty graph'}});await go(`/p/${p.id}/w/${p.id}`);return p.id;}")
         await page.wait_for_selector('#canvas')
         await page.locator('#start').click()
-        await page.wait_for_function('W.executionId && !W.running')
+        await page.wait_for_function('W.executionReady && !W.executionCommand && !W.running')
         empty=await page.evaluate("id=>api(`projects/${id}/execution`)",empty_project)
-        assert empty['status']=='completed' and empty['evaluated_nodes']==0
-        print('PASS Run starts an empty graph and completes without requiring an on_run Event',flush=True)
+        assert empty['status']=='idle' and empty['evaluated_nodes']==0
+        print('PASS Run without on_run leaves the graph idle',flush=True)
         ids=await page.evaluate("""async()=>{
           await api('settings',{method:'PUT',body:{developer_mode:true}});
           const p=await api('projects',{method:'POST',body:{name:'MVP flow'}});
@@ -51,7 +51,7 @@ async def audit(base, models_url):
           const make=config=>api(`projects/${p.id}/typed-nodes`,{method:'POST',body:{node_type:'custom',config,position:{x:0,y:0}}});
           const start=await make({title:'Start',op:'on_run',inputs:[],outputs:[{id:'out',name:'out',type:'signal'}]});
           const duration=await make({title:'Duration',inputs:[],outputs:[{id:'value',name:'value',type:'t:'+numberType,editable:true,default:450}]});
-          const script=await make({title:'Finished',op:'script',inputs:[{id:'in',name:'in',type:'signal'},{id:'script',name:'script',type:'t:'+codeType,default:'node.display("MVP finished");'}],outputs:[]});
+          const script=await make({title:'Finished',op:'script',inputs:[{id:'in',name:'in',type:'signal'},{id:'script',name:'script',type:'t:'+codeType,default:'node.display("MVP finished");'}],outputs:[{id:'out',name:'out',type:'signal'}]});
           const resources=await api('resources');
           if(resources.some(r=>r.payload.folder==='Streams'||r.name==='Wait for event'))throw Error('Removed catalog nodes still exist');
           const resource=resources.find(r=>r.name==='Delay');
@@ -68,39 +68,40 @@ async def audit(base, models_url):
         await page.wait_for_selector('#canvas')
         assert await page.locator('[data-side-tab]').evaluate_all('els=>els.map(e=>e.dataset.sideTab)') == ['workflow','properties']
         await page.locator('#start').click()
-        await page.wait_for_function('W.running && W.executionId')
+        await page.wait_for_function('W.running')
         await page.locator('#pause').click()
         await page.wait_for_function('W.runPaused')
         await page.wait_for_timeout(600)
-        assert await page.locator('#start').inner_text() == 'Stop'
+        assert await page.locator('#start').inner_text() == 'Run'
         assert await page.evaluate('W.running')
         statuses=await page.evaluate("""async id=>{
           await api(`projects/${W.project}/node-title`,{method:'PUT',body:wf({node_id:id,title:'Renamed during execution'})});
           await reload();
           return W.runStatus.size;
         }""",ids['script'])
-        assert statuses>0, 'Editing the next graph must not clear active execution statuses'
+        assert statuses>0, 'Editing the live graph must not clear active execution statuses'
         await page.locator('#pause').click()
         await page.wait_for_function('!W.running')
         assert await page.evaluate('id=>W.results.get(id)?.text',ids['script']) == 'MVP finished'
         print('PASS Delay remains active, manual pause/resume and downstream signals complete',flush=True)
         await page.locator('#start').click()
-        await page.locator('#start').click()
+        await page.locator('#stop').click()
         await page.wait_for_function('!W.running')
         await page.wait_for_timeout(550)
-        assert await page.evaluate('id=>W.results.has(id)',ids['script']) is False
+        assert await page.evaluate('id=>W.results.get(id)?.text',ids['script']) == 'MVP finished'
         current=await page.evaluate("id=>api(`projects/${id}/execution`)",ids['project'])
-        assert current['status']=='stopped'
+        assert current['status']=='idle'
         print('PASS immediate Stop cancels the execution and pending Delay',flush=True)
         await page.reload()
         await page.wait_for_selector('#canvas')
-        assert await page.evaluate('W.results.size') == 0
+        await page.wait_for_function('W.executionReady')
+        assert await page.evaluate('id=>W.results.get(id)?.text',ids['script']) == 'MVP finished'
         await page.set_viewport_size({'width':390,'height':844})
         assert await page.evaluate('document.documentElement.scrollWidth<=innerWidth')
         await page.evaluate("go('/api')")
         await page.wait_for_selector('#api-method-search')
         assert not errors,errors
-        print('PASS no persisted run history, mobile canvas and API; no page errors',flush=True)
+        print('PASS persisted graph previews, mobile canvas and API; no page errors',flush=True)
         await browser.close()
 
 

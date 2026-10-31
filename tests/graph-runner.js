@@ -11,7 +11,7 @@ async function runGraphFixture(fixture, {verify = true} = {}) {
     payload: fixture.inputs ?? {},
     wait: true,
   });
-  if (verify) assert.equal(run.status, fixture.expected.status ?? 'completed', JSON.stringify(run.errors));
+  if (verify) assert.equal(run.status, fixture.expected.status ?? 'idle', JSON.stringify(run.errors));
   if (verify && fixture.expected.displays)
     assert.deepEqual(Object.values(run.displays).sort(), fixture.expected.displays.slice().sort());
   if (verify && fixture.expected.outputs) assert.deepEqual(run.outputs, fixture.expected.outputs);

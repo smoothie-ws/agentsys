@@ -29,7 +29,9 @@ async function project(app) {
     node: config =>
       app.api('POST', `projects/${id}/typed-nodes`, {node_type: 'custom', config, position: {x: 0, y: 0}}),
     connect: (s, sp, t, tp) =>
-      app.api('POST', `projects/${id}/port-connections`, {add: [{source: s, source_port: sp, target: t, target_port: tp}]}),
+      app.api('POST', `projects/${id}/port-connections`, {
+        add: [{source: s, source_port: sp, target: t, target_port: tp}],
+      }),
     evaluate: ids => app.api('POST', `projects/${id}/evaluate-node`, {node_ids: ids, collect: true}),
     snapshot: () => app.api('GET', `projects/${id}/workflow`),
   };
@@ -68,9 +70,7 @@ test('type expressions: shapes, labels and structural compatibility', () => {
         renameTypeRefs('${T(1)}', new Map([['${hex(1)}', '${hex(5)}']])),
       ]);
     })()`);
-  assert.deepEqual(JSON.parse(result), [
-    true, false, true, false, false, false, true, true, false, 'A', T(5),
-  ]);
+  assert.deepEqual(JSON.parse(result), [true, false, true, false, false, false, true, true, false, 'A', T(5)]);
 });
 
 test('types are checked: names, fields, unknown and self-containing types', async () => {
@@ -79,19 +79,52 @@ test('types are checked: names, fields, unknown and self-containing types', asyn
   await rejects(p.types([person(), person(hex(2))]), /unique/);
   await rejects(p.types([{...person(), fields: [{name: 'x', type: T(7)}]}]), /unknown type/);
   await rejects(p.types([{...person(), fields: [{name: 'me', type: T(1)}]}]), /contains itself/);
-  await rejects(p.types([{...person(), fields: [{name: 'a', type: 'any'}, {name: 'a', type: 'any'}]}]), /unique name/);
-  const saved = await p.types([...base(), person(), {id: hex(2), name: 'Team', fields: [{name: 'people', type: T(1)}, {name: 'note', type: 'any'}]}]);
+  await rejects(
+    p.types([
+      {
+        ...person(),
+        fields: [
+          {name: 'a', type: 'any'},
+          {name: 'a', type: 'any'},
+        ],
+      },
+    ]),
+    /unique name/
+  );
+  const saved = await p.types([
+    ...base(),
+    person(),
+    {
+      id: hex(2),
+      name: 'Team',
+      fields: [
+        {name: 'people', type: T(1)},
+        {name: 'note', type: 'any'},
+      ],
+    },
+  ]);
   assert.equal(saved.types.length, 4);
-  assert.equal((await app.api("GET", `projects/${p.id}/types`)).types.length, 4);
+  assert.equal((await app.api('GET', `projects/${p.id}/types`)).types.length, 4);
   assert.equal((await p.snapshot()).types.length, 4);
 });
 
 test('wires are checked by type; ports of type any take anything; the run never looks at types', async () => {
   const app = createApp(),
     p = await project(app);
-  await p.types([...base(), person(), person(hex(2), 'Human'), {id: hex(3), name: 'Named', fields: [{name: 'name', type: T(11)}]}]);
-  const make = await fn(app, p.id, {}, {code: 'node.output.who = {name: "Ann", age: 30}; await node.emit("out")', outputs: [{name: 'who', type: T(1)}], signals: ['out']});
-  const take = type => fn(app, p.id, {}, {code: 'node.display(who.name)', inputs: [{name: 'who', ...(type ? {type} : {})}]});
+  await p.types([
+    ...base(),
+    person(),
+    person(hex(2), 'Human'),
+    {id: hex(3), name: 'Named', fields: [{name: 'name', type: T(11)}]},
+  ]);
+  const make = await fn(
+    app,
+    p.id,
+    {},
+    {code: 'node.output.who = {name: "Ann", age: 30}', outputs: [{name: 'who', type: T(1)}], signals: ['out']}
+  );
+  const take = type =>
+    fn(app, p.id, {}, {code: 'node.display(who.name)', inputs: [{name: 'who', ...(type ? {type} : {})}]});
   const human = await take(T(2)),
     named = await take(T(3)),
     other = await take(T(12)),
@@ -128,7 +161,11 @@ test('a type in use cannot be removed; a changed type drops the wires that no lo
   await p.connect(a.id, 'o', b.id, 'i');
   await rejects(p.types([...base(), person()]), /in use/);
   // The consumer now needs a field the producer lacks: the wire cannot stay.
-  await p.types([...base(), person(), {...person(hex(2), 'Same'), fields: [...person().fields, {name: 'mail', type: T(11)}]}]);
+  await p.types([
+    ...base(),
+    person(),
+    {...person(hex(2), 'Same'), fields: [...person().fields, {name: 'mail', type: T(11)}]},
+  ]);
   assert.equal((await p.snapshot()).edges.length, 0);
 });
 
@@ -139,7 +176,11 @@ test('a Reroute takes the type of the wire that enters it', async () => {
   const a = await p.node({outputs: [{id: 'o', name: 'o', type: T(11)}]}),
     b = await p.node({inputs: [{id: 'i', name: 'i', type: T(12)}]}),
     c = await p.node({inputs: [{id: 'i', name: 'i', type: T(11)}]});
-  const rr = await app.api('POST', `projects/${p.id}/typed-nodes`, {node_type: 'reroute', config: {}, position: {x: 0, y: 0}});
+  const rr = await app.api('POST', `projects/${p.id}/typed-nodes`, {
+    node_type: 'reroute',
+    config: {},
+    position: {x: 0, y: 0},
+  });
   await p.connect(a.id, 'o', rr.id, 'in');
   await p.connect(rr.id, 'out', c.id, 'i');
   await rejects(p.connect(rr.id, 'out', b.id, 'i'), /incompatible/);
@@ -162,11 +203,17 @@ test('copied nodes bring their types; pasting merges them by name and shape', as
   await other.types([...base(), {...person(), fields: [{name: 'name', type: T(11)}]}]);
   await app.api('POST', `projects/${other.id}/paste`, {clipboard: bundle, point: {x: 0, y: 0}});
   const types = (await other.snapshot()).types;
-  assert.deepEqual(types.map(t => t.name), ['Text', 'Number', 'Person', 'Person (2)']);
+  assert.deepEqual(
+    types.map(t => t.name),
+    ['Text', 'Number', 'Person', 'Person (2)']
+  );
   const pasted = (await other.snapshot()).nodes.find(x => x.outputs.some(o => o.type));
   assert.equal(pasted.outputs[0].type, 't:' + types[3].id);
   await rejects(
-    app.api('POST', `projects/${to.id}/paste`, {clipboard: {...bundle, types: [{...person(), fields: [{name: 'x', type: T(77)}]}]}, point: {x: 0, y: 0}}),
+    app.api('POST', `projects/${to.id}/paste`, {
+      clipboard: {...bundle, types: [{...person(), fields: [{name: 'x', type: T(77)}]}]},
+      point: {x: 0, y: 0},
+    }),
     /unknown type/
   );
 });
@@ -185,7 +232,10 @@ test('exported workflows keep their types; a document without types still loads'
   await app.api('POST', `projects/${q.id}/workflows/import`, packet);
   const {types, ...without} = exported.document;
   const broken = await app.api('POST', `projects/${q.id}/workflows/import`, TextGraph.encode({document: without}));
-  assert.ok(broken.diagnostics.some(m => /Unknown type/.test(m)), 'ports of a type the document lacks are reported');
+  assert.ok(
+    broken.diagnostics.some(m => /Unknown type/.test(m)),
+    'ports of a type the document lacks are reported'
+  );
   await app.api('POST', `projects/${q.id}/workflows/import`, TextGraph.encode({document: {nodes: [], layout: {}}}));
 });
 
@@ -202,7 +252,10 @@ test('a Library node carries its types: placing it brings them, and its slots ar
   const p = await project(app);
   const placed = await app.api('POST', `projects/${p.id}/custom-nodes/${opened.resource_id}`, {point: {x: 0, y: 0}});
   const snap = await p.snapshot();
-  assert.deepEqual(snap.types.map(t => t.name), ['Text']); // only the types its ports use
+  assert.deepEqual(
+    snap.types.map(t => t.name),
+    ['Text']
+  ); // only the types its ports use
   const cx = snap.complex.find(c => c.id === placed.roots[0]);
   assert.equal(cx.outputs[0].type, T(11));
   await p.types([...snap.types, NUMBER]);
@@ -219,7 +272,10 @@ test('an alias type means what its target means: the two are interchangeable on 
   const app = createApp(),
     p = await project(app);
   await p.types([...base(), SCRIPT]);
-  const text = await p.node({outputs: [{id: 'o', name: 'o', type: T(11)}], inputs: [{id: 'i', name: 'i', type: T(11)}]}),
+  const text = await p.node({
+      outputs: [{id: 'o', name: 'o', type: T(11)}],
+      inputs: [{id: 'i', name: 'i', type: T(11)}],
+    }),
     script = await p.node({outputs: [{id: 'o', name: 'o', type: T(21)}], inputs: [{id: 'i', name: 'i', type: T(21)}]}),
     number = await p.node({outputs: [{id: 'o', name: 'o', type: T(12)}], inputs: [{id: 'i', name: 'i', type: T(12)}]});
   await p.connect(text.id, 'o', script.id, 'i'); // Text into Script
@@ -248,7 +304,13 @@ test('an alias is checked: it has no fields, stands for a type of the document a
   await rejects(p.types([...base(), {...SCRIPT, alias: 'text'}]), /alias/);
   await rejects(p.types([...base(), {...SCRIPT, alias: T(77)}]), /unknown type/);
   await rejects(p.types([{...SCRIPT, alias: T(21)}]), /contains itself/);
-  await rejects(p.types([{...SCRIPT, alias: T(22)}, {...SCRIPT, id: hex(22), name: 'Other', alias: T(21)}]), /contains itself/);
+  await rejects(
+    p.types([
+      {...SCRIPT, alias: T(22)},
+      {...SCRIPT, id: hex(22), name: 'Other', alias: T(21)},
+    ]),
+    /contains itself/
+  );
   await p.types([...base(), SCRIPT]);
   await rejects(p.types([SCRIPT]), /unknown type/); // the target cannot go while an alias stands for it
   // A copied node brings the target of its alias.
@@ -274,21 +336,28 @@ async function openNode(app) {
 async function defineNode(app, node, types, outputs) {
   const lib = await app.api('GET', `projects/${node.project_id}/workflow`, {}, node.wf);
   await app.api('PUT', `projects/${node.project_id}/types`, {...node.wf, types: [...lib.types, ...types]});
-  await app.api('PUT', `projects/${node.project_id}/complex/${lib.root}`, {...node.wf, interface: {inputs: [], outputs}});
+  await app.api('PUT', `projects/${node.project_id}/complex/${lib.root}`, {
+    ...node.wf,
+    interface: {inputs: [], outputs},
+  });
   return node;
 }
 const libNode = async (app, types, outputs) => defineNode(app, await openNode(app), types, outputs);
 const libraryOf = app => app.eval(`DB.get('library_types')`).then(list => JSON.parse(JSON.stringify(list ?? [])));
 const out = (name, type) => ({id: name, name, type});
 
-test('the types of Library nodes are every workflow\'s: nothing is imported, and a workflow stores none of them', async () => {
+test("the types of Library nodes are every workflow's: nothing is imported, and a workflow stores none of them", async () => {
   const app = createApp(),
     node = await libNode(app, [TEXT, NUMBER, person()], [out('a', T(1))]);
   const a = await project(app),
     b = await project(app);
   for (const p of [a, b]) {
     const types = (await p.snapshot()).types;
-    assert.deepEqual(types.map(t => [t.name, t.library]).sort(), [['Number', true], ['Person', true], ['Text', true]]);
+    assert.deepEqual(types.map(t => [t.name, t.library]).sort(), [
+      ['Number', true],
+      ['Person', true],
+      ['Text', true],
+    ]);
   }
   assert.deepEqual((await app.eval(`DB.get('wf:${a.id}')`))?.types ?? [], []);
   // A type of the workflow's own sits next to them.
@@ -306,11 +375,17 @@ test('a Library type is changed in the node that defines it, for everybody; a wo
   const q = `projects/${first.project_id}`;
   const open = (await app.api('GET', `${q}/workflow`, {}, first.wf)).types;
   await app.api('PUT', `${q}/types`, {...first.wf, types: open.map(t => ({...t, name: 'Words', color: '#123456'}))});
-  assert.deepEqual((await libraryOf(app)).map(t => t.name), ['Words']);
+  assert.deepEqual(
+    (await libraryOf(app)).map(t => t.name),
+    ['Words']
+  );
   assert.equal((await p.snapshot()).types[0].name, 'Words');
   // The other node carries the new definition too.
   const bundle = (await app.api('GET', `resources/${second.resource_id}`)).payload.bundle;
-  assert.deepEqual(bundle.types.map(t => [t.name, t.color]), [['Words', '#123456']]);
+  assert.deepEqual(
+    bundle.types.map(t => [t.name, t.color]),
+    [['Words', '#123456']]
+  );
   // A Library type does not go from a workflow, even by leaving it out of the list.
   await rejects(p.types([]), /Library/);
 });
@@ -318,17 +393,29 @@ test('a Library type is changed in the node that defines it, for everybody; a wo
 test('a type nobody defines and nobody uses goes by itself; one a workflow uses stays', async () => {
   const app = createApp(),
     node = await libNode(app, [TEXT, NUMBER], [out('a', T(11)), out('n', T(12))]);
-  assert.deepEqual((await libraryOf(app)).map(t => t.name), ['Number', 'Text']);
+  assert.deepEqual(
+    (await libraryOf(app)).map(t => t.name),
+    ['Number', 'Text']
+  );
   const p = await project(app);
   const user = await p.node({inputs: [{id: 'i', name: 'i', type: T(11)}]});
   await app.api('DELETE', `resources/${node.resource_id}`);
   // Number was only the node's; Text is in use.
-  assert.deepEqual((await libraryOf(app)).map(t => t.name), ['Text']);
-  assert.deepEqual((await p.snapshot()).types.map(t => t.name), ['Text']);
+  assert.deepEqual(
+    (await libraryOf(app)).map(t => t.name),
+    ['Text']
+  );
+  assert.deepEqual(
+    (await p.snapshot()).types.map(t => t.name),
+    ['Text']
+  );
   await app.api('POST', `projects/${p.id}/delete-nodes`, {node_ids: [user.id]});
   // Text stays until the Library changes next time: nothing else is looking.
   const again = await libNode(app, [kind(hex(30), 'Fresh')], [out('f', T(30))]);
-  assert.deepEqual((await libraryOf(app)).map(t => t.name), ['Fresh']);
+  assert.deepEqual(
+    (await libraryOf(app)).map(t => t.name),
+    ['Fresh']
+  );
   assert.ok(again.resource_id);
 });
 
@@ -341,9 +428,15 @@ test('two nodes defining the same type share it; the same name with another shap
   foreign.types.find(t => t.id === hex(41)).fields = [{name: 'x', type: 'any'}];
   foreign.types.find(t => t.id === hex(41)).control = undefined;
   const imported = await app.api('POST', 'resources', {name: 'Imported', payload: {bundle: foreign, description: ''}});
-  assert.deepEqual((await libraryOf(app)).map(t => t.name), ['Number', 'Number (2)', 'Text']);
+  assert.deepEqual(
+    (await libraryOf(app)).map(t => t.name),
+    ['Number', 'Number (2)', 'Text']
+  );
   const kept = (await app.api('GET', `resources/${imported.id}`)).payload.bundle;
-  assert.ok(kept.types.some(t => t.id === hex(11)), 'the twin Text is the first Text');
+  assert.ok(
+    kept.types.some(t => t.id === hex(11)),
+    'the twin Text is the first Text'
+  );
   assert.ok(kept.types.every(t => t.id !== hex(40)));
   assert.deepEqual(kept.types.map(t => t.name).sort(), ['Number (2)', 'Text']);
 });
@@ -351,17 +444,26 @@ test('two nodes defining the same type share it; the same name with another shap
 test('a type of the workflow that means the same as a Library type is that type', async () => {
   const app = createApp(),
     p = await project(app);
-  await p.types([{id: hex(7), name: 'Flag', fields: [], control: 'checkbox'}, {id: hex(8), name: 'Other', fields: []}]);
+  await p.types([
+    {id: hex(7), name: 'Flag', fields: [], control: 'checkbox'},
+    {id: hex(8), name: 'Other', fields: []},
+  ]);
   const node = await p.node({outputs: [{id: 'o', name: 'o', type: T(7), editable: true, default: true}]});
   // A node of the Library gets a Flag of its own (another ID): the workflow's becomes it, and the node follows.
   await libNode(app, [{id: hex(50), name: 'Flag', fields: [], control: 'checkbox'}], [out('f', T(50))]);
   const snap = await p.snapshot();
-  assert.deepEqual(snap.types.map(t => [t.name, !!t.library]), [['Flag', true], ['Other', false]]);
+  assert.deepEqual(
+    snap.types.map(t => [t.name, !!t.library]),
+    [
+      ['Flag', true],
+      ['Other', false],
+    ]
+  );
   assert.equal(snap.nodes.find(n => n.id === node.id).config.outputs[0].type, T(50));
   assert.equal(JSON.stringify((await app.eval(`DB.get('wf:${p.id}')`)).types.map(t => t.name)), '["Other"]');
 });
 
-test('a Library node carries the definitions of its types: where the Library has a type it is the Library\'s, else it comes along as the workflow\'s own', async () => {
+test("a Library node carries the definitions of its types: where the Library has a type it is the Library's, else it comes along as the workflow's own", async () => {
   const app = createApp(),
     node = await libNode(app, [TEXT, kind(hex(6), 'Mood')], [out('a', T(11)), out('b', T(6))]);
   const bundle = (await app.api('GET', `resources/${node.resource_id}`)).payload.bundle;
@@ -369,11 +471,17 @@ test('a Library node carries the definitions of its types: where the Library has
   assert.ok(bundle.types.every(t => !('library' in t)));
   const p = await project(app);
   await app.api('POST', `projects/${p.id}/custom-nodes/${node.resource_id}`, {point: {x: 0, y: 0}});
-  assert.deepEqual((await p.snapshot()).types.map(t => [t.name, !!t.library]).sort(), [['Mood', true], ['Text', true]]);
+  assert.deepEqual((await p.snapshot()).types.map(t => [t.name, !!t.library]).sort(), [
+    ['Mood', true],
+    ['Text', true],
+  ]);
   // Another installation has no such types: the node brings them along as the workflow's own.
   const other = createApp(),
     q = await project(other),
     pasted = await other.api('POST', `projects/${q.id}/paste`, {clipboard: bundle, point: {x: 0, y: 0}});
   assert.ok(pasted);
-  assert.deepEqual((await q.snapshot()).types.map(t => [t.name, !!t.library]).sort(), [['Mood', false], ['Text', false]]);
+  assert.deepEqual((await q.snapshot()).types.map(t => [t.name, !!t.library]).sort(), [
+    ['Mood', false],
+    ['Text', false],
+  ]);
 });

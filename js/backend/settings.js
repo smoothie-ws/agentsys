@@ -37,7 +37,6 @@ const SHORTCUT_PATTERN =
 /** Graph Editor appearance limits: [min, max] of each whole-number setting, and the wire shapes. */
 const GRAPH_RANGES = {node_radius: [0, 42], group_radius: [0, 54], wire_width: [1, 5], wire_curve: [10, 100]};
 const WIRE_STYLE_IDS = ['bezier', 'linear', 'step', 'rounded'];
-const SCRIPT_TIMEOUT = 120000;
 
 function validateShortcuts(value) {
   if (!isObject(value) || Object.keys(value).some(k => !(k in DEFAULT_SHORTCUTS))) throw bad('Unknown shortcut action');

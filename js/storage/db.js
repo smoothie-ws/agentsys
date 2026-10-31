@@ -68,7 +68,9 @@ const DB = (() => {
       const response = await fetch(API, {cache: 'no-store'});
       if ([401, 403, 503].includes(response.status))
         throw Object.assign(
-          new Error('Server storage is unavailable or requires authentication. Open the local server without a token, or configure authenticated access.'),
+          new Error(
+            'Server storage is unavailable or requires authentication. Open the local server without a token, or configure authenticated access.'
+          ),
           {storageDenied: true}
         );
       const info = response.ok ? await response.json() : null;
@@ -84,8 +86,10 @@ const DB = (() => {
       headers: {'Content-Type': 'application/json', 'X-AgentSys': '1', 'X-Client': client},
       body: JSON.stringify(body),
     });
+    if (response.status === 409) throw new ApiError('conflict', 'Stored version changed; read again and retry.', 409);
     if (!response.ok) throw new Error('The data folder could not be written.');
   };
+  let casQueue = Promise.resolve();
   const ready = (async () => {
     if (external) return;
     idb = await openIdb();
@@ -115,8 +119,9 @@ const DB = (() => {
     get directory() {
       return files?.dir || external?.dir || '';
     },
-    async get(key) {
+    async get(key, {fresh = false} = {}) {
       await ready;
+      if (fresh && (external || files || idb)) cache.delete(key);
       if (cache.has(key)) return cache.get(key);
       let value;
       if (external) value = await external.get(key);
@@ -127,6 +132,46 @@ const DB = (() => {
       } else if (idb) value = await transaction('readonly', store => store.get(key));
       cache.set(key, value);
       return value;
+    },
+    /** Atomic version check plus durable write. Envelopes carry a monotonically increasing version. */
+    compareAndSet(key, version, value) {
+      const work = casQueue.then(async () => {
+        await ready;
+        const conflict = () => new ApiError('conflict', 'Stored version changed; read again and retry.', 409);
+        try {
+          if (external?.compareAndSet) await external.compareAndSet(key, version, value);
+          else if (files) await post({set: {[key]: value}, if_versions: {[key]: version}});
+          else if (idb)
+            await new Promise((resolve, reject) => {
+              const tx = idb.transaction(STORE, 'readwrite'),
+                store = tx.objectStore(STORE);
+              let stale = false;
+              const read = store.get(key);
+              read.onsuccess = () => {
+                if ((read.result?.version ?? 0) !== version) {
+                  stale = true;
+                  tx.abort();
+                } else store.put(value, key);
+              };
+              tx.oncomplete = resolve;
+              tx.onerror = tx.onabort = () => reject(stale ? conflict() : tx.error || Error('Database write failed'));
+            });
+          else {
+            // A custom store without CAS is safe within one backend, like ordinary API mutations.
+            const current = external ? await external.get(key) : cache.get(key);
+            if ((current?.version ?? 0) !== version) throw conflict();
+            if (external) await external.commit({set: {[key]: value}, remove: []});
+          }
+        } catch (error) {
+          cache.delete(key);
+          throw error;
+        }
+        cache.set(key, value);
+        if (!files) channel?.postMessage({keys: [key]});
+        for (const listener of committed) listener([key]);
+      });
+      casQueue = work.catch(() => {});
+      return work;
     },
     /** Writes several keys at once; an undefined value deletes the key. */
     async commit(changes) {

@@ -4,7 +4,7 @@ import os
 from pathlib import Path
 import tempfile
 from playwright.async_api import async_playwright
-from browser_server import isolated_server
+from browser_server import isolated_server, expand_workflow_section
 
 
 async def check(base):
@@ -30,6 +30,7 @@ async def check(base):
         assert 'Permissions are limited by the parent node.' in await page.locator('[data-grants]').inner_text()
         await page.locator('[data-side-tab=workflow]').click()
         assert await page.locator('[data-side-tab=nodes]').count() == 0
+        await expand_workflow_section(page, 'available')
         assert await page.locator('#side-workflow [data-available-nodes]').is_visible()
         assert await page.locator('.available-group summary small').count() == 0
         group = page.locator('.available-group').first
@@ -38,7 +39,7 @@ async def check(base):
         assert await group.locator('summary').evaluate('e=>getComputedStyle(e).color') == before
         await page.evaluate('id=>openNodeEditor(id)', ids['delay'])
         await page.wait_for_selector('#canvas .node textarea[data-literal]')
-        assert await page.locator('#group-form [data-capability], #group-form [name=extra_capabilities]').count() == 0
+        assert await page.locator('#group-form [data-capability], #group-form [name=extra_grants]').count() == 0
         node_id = await page.locator('#canvas .node textarea[data-literal]').first.evaluate('e=>e.closest(".node").dataset.id')
         await page.locator('#canvas .node textarea[data-literal]').first.evaluate('e=>e.style.height="280px"')
         await page.wait_for_function("Object.values(store.get('fieldHeights:'+W.workflow,{})).includes(280)")
@@ -60,7 +61,7 @@ async def check(base):
           await reload();
         }""")
         assert await page.locator('.frame .port-name').filter(has_text='InputSignal').count() == 1
-        print('PASS workflow subsection, group styling, permission hint, hidden capabilities, height after reopen/reload and port spelling')
+        print('PASS workflow subsection, group styling, permission hint, height after reopen/reload and port spelling')
         await page.evaluate("go('/library')")
         assert await page.locator('#view .card').filter(has_text='AI').count() == 1
         for width in (1500, 390):

@@ -7,6 +7,7 @@ import subprocess
 import sys
 import tempfile
 from playwright.async_api import async_playwright
+from browser_server import expand_workflow_section
 
 BASE = sys.argv[1].rstrip('/') if len(sys.argv) > 1 else None
 
@@ -49,6 +50,7 @@ async def main():
         await menu.get_by_role('menuitem', name='Checks / Availability Alpha', exact=True).click()
         await page.wait_for_function('id => W.snapshot.library_nodes.includes(id) && W.snapshot.complex.length === 1', arg=ids['alpha'])
         await page.locator('[data-side-tab=workflow]').click()
+        await expand_workflow_section(page, 'available')
         assert await page.locator('.available-group[open]').count() == 0
         await page.locator('[data-library-folder="Checks"] > summary').click(position={'x':5,'y':10})
         alpha = page.locator(f'[data-library-node="{ids["alpha"]}"]')
@@ -87,6 +89,7 @@ async def main():
         await page.goto(BASE + '/editor/p/' + ids['project'] + '/w/' + ids['project'])
         await page.wait_for_function('id => W.snapshot?.library_nodes.includes(id)', arg=ids['alpha'])
         await page.locator('[data-side-tab=workflow]').click()
+        await expand_workflow_section(page, 'available')
         assert await page.locator(f'[data-library-node="{ids["alpha"]}"]').is_checked()
         assert await page.locator('[data-side-tab=workflow]').get_attribute('aria-pressed') == 'true'
         assert await page.locator('.available-group-items').evaluate_all("""groups => groups.every(group => {

@@ -89,7 +89,7 @@ for (const redo of [false, true])
 route(
   'GET',
   'node-hooks',
-  'Read the log of the on_placed, on_deleted, on_wired and on_widget signals that ran without a Run (the last 200)',
+  'Read the log of the on_placed, on_deleted, on_input_connected and on_widget signals that ran without a Run (the last 200)',
   async c => HOOKS.log.filter(e => !c.query.workflow_id || e.workflow_id === c.query.workflow_id),
   {
     unlocked: true,
@@ -111,7 +111,7 @@ route(
     if (typeof enabled !== 'boolean') throw bad('Pass enabled: true or false');
     if ((typeof resource_id === 'string') === (typeof folder === 'string'))
       throw bad('Pass either resource_id or folder');
-    const items = (await c.ctx.get('resources', []));
+    const items = await c.ctx.get('resources', []);
     let targets;
     if (typeof resource_id === 'string') {
       if (!items.some(r => r.id === resource_id)) throw missing('Custom Node not found');
@@ -150,7 +150,10 @@ route(
     if (item.payload.bundle?.version !== BUNDLE_VERSION)
       throw bad(`The Custom Node “${item.name}” has a bundle this version cannot read.`);
     const {editor, doc} = await c.workflow(project_id);
-    const result = editor.paste(clone(item.payload.bundle), c.body.point, {source: {resource_id, stamp: item.updated}, grants: c.body.grants ?? item.payload.grants ?? []});
+    const result = editor.paste(clone(item.payload.bundle), c.body.point, {
+      source: {resource_id, stamp: item.updated},
+      grants: c.body.grants ?? item.payload.grants ?? [],
+    });
     // Placement and inclusion are one edit: failed placement never changes the available set.
     doc.library_nodes = [...new Set([...(doc.library_nodes ?? []), resource_id])];
     return result;
@@ -176,12 +179,12 @@ route(
           {id: 'in', name: 'In', type: 'signal'},
           {id: 'script', name: 'script', default: 'node.display(42);', type: 't:… (a type with the code control)'},
         ],
-        outputs: [],
+        outputs: [{id: 'out', name: 'out', type: 'signal'}],
       },
       position: {x: 0, y: 0},
     },
     returns:
-      'The new node. config: {title, inputs: [{id, name, type?}], outputs: [{id, name, type?}], op? (what the node does: script, on_run, on_read, on_placed, on_deleted, on_wired, on_widget; none: it holds the values typed into its outputs), widgets? (the widgets the node has: [{id, kind, label?, value?, ...}])}. A port of type `signal` carries no data: a signal output goes to every wire, and a signal input starts the node. A Script (op script) has exactly the signal input `in` and the code input `script`, and no outputs: it runs the code when a signal reaches it, and the code reads the data inputs of the Library node it is in (node.input.name), writes its free outputs (node.output.name) and fires its free signal outputs (node.emit(name)).',
+      'The new node. config: {title, inputs: [{id, name, type?}], outputs: [{id, name, type?}], op? (what the node does: script, on_run, on_read, on_placed, on_deleted, on_input_connected, on_widget; none: it holds the values typed into its outputs), widgets? (the widgets the node has: [{id, kind, label?, value?, ...}])}. A port of type `signal` carries no data: a signal output goes to every wire, and a signal input starts the node. A Script (op script) has exactly the signal input `in` and the code input `script`, and the signal output `out`, emitted automatically after successful completion: it runs the code when a signal reaches it, and the code reads the data inputs of the Library node it is in (node.input.name), writes its free outputs (node.output.name) and fires its free signal outputs (node.output.name.emit()).',
   }
 );
 route(
@@ -200,7 +203,7 @@ route(
   'projects/{project_id}/primitives/{node_id}/event',
   'Choose the event of an Event node',
   async (c, {project_id, node_id}) => (await c.workflow(project_id)).editor.setEvent(node_id, c.body.event),
-  {body: {event: 'on_run'}, returns: 'One of on_run, on_read, on_placed, on_deleted, on_wired, on_widget'}
+  {body: {event: 'on_run'}, returns: 'One of on_run, on_read, on_placed, on_deleted, on_input_connected, on_widget'}
 );
 route(
   'PUT',
@@ -403,11 +406,24 @@ route(
     const body = c.body,
       ids = body.node_ids ?? body.node_id;
     const multiple = Array.isArray(ids);
-    const {editor,meta} = await c.workflow(project_id);
-    const result = await evaluateGraph(editor.snapshot(), multiple ? ids : [ids], runPlan, {
-      collect: body.collect === true, context: {project_id, workflow_id:meta.id}, signal: c.scriptContext?.signal
-    });
-    return {...result, outputs:multiple ? result.outputs : result.outputs[ids]};
+    const entry = await graphRuntime(c, project_id);
+    const roots = multiple ? ids : [ids],
+      result = await signalGraph(entry, roots, {}, {parent: c.scriptContext, policy: body.policy});
+    const errors = Object.fromEntries(roots.filter(id => result.errors[id]).map(id => [id, result.errors[id]]));
+    if (!body.collect && Object.keys(errors).length) throw Error(Object.values(errors)[0]);
+    return {
+      outputs: multiple
+        ? Object.fromEntries(roots.map(id => [id, result.outputs[id] ?? {}]))
+        : (result.outputs[ids] ?? {}),
+      errors,
+      displays: result.displays,
+      status: Object.fromEntries(result.nodes.map(node => [node.node_id, node.status])),
+      evaluated_nodes: result.evaluated_nodes,
+      run_id: result.run_id,
+      dispatch_id: result.dispatch_id,
+      parent_dispatch_id: result.parent_dispatch_id,
+      dispatch_status: result.dispatch_status,
+    };
   },
   {
     unlocked: true,

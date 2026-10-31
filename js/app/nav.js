@@ -23,9 +23,7 @@ function sectionOf(route) {
     pluginContributions(pluginById(route.id)).pages.some(x => x.id === route.view && x.section === 'library')
   )
     return 'library'; // a page a plugin puts into the Library
-  return (
-    {resources: 'library', plugins: 'plugins', settings: 'settings', api: 'home'}[route.page] || 'home'
-  );
+  return {resources: 'library', plugins: 'plugins', settings: 'settings', api: 'home'}[route.page] || 'home';
 }
 const SECTION_TITLES = {
   home: 'Dashboard',
@@ -280,8 +278,7 @@ function renderSubnav(route) {
     changed = section !== shownSection || target !== shownTarget;
   $('#subnav').hidden = false;
   if (section !== shownSection) {
-    navOpen.clear(); // arriving in a section: its tree starts folded (the Library's one section, Nodes, is open)
-    if (section === 'library') navOpen.add('s:nodes');
+    navOpen.clear(); // Only an explicit toggle opens a Library branch.
   }
   shownSection = section;
   shownTarget = target;
@@ -294,34 +291,6 @@ function renderSubnav(route) {
       body: `<nav class="subnav-tree">${override.items.map(item => navRow({key: 'pg:' + override.plugin + ':' + item.page, label: item.title, icon: item.icon, href: pluginHref(override.plugin, item.page), menu: 'plugin:' + override.plugin}, pluginActiveKey(route))).join('')}</nav>`,
     });
   if (changed && section === 'projects' && route.project) navOpen.add('p:' + route.project);
-  if (changed && section === 'library') {
-    const item = app.resources.find(
-      r => r.id === (route.project?.startsWith('lib-') ? route.project.slice(4) : route.id)
-    );
-    const folder = route.folder ?? item?.payload.folder;
-    if (route.section || item) navOpen.add('s:nodes');
-    if (folder)
-      for (let i = 1, parts = folder.split('/'); i <= parts.length; i++)
-        navOpen.add(folderKey(parts.slice(0, i).join('/')));
-  }
-  if (changed && section === 'library' && route.section && route.section !== 'nodes') {
-    let definition = catalogDefinition(route.section);
-    while (definition) {
-      navOpen.add('cs:' + definition.id);
-      definition = catalogDefinition(definition.parent);
-    }
-    if (route.folder)
-      for (let i = 1, parts = route.folder.split('/'); i <= parts.length; i++)
-        navOpen.add(`cf:${route.section}:${parts.slice(0, i).join('/')}`);
-  }
-  if (changed && section === 'library' && route.page === 'plugins') {
-    const pages = pluginContributions(pluginById(route.id)).pages ?? [];
-    let page = pages.find(p => p.id === route.view);
-    while (page?.parent) {
-      navOpen.add(`pg:${route.id}:${page.parent}`);
-      page = pages.find(p => p.id === page.parent);
-    }
-  }
   const rows = tree.rows();
   Subnav.set(section, {
     title: SECTION_TITLES[section],
@@ -564,17 +533,16 @@ async function resolveMenuItems(spec, owner) {
 
 function sectionActions(section) {
   if (section === 'library') return libraryActions();
-  if (section === 'projects') return [
-    ['New project', newProjectDialog, {icon: 'plus'}],
-    ['Import project', importProjects, {icon: 'download'}],
-  ];
+  if (section === 'projects')
+    return [
+      ['New project', newProjectDialog, {icon: 'plus'}],
+      ['Import project', importProjects, {icon: 'download'}],
+    ];
   if (section === 'plugins') return [['Import plugin', importPlugin, {icon: 'download'}]];
-  if (section === 'settings') return [
-    ['Restore defaults', () => app.restoreSettings?.(), {icon: 'refresh', disabled: !app.restoreSettings}],
-  ];
-  if (section === 'api') return [
-    ['Download OpenAPI', () => app.apiReference?.download(), {icon: 'download', disabled: !app.apiReference}],
-  ];
+  if (section === 'settings')
+    return [['Restore defaults', () => app.restoreSettings?.(), {icon: 'refresh', disabled: !app.restoreSettings}]];
+  if (section === 'api')
+    return [['Download OpenAPI', () => app.apiReference?.download(), {icon: 'download', disabled: !app.apiReference}]];
   return [];
 }
 
@@ -629,7 +597,11 @@ function textMenuItems(field, selected) {
     ['Copy', run('copy'), {icon: 'copy', hint: mod + 'C', disabled: secret || !selected}],
     ['Paste', paste, {icon: 'paste', hint: mod + 'V', disabled: !editable}],
     null,
-    ['Select all', all, {hint: mod + 'A', disabled: field ? !(field.value ?? field.textContent) : false}],
+    [
+      'Select all',
+      all,
+      {icon: 'expand', hint: mod + 'A', disabled: field ? !(field.value ?? field.textContent) : false},
+    ],
   ];
 }
 document.addEventListener(

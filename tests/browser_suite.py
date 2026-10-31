@@ -14,7 +14,7 @@ import threading
 import time
 
 ROOT = Path(__file__).resolve().parents[1]
-SELF_HOSTED = {'available_nodes', 'catalog', 'permissions', 'workspace_layout', 'canvas_latency', 'ai_nodes'}
+SELF_HOSTED = {'available_nodes', 'catalog', 'permissions', 'workspace_layout', 'canvas_latency', 'ai_nodes', 'execution_ui', 'durable_execution'}
 
 
 class QuietHandler(http.server.SimpleHTTPRequestHandler):

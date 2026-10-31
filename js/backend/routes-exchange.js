@@ -3,7 +3,17 @@
 // refresh from the Library when the same Library item exists in the target.
 'use strict';
 
-const EXCHANGE_KEYS = ['types', 'nodes', 'layout', 'style', 'groups', 'complex', 'port_edges', 'widgets', 'library_nodes'];
+const EXCHANGE_KEYS = [
+  'types',
+  'nodes',
+  'layout',
+  'style',
+  'groups',
+  'complex',
+  'port_edges',
+  'widgets',
+  'library_nodes',
+];
 const decodeExchange = packet => {
   try {
     return TextGraph.decode(packet);
@@ -13,7 +23,7 @@ const decodeExchange = packet => {
 };
 
 /** The document as exchanged: its stored parts, without the change counter. It carries the types it uses (the Library's too), so the file stands alone. */
-const exportedDocument = async (c, doc) => {
+const exportedDocument = async (c, doc, workflow) => {
   const out = clone(stateOf(doc)),
     library = await c.libraryTypes();
   out.types = [...library.filter(t => !out.types.some(o => o.id === t.id)).map(clone), ...out.types];
@@ -29,6 +39,7 @@ const exportedDocument = async (c, doc) => {
     if (byId.has(id)) todo.push(...refsOf(byId.get(id)));
   }
   out.types = out.types.filter(t => used.has(t.id)).map(({library, ...t}) => t);
+  if (workflow) out.runtime = await graphData(c, workflow);
   return out;
 };
 
@@ -44,9 +55,8 @@ function importedDocument(project, input) {
     if (!kind) throw bad(`document.${key} has the wrong shape`);
     doc[key] = clone(input[key]);
   }
-  if (JSON.stringify(doc).length > 20000000) throw bad('This workflow is too large to import');
-  if (doc.nodes.length > 1000) throw bad('A workflow has at most 1000 nodes');
-  if (doc.library_nodes.some(id => typeof id !== 'string')) throw bad('document.library_nodes must contain resource IDs');
+  if (doc.library_nodes.some(id => typeof id !== 'string'))
+    throw bad('document.library_nodes must contain resource IDs');
   doc.library_nodes = [...new Set(doc.library_nodes)];
   const ids = new Set();
   for (const node of doc.nodes) {
@@ -89,7 +99,7 @@ route(
     if (!wf) throw missing('Record not found');
     return wrapDocument('workflow', {
       name: wf.name,
-      document: await exportedDocument(c, await c.ctx.get('wf:' + wf.id, emptyDoc())),
+      document: await exportedDocument(c, await c.ctx.get('wf:' + wf.id, emptyDoc()), wf.id),
     });
   },
   {returns: '{format: "agentsys.text/1", files: {"graph.json": text, "layout.json": text, "scripts/…js": source}}'}
@@ -112,13 +122,14 @@ route(
     const id = uid();
     project.workflows.push({id, name, created: Date.now() / 1000});
     c.ctx.set('wf:' + id, doc);
+    importGraphData(c, id, input.document.runtime);
     c.ctx.set('projects', await c.projects());
     await c.collectHooks(project_id, id, doc, JSON.stringify(stateOf(emptyDoc())));
     return {id, name, diagnostics: new Editor(project, {id, name}, doc).snapshot().diagnostics.map(d => d.message)};
   },
   {
     body: TextGraph.encode({
-      kind:'workflow',
+      kind: 'workflow',
       name: 'optional new name',
       document: {types: [], nodes: [], layout: {}, groups: [], complex: [], port_edges: [], widgets: {}},
     }),
@@ -133,7 +144,10 @@ route(
     const project = await c.project(project_id),
       workflows = [];
     for (const wf of project.workflows)
-      workflows.push({name: wf.name, document: await exportedDocument(c, await c.ctx.get('wf:' + wf.id, emptyDoc()))});
+      workflows.push({
+        name: wf.name,
+        document: await exportedDocument(c, await c.ctx.get('wf:' + wf.id, emptyDoc()), wf.id),
+      });
     return wrapDocument('project', {name: project.name, description: project.description || '', workflows});
   },
   {returns: '{format: "agentsys.text/1", files: canonical project files}'}
@@ -165,6 +179,7 @@ async function importProjectDocument(c, body) {
       wid = project.workflows.length ? uid() : id;
     project.workflows.push({id: wid, name, created: Date.now() / 1000});
     docs.push([wid, doc]);
+    importGraphData(c, wid, item.document.runtime);
   }
   for (const [wid, doc] of docs) {
     c.ctx.set('wf:' + wid, doc);
@@ -179,5 +194,5 @@ route(
   'projects/import',
   'Create a project from an exported document',
   async c => importProjectDocument(c, decodeExchange(c.body)),
-  {body: TextGraph.encode({kind:'project',name: 'My project', workflows: [{name: 'Main', document: {}}]})}
+  {body: TextGraph.encode({kind: 'project', name: 'My project', workflows: [{name: 'Main', document: {}}]})}
 );

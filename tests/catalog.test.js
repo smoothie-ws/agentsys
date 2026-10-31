@@ -52,10 +52,14 @@ test('catalog declarations reject cycles, invalid fields and missing action endp
   const install = library =>
     app.api('POST', 'plugins', {
       package: {
-        format: 'agentsys.plugin/1',
-        manifest: {id: 'demo', name: 'Demo', version: '1.0.0', contributes: {library}},
-        files: {},
+        format: 'agentsys.plugin/2',
+        manifest: {id: 'demo', name: 'Demo', version: '1.0.0', main: 'main.js'},
+        files: {
+          'main.js': `exports.activate=({app})=>{for(const section of ${JSON.stringify(library)})app.library.registerCollection(section);};`,
+        },
       },
+      enable: true,
+      replace: true,
     });
   for (const library of [
     [{...section, parent: 'missing'}],

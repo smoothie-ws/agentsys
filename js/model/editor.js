@@ -40,14 +40,17 @@ class Editor {
     );
   }
   /** Follows Complex Node ports down to the node ports they are bound to: [[node ID, port ID], ...] (an unbound port stays on the wrapper; only an input is bound to several). */
-  static resolveAll(nodes, nodeId, portId, direction, depth = 0) {
-    if (depth >= 32) throw bad('Complex Nodes are nested too deeply');
+  static resolveAll(nodes, nodeId, portId, direction, seen = new Set()) {
+    const address = key(nodeId, portId);
+    if (seen.has(address)) throw bad('Cyclic interface binding');
     const node = nodes.get(nodeId);
     if (node.kind !== 'complex') return [[nodeId, portId]];
     const item = node.interface[direction].find(p => p.id === portId);
     if (!item) throw bad('Complex Node port not found');
     if (!item.bound?.length) return [[nodeId, portId]];
-    return item.bound.flatMap(b => Editor.resolveAll(nodes, b.node_id, b.port_id, direction, depth + 1));
+    return item.bound.flatMap(b =>
+      Editor.resolveAll(nodes, b.node_id, b.port_id, direction, new Set(seen).add(address))
+    );
   }
   /** The first port a Complex Node port is bound to (the only one of an output). */
   static resolve(nodes, nodeId, portId, direction) {
@@ -227,7 +230,6 @@ class Editor {
   }
 
   addRecord(record) {
-    if (this.doc.nodes.length >= 1000) throw bad('Node limit reached');
     if (this.doc.nodes.some(n => n.id === record.id)) throw bad('Node ID already exists');
     this.doc.nodes.push(record);
     return record.id;
@@ -301,7 +303,7 @@ class Editor {
     return def.id;
   }
   /**
-   * A new Script (`kind` script: In signal, a `script` input typed in as code; no outputs: the person adds the ones the code uses) or Event (`kind` event: no inputs,
+   * A new Script (`kind` script: In signal, a `script` code input and automatic Out signal) or Event (`kind` event: no inputs,
    * a signal output; the event it fires is chosen on the node, see setEvent).
    */
   addPrimitive(kind, point = {x: 0, y: 0}) {
@@ -336,12 +338,12 @@ class Editor {
           {id: 'in', name: 'in', type: 'signal'},
           {id: 'script', name: 'script', type: 't:' + code},
         ],
-        outputs: [],
+        outputs: [{id: 'out', name: 'out', type: 'signal'}],
         op: 'script',
       },
     });
   }
-  /** Chooses the event an Event node fires: its operation is the event (on_run, on_read, on_placed, on_deleted, on_wired, on_widget). */
+  /** Chooses the event an Event node fires: its operation is the event (on_run, on_read, on_placed, on_deleted, on_input_connected, on_widget). */
   setEvent(nodeId, op) {
     const node = this.doc.nodes.find(n => n.id === nodeId);
     if (!node || node.node_type !== 'custom' || !EVENT_OPS.has(node.config?.op) || node.config.inputs?.length)
@@ -738,11 +740,7 @@ class Editor {
         name.length > 100
       )
         throw bad('Groups require a unique ID and a name of 1 to 100 characters');
-      if (
-        !Array.isArray(list) ||
-        list.length > 1000 ||
-        list.some(n => typeof n !== 'string' || !ids.has(n) || members.has(n))
-      )
+      if (!Array.isArray(list) || list.some(n => typeof n !== 'string' || !ids.has(n) || members.has(n)))
         throw bad('A node can belong to one group in this project');
       if (list.length !== new Set(list).size) throw bad('Duplicate group member');
       seen.add(id);
@@ -750,9 +748,11 @@ class Editor {
     }
     const parents = new Map(groups.map(g => [g.id, seen.has(g.parent) && g.parent !== g.id ? g.parent : null]));
     for (const id of seen) {
-      let depth = 0;
-      for (let at = parents.get(id); at; at = parents.get(at))
-        if (at === id || ++depth > 20) throw bad('Groups can be nested up to 20 levels, without loops');
+      const ancestors = new Set();
+      for (let at = parents.get(id); at; at = parents.get(at)) {
+        if (at === id || ancestors.has(at)) throw bad('Groups cannot contain cycles');
+        ancestors.add(at);
+      }
     }
     for (const group of groups) {
       const hasChildren = groups.some(g => parents.get(g.id) === group.id);
@@ -1203,8 +1203,7 @@ class Editor {
     );
     const items = records,
       bundleGroups = bundle.groups ?? [];
-    if (!(items.length + bundleGroups.length >= 1 && items.length + bundleGroups.length <= 1000))
-      throw bad('Clipboard does not contain graph nodes');
+    if (!(items.length + bundleGroups.length >= 1)) throw bad('Clipboard does not contain graph nodes');
     if (
       items.some(e => !isObject(e) || typeof e.id !== 'string') ||
       new Set(items.map(e => e.id)).size !== items.length

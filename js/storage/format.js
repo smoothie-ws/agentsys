@@ -3,10 +3,11 @@ const TextGraph = (() => {
   const FORMAT = 'agentsys.text/1';
   const sortedCollections = new Set(['nodes', 'records', 'groups', 'complex', 'port_edges', 'types']);
   const stringify = value => JSON.stringify(value, null, 2) + '\n';
-  const sort = (value, field = '') => {
+  const sort = (value, field = '', opaque = false) => {
+    opaque ||= field === 'runtime';
     if (Array.isArray(value)) {
-      const array = value.map(v => sort(v));
-      return sortedCollections.has(field)
+      const array = value.map(v => sort(v, '', opaque));
+      return !opaque && sortedCollections.has(field)
         ? array.sort((a, b) => String(a.id).localeCompare(String(b.id), 'en'))
         : array;
     }
@@ -14,7 +15,7 @@ const TextGraph = (() => {
       return Object.fromEntries(
         Object.keys(value)
           .sort()
-          .map(k => [k, sort(value[k], k)])
+          .map(k => [k, sort(value[k], k, opaque)])
       );
     return value;
   };
@@ -23,6 +24,7 @@ const TextGraph = (() => {
     const files = {},
       layouts = {};
     const walk = (v, path) => {
+      if (path.includes('runtime')) return v;
       if (Array.isArray(v)) return v.map((x, i) => walk(x, [...path, String(i)]));
       if (!v || typeof v !== 'object') return v;
       const out = {};
@@ -75,7 +77,7 @@ const TextGraph = (() => {
         used.add(value.$script);
         return files[value.$script];
       }
-      return Object.fromEntries(Object.entries(value).map(([k, v]) => [k, walk(v)]));
+      return Object.fromEntries(Object.entries(value).map(([k, v]) => [k, k === 'runtime' ? v : walk(v)]));
     };
     const root = {value: walk(graph.value)};
     for (const [text, value] of Object.entries(layouts)) {

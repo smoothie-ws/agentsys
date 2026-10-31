@@ -1,12 +1,39 @@
 'use strict';
 route(
   'GET PUT',
+  'projects/{project_id}/node-permissions/{node_id}',
+  'Inspect effective Script grants or authorize a standalone Script',
+  async (c, {project_id, node_id}) => {
+    const {doc, editor} = await c.workflow(project_id),
+      raw = doc.nodes.find(n => n.id === node_id),
+      node = createGraphView(editor.snapshot(), {context: {project_id, workflow_id: c.workflowId}}).get(node_id);
+    if (!raw || raw.config?.op !== 'script' || !node) throw missing('Script not found');
+    const chain = node.context.grant_chain ?? [],
+      editable = !chain.length;
+    if (c.method === 'PUT') {
+      if (!editable) throw bad('Edit the enclosing Custom Node permissions');
+      if (!Array.isArray(c.body.grants)) throw bad('grants is required');
+      checkManifest(c.body);
+      raw.config.grants = clone(c.body.grants);
+    }
+    const layers = editable ? [raw.config.grants ?? []] : chain,
+      policy = await c.ctx.get('policy:' + project_id, {allow: ['graph.read']}),
+      candidates = [...new Set([...policy.allow, ...layers.flat()])],
+      effective = candidates.filter(
+        capability => allows(policy.allow, capability) && layers.every(list => allows(list, capability))
+      );
+    return {node_id, editable, grants: raw.config.grants ?? [], layers, project_allow: policy.allow, effective};
+  },
+  {needs: {GET: ['graph.read'], PUT: ['system.admin']}, query: ['workflow_id'], body: {grants: ['graph.read']}}
+);
+route(
+  'GET PUT',
   'projects/{project_id}/policy',
   'Read or set the workspace capability allow list',
   async (c, {project_id}) => {
     await c.project(project_id);
     if (c.method === 'PUT') {
-      checkManifest({capabilities: c.body.allow});
+      checkManifest({grants: c.body.allow});
       if (!Array.isArray(c.body.allow)) throw bad('allow is required');
       c.ctx.set('policy:' + project_id, {allow: c.body.allow});
     }
@@ -47,10 +74,7 @@ route(
         body: request.body,
         redirect: 'manual',
         signal: executionSignal
-          ? AbortSignal.any([
-              AbortSignal.timeout(request.timeout ?? 30000),
-              executionSignal,
-            ])
+          ? AbortSignal.any([AbortSignal.timeout(request.timeout ?? 30000), executionSignal])
           : AbortSignal.timeout(request.timeout ?? 30000),
       });
       if (response.status >= 300 && response.status < 400)

@@ -59,7 +59,13 @@
               {
                 "id": "prn3e5",
                 "name": "out",
-                "type": "signal"
+                "type": "signal",
+                "bound": [
+                  {
+                    "node_id": "record:62cff3a42f0e8b6d6cd577ebccc98345",
+                    "port_id": "out"
+                  }
+                ]
               },
               {
                 "id": "p42afc",
@@ -102,14 +108,20 @@
                   "type": "signal"
                 },
                 {
-                  "default": "const options = node.input.request ?? {url: node.input.url, method: node.input.method, timeout: node.input.timeout};\nconst response = await agentsys('POST', node.input.endpoint || 'net', options);\nnode.output.status = response.status;\nnode.output.response = response.text;\nawait node.emit('out');",
+                  "default": "const options = node.input.request ?? {url: node.input.url, method: node.input.method, timeout: node.input.timeout};\nconst response = await agentsys('POST', node.input.endpoint || 'net', options);\nnode.output.status = response.status;\nnode.output.response = response.text;",
                   "id": "script",
                   "name": "script",
                   "type": "t:a42dbde0c1e1090d6adf1640c2dda533"
                 }
               ],
               "op": "script",
-              "outputs": [],
+              "outputs": [
+                {
+                  "id": "out",
+                  "name": "out",
+                  "type": "signal"
+                }
+              ],
               "title": "Script"
             },
             "kind": "function",

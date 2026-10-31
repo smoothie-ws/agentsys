@@ -2,6 +2,7 @@
 # Needs: pip install playwright && playwright install chromium. Covers the main canvas and Library flows.
 import asyncio, base64, os, sys
 from playwright.async_api import async_playwright
+from browser_server import expand_workflow_section
 U=f'http://127.0.0.1:{sys.argv[1]}/index.html'
 async def main():
     async with async_playwright() as p:
@@ -109,6 +110,7 @@ async def main():
         ok('saved to Library',await pg.evaluate("app.resources.some(r=>r.name==='Gen')"))
         # tree
         await pg.goto(U+'#/library/nodes'); await pg.wait_for_selector('#view .page-head [data-menu]')
+        await pg.locator('#subnav [data-group="s:nodes"] > .subnav-row > .subnav-toggle').click()
         await pg.click('#view .page-head [data-menu]'); await pg.get_by_role('menuitem',name='New group',exact=True).click(); await pg.fill('#modal input[name=name]','Mine'); await pg.click('#modal button.primary'); await pg.wait_for_selector('#view .page-head [data-menu]'); await pg.wait_for_selector('#subnav [data-group="f:Mine"]'); await pg.wait_for_timeout(600)
         ok('a new group is a row of the tree and a card of the page',await pg.evaluate("!!document.querySelector('#view .card-main[href$=\"folder=Mine\"]')"))
         rid=await pg.evaluate("app.resources.find(r=>r.name==='Gen').id")
@@ -138,7 +140,7 @@ async def main():
         await pg.click('.tab >> nth=0', button='right'); await pg.click('.popup button:has-text("Close All")'); await pg.wait_for_timeout(500)
         ok('Close All keeps pinned',await pg.evaluate("document.querySelectorAll('.tab').length===1"))
         ok('every wire style draws a valid path',await pg.evaluate("WIRE_STYLES.every(([id])=>{graphStyle={...graphStyle,wire_style:id};const d=wirePath({x:0,y:0},{x:-200,y:90})+wirePath({x:0,y:0},{x:300,y:-40});return /^M/.test(d)&&!/NaN/.test(d)})"))
-        ok('switching rows of the Library: the highlight glides to the new row, the second panel is not rebuilt',await pg.evaluate("""(async()=>{await go('/library/nodes');await new Promise(r=>setTimeout(r,500));const pill=document.querySelector('#subnav-body .nav-pill'),list=document.querySelector('#subnav-list'),tops=new Set(),t0=performance.now();const sample=()=>{tops.add(Math.round(pill.getBoundingClientRect().top));if(performance.now()-t0<500)requestAnimationFrame(sample)};sample();await go('/library/nodes?folder=Mine');await new Promise(r=>setTimeout(r,600));return tops.size>3&&list===document.querySelector('#subnav-list')})()"""))
+        ok('switching rows of the Library: the highlight glides to the new row, the second panel is not rebuilt',await pg.evaluate("""(async()=>{await go('/library/nodes');setGroupOpen(document.querySelector('#subnav [data-group="s:nodes"]'),true);await new Promise(r=>setTimeout(r,500));const pill=document.querySelector('#subnav-body .nav-pill'),list=document.querySelector('#subnav-list'),tops=new Set(),t0=performance.now();const sample=()=>{tops.add(Math.round(pill.getBoundingClientRect().top));if(performance.now()-t0<500)requestAnimationFrame(sample)};sample();await go('/library/nodes?folder=Mine');await new Promise(r=>setTimeout(r,600));return tops.size>3&&list===document.querySelector('#subnav-list')})()"""))
         ok('the sidebar highlight glides between sections too',await pg.evaluate("""(async()=>{const pill=document.querySelector('#sidebar .nav-pill'),tops=new Set(),t0=performance.now();const sample=()=>{tops.add(Math.round(pill.getBoundingClientRect().top));if(performance.now()-t0<500)requestAnimationFrame(sample)};sample();await go('/');await new Promise(r=>setTimeout(r,600));return tops.size>3})()"""))
         await pg.goto(U+'#/settings'); await pg.wait_for_timeout(300); await pg.goto(U+'#/library/nodes'); await pg.wait_for_timeout(300)
         ok('pages have no tabs: only graph editors do',await pg.evaluate("![...document.querySelectorAll('.tab-title')].some(e=>['Settings','Library','API','Projects'].includes(e.textContent))&&document.querySelectorAll('.tab.active').length===0"))
@@ -249,7 +251,8 @@ async def main():
         # types: only any is built in; a type the workflow defines colours its sockets, is listed in the overview, and is made in a dialog
         ok('no type of the workflow exists until one is defined (the Library brings its own; any is built in)',await pg.evaluate("W.snapshot.types.filter(t=>!t.library).length===0&&!document.querySelector('.port[class*=\"t-r\"]')"))
         await pg.click('[data-side-tab=workflow]'); await pg.wait_for_timeout(300)
-        ok('the overview offers New type and lists only the Library types',await pg.locator('#side-workflow h3:has-text("Types")').count()==1 and await pg.locator('.type-item').count()==await pg.evaluate('W.snapshot.types.length'))
+        await expand_workflow_section(pg, 'types')
+        ok('the overview offers New type and lists only the Library types',await pg.locator('[data-workflow-section=types] > summary').count()==1 and await pg.locator('.type-item').count()==await pg.evaluate('W.snapshot.types.length'))
         tid='a'*32; kid='b'*32
         await pg.evaluate("""async ([tid,kid])=>{const P=W.project,w={workflow_id:W.workflow};
           await api(`projects/${P}/types`,{method:'PUT',body:{...w,types:[...W.snapshot.types,{id:kid,name:'Signal',color:'#33cc99',fields:[]},{id:tid,name:'Person',color:'#ff8800',fields:[{name:'ping',type:'t:'+kid}]}]}});

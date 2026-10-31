@@ -9,7 +9,9 @@ const widgetsOf = id => W.snapshot.widgets?.[id] ?? [];
 async function applyCanvasEdits(operations, edit = editToken()) {
   for (let i = 0; i < operations.length; i += 200)
     await api(`projects/${W.project}/batch`, {
-      method: 'POST', body: wf({operations: operations.slice(i, i + 200)}), edit,
+      method: 'POST',
+      body: wf({operations: operations.slice(i, i + 200)}),
+      edit,
     });
 }
 
@@ -70,7 +72,8 @@ async function inlineChange(input, captured = input.type === 'checkbox' ? input.
 }
 
 async function setSelectionStyle(style) {
-  const edit = editToken(), operations = [];
+  const edit = editToken(),
+    operations = [];
   for (const node of selectionItems()) {
     const grouped = node.kind === 'group' || node.kind === 'complex';
     if (style.pinned && grouped) {
@@ -87,7 +90,8 @@ async function setSelectionStyle(style) {
 const setPinned = pinned => setSelectionStyle({pinned});
 
 /** The style target of a node, a Complex Node or a group frame. */
-const styleTarget = node => (node.kind === 'complex' || node.kind === 'group' ? {group_id: node.group_id} : {node_id: node.id});
+const styleTarget = node =>
+  node.kind === 'complex' || node.kind === 'group' ? {group_id: node.group_id} : {node_id: node.id};
 /** What can be disabled: every selected node, Complex Node and group. */
 const switchableItems = () => selectionItems();
 /** Disables nodes and groups (a run skips them and everything inside, and what they feed gets nothing from them) or enables them again. */
@@ -119,19 +123,10 @@ const toggleFolded = () => {
   return items.length ? setFolded(items, !items.every(n => n.folded)) : undefined;
 };
 
-/** Editing the next graph discards old results after execution has finished. */
+/** Results belong to nodes, and survive edits. Only removed nodes lose their previews. */
 function discardStaleRun() {
-  const signature = JSON.stringify([
-    W.snapshot.nodes.map(n => [n.id, n.config, n.inputs]),
-    W.snapshot.edges,
-    W.snapshot.complex.map(c => [c.id, c.interface]),
-  ]);
-  if (signature === W.previewSignature) return;
-  W.previewSignature = signature;
-  if (!W.running) {
-    W.runStatus.clear();
-    W.results.clear();
-  }
+  const alive = new Set([...W.snapshot.nodes.map(n => n.id), ...W.snapshot.complex.map(c => 'complex:' + c.id)]);
+  for (const map of [W.runStatus, W.results]) for (const id of map.keys()) if (!alive.has(id)) map.delete(id);
 }
 
 async function deleteSelection(dissolve = false) {
@@ -140,7 +135,8 @@ async function deleteSelection(dissolve = false) {
     groupIds = selectedGroupIds();
   if (!nodes.length && !groupIds.length) return;
   const edit = editToken(),
-    gone = [], operations = [];
+    gone = [],
+    operations = [];
   // Outer groups first: deleting one takes the groups inside it with it, so those need no call of their own.
   for (const gid of [...groupIds].sort((a, b) => W.groups.get(a).depth - W.groups.get(b).depth)) {
     if (gone.some(outer => isUnder(W.groups.get(gid), outer))) continue;
@@ -149,8 +145,7 @@ async function deleteSelection(dissolve = false) {
   }
   const grouped = new Set(gone.flatMap(id => W.groups.get(id).all_members));
   const live = nodes.map(n => n.id).filter(id => !grouped.has(id));
-  if (live.length)
-    operations.push({path: 'delete-nodes', method: 'POST', body: {node_ids: live, dissolve}});
+  if (live.length) operations.push({path: 'delete-nodes', method: 'POST', body: {node_ids: live, dissolve}});
   await applyCanvasEdits(operations, edit);
   W.selected.clear();
   await reload();
@@ -260,7 +255,11 @@ function renameSelection() {
   const node = item?.node;
   if (node?.kind !== 'function') return;
   inlineRename($(`.node[data-id="${CSS.escape(node.id)}"] .title`), nodeLabel(node), async title => {
-    await api(`projects/${W.project}/node-title`, {method: 'PUT', body: wf({node_id: node.id, title}), edit: editToken()});
+    await api(`projects/${W.project}/node-title`, {
+      method: 'PUT',
+      body: wf({node_id: node.id, title}),
+      edit: editToken(),
+    });
     await reload();
   });
 }

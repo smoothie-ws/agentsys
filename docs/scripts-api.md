@@ -1,4 +1,63 @@
-# Library and HTTP from Script
+# Script API
+
+A Script has signal input `in`, code input `script` and signal output `out`. Code is an async function body: `await` and `return` are available. Successful completion emits `out` automatically. Help is available beside each Script code editor and on the API page. [TypeScript declarations](../sdk/script.d.ts) describe the globals.
+
+## Workflow state
+
+All Scripts in one workflow share `context.state`, a durable JSON object:
+
+```js
+context.state.count = (context.state.count ?? 0) + 1;
+context.state.items ??= [];
+context.state.items.push({count: context.state.count});
+node.display(context.state.count);
+// out emits when this code finishes successfully
+```
+
+Run sends `on_run` signals without clearing state. Stop cancels active work and keeps JSON state, outputs and previews. These values survive navigation and application restart. Active JavaScript functions, timers and requests do not resume after restart.
+
+Assign or delete properties, including nested properties. The root `context.state` reference cannot be replaced. Values must be JSON; functions, symbols, bigint and non-finite numbers are rejected. Keys `__proto__`, `prototype` and `constructor` are reserved. Multi-step updates shared by concurrent Scripts are not transactions.
+
+`globalThis` is the JavaScript host's global object. Custom globals survive successive signals while that host lives; Stop and application restart discard them. Store durable data in `context.state`.
+
+## Node operations
+
+| API                                     | Behavior                                                                |
+| --------------------------------------- | ----------------------------------------------------------------------- |
+| `node.input.name`                       | Initial JSON input value of the enclosing Custom Node                   |
+| `node.output.name = value`              | Publish a free data output as JSON                                      |
+| `await node.output.name.emit(options?)` | Emit a named signal and join its branches                               |
+| `node.output.out`                       | Script's own completion signal; manual `.emit()` adds an extra emission |
+| `await node.reread(name)`               | Read an input using current connections and values                      |
+| `await node.sleep(ms)`                  | Wait a finite nonnegative duration; Pause gates continuation            |
+| `node.display(...parts)`                | Publish text, JSON or `{mime_type, data}` base64 image previews         |
+| `await node.widgets(list)`              | Replace this Script's widgets through the checked graph API             |
+| `await node.widgets.set(values)`        | Set widget values through the checked graph API                         |
+| `node.cancelled`                        | Whether this invocation's signal flow is cancelled                      |
+| `node.flow.break()` / `continue()`      | End code and reach the nearest emission handling this control           |
+| `node.flow.cancel()`                    | End code and cancel its current signal wave                             |
+| `node.flow.abort()`                     | End code and cancel currently dispatched graph flow                     |
+
+Names are exact and case-sensitive. `out` is reserved for Script completion. A Custom Node can publish it by binding an interface signal to the Script port. Other free signal outputs and data outputs belong to the enclosing Custom Node. A signal has no data payload; publish data outputs before emitting. The emission options are `{handles: ['break', 'continue'], failFast: true}`; handled emissions return the control name, or `undefined`. Flow operations unwind with an internal control exception: do not catch it without rethrowing errors with a `control` property. Errors and cancellation do not emit automatic `out`.
+
+Output assignments publish immediately; emissions, API calls, sleep and completion publish nested output object changes too. Graph edits affect subsequent invocations, emissions and rereads; already executing code keeps its current function and initial input values. See [Engine](engine.md) for reads, flow and pause semantics.
+
+## Context
+
+| Property                                       | Value                                                                                               |
+| ---------------------------------------------- | --------------------------------------------------------------------------------------------------- |
+| `context.project_id`, `workflow_id`, `node_id` | Current project, workflow and Script IDs                                                            |
+| `context.instance_id`, `resource_id`           | Enclosing Custom Node instance and Library resource, or null                                        |
+| `context.widgets`                              | Initial widget values of the enclosing Custom Node and this Script                                  |
+| `context.event.payload`                        | Object supplied with a Run signal                                                                   |
+| `context.event.connected`                      | Current connected input names for `on_input_connected`, including an empty list after disconnection |
+| `context.event.widget`                         | `{id, kind, label, value}` for `on_widget`                                                          |
+| `context.state`                                | Shared durable JSON object                                                                          |
+| `context.execution`                            | Immutable run/dispatch/invocation IDs, parent links, graph revision and optional inherited policy      |
+
+Event data follows its signal chain. Other event fields are absent when that event did not supply them.
+
+## Checked application API
 
 Script code uses `agentsys(method, path, body?, query?)`. The paths are application API paths without the `/api/` prefix. Calls are awaited and use the node's permissions. Direct `fetch` is unavailable in the isolated Worker.
 
@@ -28,7 +87,7 @@ Use `GET library/sections` to discover active collections and their IDs. Read an
 const response = await agentsys('POST', 'net', {
   url: 'http://localhost:11434/v1/models',
   method: 'GET',
-  timeout: 10000
+  timeout: 10000,
 });
 if (response.status < 200 || response.status >= 300) {
   throw Error('HTTP ' + response.status);
@@ -44,7 +103,7 @@ A named application secret can be used without exposing its value:
 ```js
 const response = await agentsys('POST', 'net', {
   url: 'https://example.com/api',
-  headers: {Authorization: 'Bearer {{secret:MY_API_KEY}}'}
+  headers: {Authorization: 'Bearer {{secret:MY_API_KEY}}'},
 });
 ```
 
@@ -58,27 +117,10 @@ Named secrets and the private API key stored on a Provider are separate storage 
 
 The permissions must be present on the instance and in the project's allow list. For nested placed nodes, the enclosing instances also apply. Library defaults only initialize new instances; they do not restrict later edits. Script code cannot grant itself permissions.
 
-The project allow list is editable in the inspector's Workflow tab under Project permissions. Placed node grants are in Properties / Permissions. Library defaults are in the Library graph editor's Workflow / Default permissions. A standalone Script uses `config.grants`, currently edited through the API rather than a standalone Script permissions form.
+The project allow list is editable in the inspector's Workflow tab under Project permissions. Placed node grants are in Properties / Permissions. Library defaults are in the Library graph editor's Workflow / Default permissions. A standalone Script's Properties / Permissions form edits `config.grants` with user authority and shows effective project/enclosing restrictions. Grant changes do not require Developer mode. A nested Script displays its enclosing permission layers.
 
-For example, from the authenticated application's browser console (user authority, **outside Script code**), configure a standalone Script selected on the canvas:
+External user-authorized tools can use `GET/PUT projects/{project}/node-permissions/{node}` with `{workflow_id,grants:[...]}`. Scripts and plugins cannot authorize themselves. Changing code through `typed-nodes` still requires Developer mode and programmatic changes remain quarantined.
 
-```js
-const project = W.project, workflow_id = W.workflow;
-const snapshot = await api(`projects/${project}/workflow`, {query: {workflow_id}});
-const script = snapshot.nodes.find(n => W.selected.has(n.id) && n.config?.op === 'script');
-if (!script) throw Error('Select a standalone Script first');
-const permissions = ['library.read', 'net.fetch:localhost:11434'];
-await api(`projects/${project}/typed-nodes/${script.id}`, {
-  method: 'PUT',
-  body: {workflow_id, node_type: 'custom', config: {
-    ...script.config, grants: permissions
-  }}
-});
-const policy = await api(`projects/${project}/policy`);
-await api(`projects/${project}/policy`, {
-  method: 'PUT', body: {allow: [...new Set([...policy.allow, ...permissions])]}
-});
-await reload();
-```
+## Independent state and checkpoints
 
-Changing a node definition through `typed-nodes` requires Developer mode. For HTTP POST to another host, replace the sample host permission with that host. Configuration done by a Script or plugin is quarantined and cannot grant this authority.
+For parallel work, use an area keyed by `context.execution.run_id` and supply the expected version on every mutation. A version conflict is explicit; `context.state` remains nontransactional. Checked nested evaluations inherit execution ancestry and optional budgets. See [Durable execution](durable-execution.md) for scope/checkpoint examples, explicit retry policies, metadata history and cancellation boundaries.

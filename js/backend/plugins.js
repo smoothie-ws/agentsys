@@ -3,7 +3,7 @@
 // The routes are in routes-plugins.js; the contract is in docs/plugins.md.
 'use strict';
 
-const PLUGIN_FORMAT = 'agentsys.plugin/1';
+const PLUGIN_FORMAT = 'agentsys.plugin/2';
 /** The version of the extension points. A plugin that needs a higher one (`engine: ">=3"`) is refused. */
 const PLUGIN_API = 2;
 const PLUGIN = {
@@ -14,7 +14,6 @@ const PLUGIN = {
   dataValueBytes: 500000,
   dataKeys: 500,
   endpointMs: 30000,
-  endpointsAtOnce: 4,
   resultBytes: 1000000,
   log: 100,
 };
@@ -145,72 +144,99 @@ function pluginSettingValues(schema, saved, strict = false) {
   return values;
 }
 
-/**
- * Checks a package from outside and returns a clean copy: {format, manifest, files}. `manifest.contributes` names files of the package
- * for each extension point; a name that is not a file, a duplicate, or a capability the system does not know is an error.
- */
-function validatePluginPackage(input, runtime = false) {
-  if (input?.format === 'agentsys.plugin/2') return validateRuntimePackage(input);
+function validatePluginPackage(input) {
   if (!isObject(input) || input.format !== PLUGIN_FORMAT || !isObject(input.manifest) || !isObject(input.files))
-    throw bad(`A plugin package is {format: "${PLUGIN_FORMAT}", manifest, files}`);
+    throw bad('A plugin package needs format, manifest and files');
   const files = {};
   let total = 0;
-  const names = Object.keys(input.files);
-  if (names.length > PLUGIN.files) throw bad(`A plugin has at most ${PLUGIN.files} files`);
-  for (const name of names) {
+  if (Object.keys(input.files).length > PLUGIN.files) throw bad('Too many package files');
+  for (const [name, text] of Object.entries(input.files)) {
     pluginFilePath(name);
-    const text = input.files[name];
-    if (typeof text !== 'string') throw bad(`File ${name} must be text`);
-    if (text.length > PLUGIN.fileBytes) throw bad(`File ${name} is larger than ${PLUGIN.fileBytes} characters`);
+    if (typeof text !== 'string' || text.length > PLUGIN.fileBytes) throw bad('Invalid package file ' + name);
     total += text.length;
     files[name] = text;
   }
-  if (total > PLUGIN.totalBytes) throw bad(`A plugin package is at most ${PLUGIN.totalBytes} characters`);
+  if (total > PLUGIN.totalBytes) throw bad('Plugin package is too large');
   const m = input.manifest,
-    contributes = isObject(m.contributes) ? m.contributes : {};
-  if (m.contributes !== undefined && !isObject(m.contributes)) throw bad('contributes must be an object');
-  if (typeof m.id !== 'string' || !PLUGIN_ID.test(m.id))
-    throw bad('The plugin id is 2 to 40 characters: a lower-case letter, then letters, digits and -');
+    known = new Set([
+      'id',
+      'name',
+      'version',
+      'description',
+      'authors',
+      'icon',
+      'main',
+      'permissions',
+      'dependencies',
+      'engine',
+      'secrets',
+      'readme',
+      'homepage',
+      'license',
+      'repository',
+      'keywords',
+    ]);
+  for (const key of Object.keys(m)) if (!known.has(key)) throw bad('Unknown manifest field: ' + key);
+  if (!PLUGIN_ID.test(m.id ?? '')) throw bad('Invalid plugin id');
   if (typeof m.version !== 'string' || !/^\d+\.\d+\.\d+([-+][0-9A-Za-z.-]+)?$/.test(m.version))
     throw bad('version is like 1.0.0');
   const manifest = {
     id: m.id,
-    name: pluginText(m.name, 'The plugin name', 100, 1).trim(),
+    name: pluginText(m.name, 'Name', 100, 1),
     version: m.version,
-    description: pluginText(m.description ?? '', 'The description', 2000),
-    author: pluginText(m.author ?? '', 'The author', 100),
-    icon: m.icon === undefined ? 'plug' : m.icon,
-    capabilities: [...new Set(pluginList(m.capabilities, 'capabilities', 50))],
+    description: pluginText(m.description ?? '', 'Description', 2000),
+    engine: checkPluginEngine(m.engine ?? '>=2'),
+    main: pluginFile(files, m.main, '.js', 'main'),
+    icon: m.icon ?? 'plug',
+    permissions: [...new Set(pluginList(m.permissions, 'permissions', 50))],
     secrets: [...new Set(pluginList(m.secrets, 'secrets', 20))],
-    contributes: {},
+    authors: pluginList(m.authors, 'authors', 20).map(author => {
+      if (!isObject(author)) throw bad('An author is {name,url?}');
+      return {
+        name: pluginText(author.name, 'Author', 100, 1),
+        ...(author.url ? {url: pluginText(author.url, 'Author URL', 500, 1)} : {}),
+      };
+    }),
+    dependencies: {},
   };
-  const engine = checkPluginEngine(m.engine);
-  if (engine) manifest.engine = engine;
+  checkManifest({grants: manifest.permissions});
+  for (const name of manifest.secrets)
+    if (typeof name !== 'string' || !/^[A-Za-z0-9_-]{1,100}$/.test(name)) throw bad('Invalid secret name');
   if (Object.hasOwn(files, manifest.icon)) {
     const asset = files[manifest.icon];
-    if (manifest.icon.endsWith('.svg') && /^\s*(?:<\?xml[^>]*>\s*)?<svg[\s>]/i.test(asset) && asset.length <= 50000)
+    if (manifest.icon.endsWith('.svg') && /^\s*(?:<\?xml[^>]*>\s*)?<svg[\s>]/i.test(asset))
       manifest.icon = 'data:image/svg+xml,' + encodeURIComponent(asset);
     else if (/^data:image\/png;base64,[a-z0-9+/]+=*$/i.test(asset)) manifest.icon = asset;
-    else throw bad('A plugin icon file must be SVG text or a PNG data URL');
+    else throw bad('An icon file must be SVG or a PNG data URL');
   }
   validateIcon(manifest.icon);
   if (m.readme !== undefined) manifest.readme = pluginFile(files, m.readme, '.md', 'readme');
   if (m.homepage !== undefined) {
-    if (typeof m.homepage !== 'string' || !/^https:\/\/[^\s]+$/.test(m.homepage))
-      throw bad('Plugin homepage must be an HTTPS URL');
+    if (typeof m.homepage !== 'string' || !/^https:\/\/[^\s]+$/.test(m.homepage)) throw bad('Homepage must be HTTPS');
     manifest.homepage = m.homepage;
   }
-  checkManifest({capabilities: manifest.capabilities});
-  for (const name of manifest.secrets)
-    if (typeof name !== 'string' || !/^[A-Za-z0-9_-]{1,100}$/.test(name)) throw bad('Invalid secret name');
+  if (m.dependencies !== undefined && !isObject(m.dependencies))
+    throw bad('dependencies is a map of plugin IDs to versions');
+  for (const [id, range] of Object.entries(m.dependencies ?? {})) {
+    if (!PLUGIN_ID.test(id) || typeof range !== 'string' || !/^([~^]|>=)?\d+\.\d+\.\d+$|^\*$/.test(range))
+      throw bad('Invalid plugin dependency');
+    manifest.dependencies[id] = range;
+  }
+  for (const key of ['license', 'repository'])
+    if (m[key] !== undefined) manifest[key] = pluginText(m[key], key, 500, 1);
+  if (m.keywords !== undefined)
+    manifest.keywords = pluginList(m.keywords, 'keywords', 30).map(item => pluginText(item, 'Keyword', 50, 1));
+  return {format: PLUGIN_FORMAT, manifest, files};
+}
+function validatePluginRegistrations(pkg, registry) {
+  const files = pkg.files;
   const known = new Set(['nodes', 'templates', 'pages', 'tiles', 'commands', 'endpoints', 'settings', 'library']);
-  for (const key of Object.keys(contributes))
-    if (!known.has(key)) throw bad(`Unknown contribution: ${key.slice(0, 40)}`);
-  const out = manifest.contributes;
-  out.library = validateCatalogSections(contributes.library);
-  out.nodes = pluginList(contributes.nodes, 'nodes', 50).map(path => pluginFile(files, path, '.json', 'nodes'));
+  for (const key of Object.keys(registry)) if (!known.has(key)) throw bad(`Unknown contribution: ${key.slice(0, 40)}`);
+  const out = {};
+  out.library = validateCatalogSections(registry.library);
+  out.nodes = pluginList(registry.nodes, 'nodes', 50).map(path => pluginFile(files, path, '.json', 'nodes'));
   out.templates = uniquePluginItems(
-    pluginList(contributes.templates, 'templates', 50).map(t => {
+    pluginList(registry.templates, 'templates', 50).map(t => {
       if (!isObject(t) || typeof t.id !== 'string' || !PLUGIN_ITEM.test(t.id)) throw bad('A template needs an id');
       return {
         id: t.id,
@@ -222,7 +248,7 @@ function validatePluginPackage(input, runtime = false) {
     'templates'
   );
   out.pages = uniquePluginItems(
-    pluginList(contributes.pages, 'pages', 50).map(p => {
+    pluginList(registry.pages, 'pages', 50).map(p => {
       if (!isObject(p) || typeof p.id !== 'string' || !PLUGIN_ITEM.test(p.id)) throw bad('A page needs an id');
       if (p.section !== undefined && !['plugins', 'library'].includes(p.section))
         throw bad(`Page ${p.id}: section is "plugins" or "library"`);
@@ -261,7 +287,7 @@ function validatePluginPackage(input, runtime = false) {
       if (!out.pages.some(p => p.id === item.page && p.section === page.section))
         throw bad('Override navigation can only select pages in the same section');
   out.tiles = uniquePluginItems(
-    pluginList(contributes.tiles, 'tiles', 20).map(t => {
+    pluginList(registry.tiles, 'tiles', 20).map(t => {
       if (!isObject(t) || typeof t.id !== 'string' || !PLUGIN_ITEM.test(t.id)) throw bad('A tile needs an id');
       const height = t.height ?? 140;
       if (!Number.isInteger(height) || height < 60 || height > 600) throw bad(`Tile ${t.id}: height is 60 to 600`);
@@ -275,25 +301,15 @@ function validatePluginPackage(input, runtime = false) {
     'tiles'
   );
   out.commands = uniquePluginItems(
-    pluginList(contributes.commands, 'commands', 50).map(cmd => {
-      if (!isObject(cmd) || typeof cmd.id !== 'string' || !PLUGIN_ITEM.test(cmd.id)) throw bad('A command needs an id');
-      if ([cmd.page, cmd.path, ...(runtime ? [cmd.handler] : [])].filter(v => v !== undefined).length !== 1)
-        throw bad(`Command ${cmd.id}: give either "page" (a page of the plugin) or "path" (a page of the app)`);
-      if (cmd.page !== undefined && !out.pages.some(p => p.id === cmd.page))
-        throw bad(`Command ${cmd.id}: there is no page "${String(cmd.page).slice(0, 40)}"`);
-      if (cmd.path !== undefined && (typeof cmd.path !== 'string' || !/^\/[A-Za-z0-9_\-/?=&%.]{0,198}$/.test(cmd.path)))
-        throw bad(`Command ${cmd.id}: path is a page of the app, like /projects`);
-      return {
-        id: cmd.id,
-        title: pluginText(cmd.title ?? cmd.id, 'A command title', 100, 1),
-        ...(cmd.page !== undefined ? {page: cmd.page} : runtime && cmd.handler !== undefined
-          ? {handler: pluginText(cmd.handler, 'Command handler', 100, 1)} : {path: cmd.path}),
-      };
-    }),
+    pluginList(registry.commands, 'commands', 50).map(cmd => ({
+      id: pluginText(cmd.id, 'Command id', 40, 1),
+      title: pluginText(cmd.title ?? cmd.id, 'Command title', 100, 1),
+      handler: pluginText(cmd.handler, 'Command handler', 100, 1),
+    })),
     'commands'
   );
   out.endpoints = uniquePluginItems(
-    pluginList(contributes.endpoints, 'endpoints', 50).map(e => {
+    pluginList(registry.endpoints, 'endpoints', 50).map(e => {
       if (!isObject(e) || typeof e.name !== 'string' || !PLUGIN_ITEM.test(e.name))
         throw bad('An endpoint needs a name');
       const methods = e.methods ?? ['POST'];
@@ -301,22 +317,21 @@ function validatePluginPackage(input, runtime = false) {
         throw bad(`Endpoint ${e.name}: methods is a list of ${PLUGIN_METHODS.join(', ')}`);
       if (e.permissions !== undefined) {
         if (!Array.isArray(e.permissions) || !e.permissions.length) throw bad('Endpoint permissions must be nonempty');
-        checkManifest({grants:e.permissions.filter(p=>p!=='net.fetch:{host}')});
+        checkManifest({grants: e.permissions.filter(p => p !== 'net.fetch:{host}')});
       }
-      if (e.timeout !== undefined && (!Number.isInteger(e.timeout) || e.timeout < 100 || e.timeout > 300000)) throw bad('Endpoint timeout must be 100 to 300000 milliseconds');
+      if (e.timeout !== undefined && (!Number.isInteger(e.timeout) || e.timeout < 100 || e.timeout > 300000))
+        throw bad('Endpoint timeout must be 100 to 300000 milliseconds');
       return {
         name: e.name,
         methods: [...new Set(methods)],
-        ...(e.permissions ? {permissions:[...new Set(e.permissions)]} : {}),
-        ...(e.timeout ? {timeout:e.timeout} : {}),
-        ...(runtime && e.handler !== undefined
-          ? {handler: pluginText(e.handler, 'Endpoint handler', 100, 1)}
-          : {entry: pluginFile(files, e.entry, '.js', `endpoint ${e.name}`)}),
+        ...(e.permissions ? {permissions: [...new Set(e.permissions)]} : {}),
+        ...(e.timeout ? {timeout: e.timeout} : {}),
+        ...{handler: pluginText(e.handler, 'Endpoint handler', 100, 1)},
       };
     }),
     'endpoints'
   );
-  out.settings = validatePluginSettingsSchema(contributes.settings);
+  out.settings = validatePluginSettingsSchema(registry.settings);
   for (const section of out.library)
     for (const field of section.item?.fields ?? [])
       if (field.type === 'list' && !out.endpoints.some(e => e.name === field.endpoint && e.methods.includes('POST')))
@@ -325,7 +340,8 @@ function validatePluginPackage(input, runtime = false) {
     for (const action of [...section.actions, ...section.folderActions, ...(section.item?.actions ?? [])])
       if (!out.endpoints.some(e => e.name === action.endpoint && e.methods.includes('POST')))
         throw bad('Library action endpoint must support POST: ' + action.endpoint);
-  return {format: PLUGIN_FORMAT, manifest, files};
+
+  return out;
 }
 
 // ----- the registry -----
@@ -377,7 +393,7 @@ function pluginCatalog(record, pkg) {
         .split('/')
         .map(p => p.trim())
         .filter(Boolean);
-      const defaults = entry.payload.grants ?? entry.payload.capabilities ?? [];
+      const defaults = entry.payload.grants ?? [];
       checkManifest({grants: defaults});
       const payload = {
         ...clone(entry.payload),
@@ -393,16 +409,8 @@ function pluginCatalog(record, pkg) {
 /** Seed ordinary Library data once, like built-ins. Updates never overwrite edits or restore deleted nodes. */
 async function seedPluginNodes(c, record, pkg) {
   const items = await c.ctx.get('resources', []);
-  // Migrate old ownership metadata without changing definitions, defaults or update stamps.
-  let migrated = false;
-  for (const item of items) {
-    if (!Object.hasOwn(item.payload, 'plugin')) continue;
-    delete item.payload.plugin;
-    migrated = true;
-  }
-  if (migrated) c.ctx.set('resources', items);
   if (!record.enabled || !pkg) return nodeCount(items, record.id);
-  const added = new Set(record.nodes_added ?? items.filter(r => r.id.startsWith(`plugin.${record.id}.`)).map(r => r.id));
+  const added = new Set(record.nodes_added ?? []);
   let created = false;
   for (const node of pluginCatalog(record, pkg)) {
     if (added.has(node.id)) continue;
@@ -417,7 +425,8 @@ async function seedPluginNodes(c, record, pkg) {
     items.sort((a, b) => a.name.localeCompare(b.name, undefined, {sensitivity: 'base'}));
     c.ctx.set('resources', items);
     c.libraryTouched = true;
-    const icons = await c.ctx.get('node_folder_icons', {}), folder = pluginFolderName(pkg.manifest);
+    const icons = await c.ctx.get('node_folder_icons', {}),
+      folder = pluginFolderName(pkg.manifest);
     if (!icons[folder]) c.ctx.set('node_folder_icons', {...icons, [folder]: 'plug'});
   }
   return nodeCount(items, record.id);
@@ -437,16 +446,13 @@ async function pluginDataOperation(c, id, op, key, body = {}) {
       .map(([k, e]) => ({key: k, value: e.value, version: e.version, updated: e.updated}));
   }
   stateKey(key);
-  const current = data.entries[key];
+  const current = Object.hasOwn(data.entries, key) ? data.entries[key] : undefined;
   if (op === 'get') {
     if (!current) throw missing('No such key');
     return {key, value: current.value, version: current.version, updated: current.updated};
   }
   const expected = body.version;
-  if (expected !== undefined && (!Number.isSafeInteger(expected) || expected < 0))
-    throw bad('version is a whole number of 0 or more');
-  if (expected !== undefined && expected !== (current?.version ?? 0))
-    throw new ApiError('conflict', `The version of "${key}" changed. Read it again and retry.`, 409);
+  if (expected !== undefined) requireVersion(expected, current?.version ?? 0);
   if (op === 'delete') {
     if (!current) throw missing('No such key');
     data.bytes -= current.bytes;
@@ -479,7 +485,8 @@ function logPlugin(id, entry) {
 }
 function pluginOwnsCollection(record, path) {
   const ownSection = /^library\/sections\/([^/]+)\/(items(?:\/[^/]+)?|folders)$/.exec(path);
-  return !!(ownSection &&
+  return !!(
+    ownSection &&
     (pluginContributions(record).library ?? []).some(s => record.id + '.' + s.id === decodeURIComponent(ownSection[1]))
   );
 }
@@ -499,7 +506,9 @@ async function assertPluginPermission(record, method, path, body) {
   }
 }
 /** One call of a plugin to the API. Rights are read fresh each time, so a revoked grant or a disabled plugin stops at once. */
-async function pluginBridgeRequest(id, method, path, body, query, {signal} = {}) {
+async function pluginBridgeRequest(id, method, path, body, query, origin = {}) {
+  const {signal} = origin;
+  assertExecutionCurrent(origin);
   const record = ((await DB.get(PLUGIN_INDEX)) ?? []).find(p => p.id === id);
   if (!record?.enabled) throw new ApiError('plugin_disabled', `The plugin “${id}” is not enabled`, 409);
   method = String(method).toUpperCase();
@@ -511,7 +520,8 @@ async function pluginBridgeRequest(id, method, path, body, query, {signal} = {})
   query = {...(query ?? {})};
   await assertPluginPermission(record, method, path, body);
   if (method === 'POST' && path === 'notifications') body.source = 'plugin:' + id; // a plugin cannot sign as someone else
-  const dataRoute = /^plugins\/[^/]+\/data(\/|$)/.test(path);
+  const dataRoute =
+    /^plugins\/[^/]+\/data(\/|$)/.test(path) || /^projects\/[^/]+\/execution\/(scopes|operations)(\/|$)/.test(path);
   // Code a plugin writes into a graph is quarantined like code a Script writes: it holds no grants until a person gives them.
   if (method !== 'GET' && !dataRoute) {
     body = quarantineWrite(body);
@@ -519,144 +529,12 @@ async function pluginBridgeRequest(id, method, path, body, query, {signal} = {})
     if (body.config) body.config = {...body.config, grants: ['graph.read']};
     if (path.startsWith('resources/') && body.payload) body.payload = {...body.payload, grants: ['graph.read']};
   }
-  const result = await Backend.request(method, path, {body, query,scriptContext:signal?{signal}:null});
-  return dataRoute || pluginOwnsCollection(record, path) ? clone(result) : stripSecrets(result);
+  const result = await Backend.request(method, path, {body, query, scriptContext: origin});
+  return dataRoute ||
+    pluginOwnsCollection(record, path) ||
+    /^projects\/[^/]+\/execution\/(scopes|operations)(\/|$)/.test(path)
+    ? clone(result)
+    : stripSecrets(result);
 }
 
-// ----- endpoints: plugin code in an isolated Worker -----
-// The source below is a Worker like the Scripts' (scripts.js): no network, no host APIs, intrinsics frozen. The code of an endpoint is
-// the body of `async (request, agentsys, plugin) => {…}` and returns JSON; `agentsys(method, path, body, query)` is the checked
-// bridge, `plugin.data` the plugin's private store and `plugin.settings` its settings.
-const PLUGIN_WORKER_SOURCE = `
-(() => {
-const send = globalThis.postMessage.bind(globalThis);
-${WORKER_FREEZE}
-const AsyncFunction = Object.getPrototypeOf(async function () {}).constructor;
-const pending = new Map();
-let sequence = 0;
-const ask = (type, args) => new Promise((resolve, reject) => { const id = ++sequence; pending.set(id, {resolve, reject}); send({type, id, args}); });
-self.onerror = () => true;
-const receive = async ({data}) => {
-  if (data.type === 'reply') {
-    const entry = pending.get(data.id); pending.delete(data.id);
-    return data.error ? entry.reject(Object.assign(new Error(data.error), {code: data.code})) : entry.resolve(data.result);
-  }
-  try {
-    const agentsys = (method, path, body, query) => ask('call', [method, path, body, query]);
-    const plugin = {
-      id: data.plugin,
-      settings: data.settings,
-      data: {
-        get: key => ask('data', ['get', key]),
-        set: (key, value, version) => ask('data', ['set', key, value, version]),
-        delete: (key, version) => ask('data', ['delete', key, version]),
-        list: prefix => ask('data', ['list', prefix]),
-      },
-    };
-    const result = await new AsyncFunction('request', 'agentsys', 'plugin', data.code)(data.request, agentsys, plugin);
-    send({type: 'finished', result: JSON.stringify(result === undefined ? null : result)});
-  } catch (error) {
-    send({type: 'crash', error: String(error && error.message || error).slice(0, 2000), code: error && error.code});
-  }
-};
-globalThis.addEventListener?.('message', receive);
-${workerBlock(WORKER_BLOCKED.filter(name => name !== 'Date' && name !== 'Math'))}
-return text => receive({data: JSON.parse(text)});
-})();`;
-
-let pluginCalls = 0;
-function runPluginInWorker(code, input, host) {
-  return new Promise((resolve, reject) => {
-    const worker = startSourceWorker(PLUGIN_WORKER_SOURCE);
-    let over = false;
-    const finish = (action, value) => {
-      if (over) return;
-      over = true;
-      clearTimeout(timer);
-      worker.terminate();
-      action(value);
-    };
-    const timer = setTimeout(
-      () => finish(reject, new ApiError('timeout', `The endpoint took longer than ${PLUGIN.endpointMs / 1000} s`, 504)),
-      PLUGIN.endpointMs
-    );
-    worker.onmessage = async ({data}) => {
-      if (over) return;
-      if (data.type === 'call' || data.type === 'data') {
-        let reply;
-        try {
-          reply = {type: 'reply', id: data.id, result: await host[data.type](data.args)};
-        } catch (error) {
-          reply = {type: 'reply', id: data.id, error: error.message || String(error), code: error.code};
-        }
-        if (!over) worker.postMessage(reply);
-      } else if (data.type === 'finished') finish(resolve, data.result);
-      else finish(reject, Object.assign(new Error(data.error || 'The endpoint failed'), {code: data.code}));
-    };
-    worker.onerror = event => finish(reject, new Error(event.message || 'The endpoint stopped without an answer'));
-    worker.postMessage({type: 'run', code, ...input});
-  });
-}
-/** Without Workers (the tests' inline mode) the endpoint runs in this realm, with the same bridge and no isolation. */
-async function runPluginInline(code, input, host) {
-  const AsyncFunction = Object.getPrototypeOf(async function () {}).constructor;
-  const plugin = {
-    id: input.plugin,
-    settings: input.settings,
-    data: {
-      get: key => host.data(['get', key]),
-      set: (key, value, version) => host.data(['set', key, value, version]),
-      delete: (key, version) => host.data(['delete', key, version]),
-      list: prefix => host.data(['list', prefix]),
-    },
-  };
-  let timer;
-  const timeout = new Promise((_, reject) => {
-    timer = setTimeout(() => reject(new ApiError('timeout', 'The endpoint took too long', 504)), PLUGIN.endpointMs);
-  });
-  try {
-    const result = await Promise.race([
-      new AsyncFunction('request', 'agentsys', 'plugin', code)(input.request, (...args) => host.call(args), plugin),
-      timeout,
-    ]);
-    return JSON.stringify(result === undefined ? null : result);
-  } finally {
-    clearTimeout(timer);
-  }
-}
 const canStartWorkers = () => typeof AGENTSYS_SPAWN_WORKER === 'function' || typeof Worker === 'function';
-
-/** Calls an endpoint of an enabled plugin. Returns its JSON answer. */
-async function callPluginEndpoint(record, endpoint, code, request) {
-  if (pluginCalls >= PLUGIN.endpointsAtOnce)
-    throw new ApiError('too_many_calls', 'Too many plugin endpoints are running; try again in a moment', 429);
-  pluginCalls++;
-  const started = Date.now();
-  const entry = {kind: 'endpoint', endpoint: endpoint.name, method: request.method};
-  try {
-    const schema = pluginContributions(record).settings,
-      saved = (await DB.get(pluginKey(record.id, 'settings'))) ?? {};
-    const host = {
-      call: ([method, path, body, query]) => pluginBridgeRequest(record.id, method, path, body, query),
-      data: async ([op, key, value, version]) => {
-        const method = {get: 'GET', list: 'GET', set: 'PUT', delete: 'DELETE'}[op];
-        if (!method) throw bad('Unknown data operation');
-        if (op === 'list') return Backend.request('GET', `plugins/${record.id}/data`, {query: {prefix: key ?? ''}});
-        return Backend.request(method, `plugins/${record.id}/data/${encodeURIComponent(key)}`, {
-          body: {...(op === 'set' ? {value} : {}), ...(version == null ? {} : {version})}, // a Worker sends undefined as null
-        });
-      },
-    };
-    const input = {plugin: record.id, settings: pluginSettingValues(schema, saved), request};
-    const text = await (canStartWorkers() ? runPluginInWorker : runPluginInline)(code, input, host);
-    if (text.length > PLUGIN.resultBytes)
-      throw bad(`An endpoint answers with at most ${PLUGIN.resultBytes} characters`);
-    logPlugin(record.id, {...entry, ms: Date.now() - started});
-    return JSON.parse(text);
-  } catch (error) {
-    logPlugin(record.id, {...entry, ms: Date.now() - started, error: String(error.message || error).slice(0, 500)});
-    throw error;
-  } finally {
-    pluginCalls--;
-  }
-}

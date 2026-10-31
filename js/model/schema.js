@@ -7,9 +7,9 @@
  * values typed into its outputs. `script` runs JavaScript when a signal reaches it; the `on_*` nodes are the sources of signals
  * (see docs/engine.md). Nothing else is built into the engine.
  */
-const OPS = new Set(['script', 'on_run', 'on_read', 'on_placed', 'on_deleted', 'on_wired', 'on_widget']);
+const OPS = new Set(['script', 'on_run', 'on_read', 'on_placed', 'on_deleted', 'on_input_connected', 'on_widget']);
 /** The operations that fire a signal by themselves: the event nodes. */
-const EVENT_OPS = new Set(['on_run', 'on_read', 'on_placed', 'on_deleted', 'on_wired', 'on_widget']);
+const EVENT_OPS = new Set(['on_run', 'on_read', 'on_placed', 'on_deleted', 'on_input_connected', 'on_widget']);
 /** The types of a Script's code (text typed in as code): the same IDs in every workflow and Library node, so they are one type everywhere. */
 const SCRIPT_TEXT_TYPE = '64428b9c654c2c2cfcb55742ea899ed8',
   SCRIPT_CODE_TYPE = 'a42dbde0c1e1090d6adf1640c2dda533';
@@ -190,7 +190,6 @@ function ensureAcyclic(adjacency) {
 
 /** The configuration of a Custom node: only the known fields, an operation the engine knows (or none), valid ports. */
 function validateCustomConfig(config, types = NO_TYPES) {
-  delete config.capabilities; // Read older documents without retaining a declaration layer.
   if (typeof checkManifest === 'function') checkManifest(config);
   const unknown = Object.keys(config).find(k => !CUSTOM_KEYS.has(k));
   if (unknown) throw bad(`Unknown Custom node field “${unknown}”`);
@@ -208,11 +207,12 @@ function validateCustomConfig(config, types = NO_TYPES) {
       start.type !== 'signal' ||
       code.id !== 'script' ||
       code.type === 'signal' ||
-      config.outputs.length
+      config.outputs.length !== 1 ||
+      config.outputs[0].id !== 'out' ||
+      config.outputs[0].name !== 'out' ||
+      config.outputs[0].type !== 'signal'
     )
-      throw bad(
-        'A Script has only the signal input In and its code (script), and no outputs: it reads and writes the inputs and outputs of the Library node it is in'
-      );
+      throw bad('A Script has signal input in, code input script and signal output out');
   }
   if (config.widgets !== undefined) checkWidgets(config.widgets);
   if (JSON.stringify(config).length > CUSTOM_CONFIG_LIMIT) throw bad('Node configuration is too large');

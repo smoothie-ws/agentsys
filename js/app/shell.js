@@ -240,7 +240,9 @@ function openSearch() {
     const found = q ? await api('search/nodes', {query: {q: text, limit: 50}}) : {nodes: []};
     if (mine !== sequence || !input.isConnected) return;
     results.innerHTML =
-      (go_.length ? `<h3>Go to</h3>${go_.map((d, i) => d.command ? `<a href="#" data-command="${i}"><strong>${esc(d.label)}</strong><span class="muted small">${esc(d.hint)}</span></a>` : link(d.href, d.label, d.hint)).join('')}` : '') +
+      (go_.length
+        ? `<h3>Go to</h3>${go_.map((d, i) => (d.command ? `<a href="#" data-command="${i}"><strong>${esc(d.label)}</strong><span class="muted small">${esc(d.hint)}</span></a>` : link(d.href, d.label, d.hint))).join('')}`
+        : '') +
         (found.nodes.some(n => developerMode() || !n.project_id.startsWith('lib-'))
           ? `<h3>Nodes</h3>${found.nodes
               .filter(n => developerMode() || !n.project_id.startsWith('lib-'))
@@ -253,11 +255,12 @@ function openSearch() {
               )
               .join('')}`
           : '') || '<p class="muted">Nothing matches.</p>';
-    for (const element of $$('[data-command]', results)) element.onclick = event => {
-      event.preventDefault();
-      const command = go_[Number(element.dataset.command)].command;
-      executePluginCommand(command.plugin, command.id).catch(fail);
-    };
+    for (const element of $$('[data-command]', results))
+      element.onclick = event => {
+        event.preventDefault();
+        const command = go_[Number(element.dataset.command)].command;
+        executePluginCommand(command.plugin, command.id).catch(fail);
+      };
   };
   input.oninput = () => {
     sequence++; // invalidate the previous request immediately, including during the debounce
@@ -310,19 +313,12 @@ Backend.subscribe(keys => {
     Promise.all([loadPlugins(), loadLibrary()])
       .then(renderSidebar)
       .catch(() => {});
-  if (
-    keys.some(
-      k =>
-        k === 'resources' ||
-        k.startsWith('node_folder') ||
-        k.startsWith('library/sections/')
-    )
-  )
+  if (keys.some(k => k === 'resources' || k.startsWith('node_folder') || k.startsWith('library/sections/')))
     loadLibrary()
       .then(renderSidebar)
       .catch(() => {});
 });
-// on_placed, on_deleted, on_wired and on_widget run by themselves after a change, so a failure has to be told to the person.
+// on_placed, on_deleted, on_input_connected and on_widget run by themselves after a change, so a failure has to be told to the person.
 Backend.subscribeHooks(entry =>
   toast(
     `${entry.hook} of ${entry.hook === 'on_deleted' ? 'a Library node' : `[a Library node](node:${entry.node_id})`} failed: ${entry.error}`,

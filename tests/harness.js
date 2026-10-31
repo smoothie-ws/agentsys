@@ -35,7 +35,9 @@ const TEST_PERMISSIONS = [
 /** A fresh, empty application (new in-memory database) with a Backend and a way to run the code of Scripts in Node. */
 function createApp({scripts = 'inline', developer = true, store = null} = {}) {
   const {Backend, context, eval: evaluate, workerStats} = loadBackend({root, scripts, store});
-  evaluate(`const TEST_OBSERVATIONS = new Map();route('GET PUT','test-observations/{key}','Test-only side effect probe',async(c,{key})=>{if(c.method==='PUT')TEST_OBSERVATIONS.set(key,c.body.value);return {value:TEST_OBSERVATIONS.get(key)};},{needs:{GET:['graph.read'],PUT:['graph.write']}});`);
+  evaluate(
+    `const TEST_OBSERVATIONS = new Map();route('GET PUT','test-observations/{key}','Test-only side effect probe',async(c,{key})=>{if(c.method==='PUT')TEST_OBSERVATIONS.set(key,c.body.value);return {value:TEST_OBSERVATIONS.get(key)};},{needs:{GET:['graph.read'],PUT:['graph.write']}});`
+  );
   // Results are copied out of the vm context so assert.deepEqual compares plain objects of this realm.
   // Developer mode is on unless a test asks otherwise: most tests build Custom nodes.
   const ready = developer ? Backend.request('PUT', 'settings', {body: {developer_mode: true}, query: {}}) : null;
@@ -80,12 +82,11 @@ const nodes = {
   },
   // A Script: the signal input In and its code (the default of an untyped `script` input, so it does not bring a type that clashes with the built-in ones). Nothing else.
   script: code => ({
-    capabilities: TEST_PERMISSIONS,
     grants: TEST_PERMISSIONS,
     title: 'Script',
     op: 'script',
     inputs: [signal('in', 'in'), {id: 'script', name: 'script', type: ref('code'), default: code}],
-    outputs: [],
+    outputs: [signal('out', 'out')],
   }),
   /** An event node: `nodes.event('on_run')`, with the data outputs it carries. */
   event: (op, data = []) => ({
@@ -198,15 +199,10 @@ function bundleOf(
   return {name, bundle, icon, folder};
 }
 /** Saves a bundle (see bundleOf) in the Library and places it on a workflow; answers {resource, group, node(key or title): the placed node}. */
-async function place(
-  app,
-  project,
-  workflow,
-  {name, bundle, capabilities = TEST_PERMISSIONS, grants = capabilities}
-) {
+async function place(app, project, workflow, {name, bundle, grants = TEST_PERMISSIONS}) {
   const item = await app.api('POST', 'resources', {
     name,
-    payload: {bundle, capabilities, grants, description: '', frame: {dx: 0, dy: 0, width: 300, height: 200}},
+    payload: {bundle, grants, description: '', frame: {dx: 0, dy: 0, width: 300, height: 200}},
   });
   const placed = await app.api('POST', `projects/${project}/custom-nodes/${item.id}`, {
     ...workflow,
@@ -250,8 +246,7 @@ async function fn(
     signals = [],
     members = {},
     widgets = {},
-    capabilities = TEST_PERMISSIONS,
-    grants = capabilities,
+    grants = TEST_PERMISSIONS,
     name = 'Fn' + ++counter + Math.random().toString(36).slice(2, 6),
   } = {}
 ) {
@@ -261,10 +256,18 @@ async function fn(
     {
       widgets,
       inputs: [{id: 'in', name: 'in', type: 'signal', node: 'Script', port: 'in'}, ...inputs.map(slot)],
-      outputs: [...outputs.map(slot), ...signals.map(n => ({id: n, name: n, type: 'signal', node: false}))],
+      outputs: [
+        ...outputs.map(slot),
+        ...signals.map(n => ({
+          id: n,
+          name: n,
+          type: 'signal',
+          ...(n === 'out' ? {node: 'Script', port: 'out'} : {node: false}),
+        })),
+      ],
     }
   );
-  const placed = await place(app, project, workflow, {...def, capabilities, grants});
+  const placed = await place(app, project, workflow, {...def, grants});
   const snapshot = await app.api('GET', `projects/${project}/workflow`, {}, workflow),
     inside = snapshot.complex.find(c => c.id === placed.group).members;
   const script = snapshot.nodes.find(n => inside.includes(n.id) && n.config?.title === 'Script');

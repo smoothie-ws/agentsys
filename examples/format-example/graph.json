@@ -88,7 +88,6 @@
         },
         {
           "config": {
-            "capabilities": [],
             "grants": [],
             "inputs": [
               {
@@ -106,7 +105,13 @@
               }
             ],
             "op": "script",
-            "outputs": [],
+            "outputs": [
+              {
+                "id": "out",
+                "name": "out",
+                "type": "signal"
+              }
+            ],
             "title": "Script"
           },
           "id": "record:ba0a2a3c2637bd24e51cc6c20618d5db",

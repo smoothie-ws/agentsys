@@ -32,7 +32,7 @@ const stateOf = doc => ({
 });
 
 /** Copies a workflow document with fresh IDs (used for duplicated workflows and projects). */
-function duplicateDocument(doc) {
+function duplicateDocument(doc, mapped = () => {}) {
   const map = new Map();
   const fresh = () => 'record:' + uid();
   for (const n of doc.nodes) map.set(n.id, fresh());
@@ -66,12 +66,14 @@ function duplicateDocument(doc) {
     .filter(c => groupMap.has(c.id))
     .map(c => {
       const iface = clone(c.interface || {inputs: [], outputs: []});
-      for (const p of [...(iface.inputs || []), ...(iface.outputs || [])]) if (p.bound) p.bound = p.bound.map(b => ({...b, node_id: m(b.node_id)}));
+      for (const p of [...(iface.inputs || []), ...(iface.outputs || [])])
+        if (p.bound) p.bound = p.bound.map(b => ({...b, node_id: m(b.node_id)}));
       return {...clone(c), id: groupMap.get(c.id), interface: iface};
     });
   copy.port_edges = doc.port_edges
     .filter(e => map.has(e.source) && map.has(e.target))
     .map(e => ({...e, id: uid(), source: m(e.source), target: m(e.target)}));
   for (const [nid, list] of Object.entries(doc.widgets)) if (map.has(nid)) copy.widgets[m(nid)] = clone(list);
+  mapped(map);
   return copy;
 }

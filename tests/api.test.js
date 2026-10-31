@@ -44,7 +44,7 @@ test('Custom nodes evaluate through wires: a value, some code, and a node that d
   const app = createApp(),
     p = await newProject(app);
   const text = await p.node('custom', nodes.value('text', 'hi'));
-  const code = await p.fn({code: 'node.output.result = v + "!"; await node.emit("out")', inputs: ['v'], outputs: ['result'], signals: ['out']});
+  const code = await p.fn({code: 'node.output.result = v + "!"', inputs: ['v'], outputs: ['result'], signals: ['out']});
   const preview = await p.show();
   await p.connect(text.id, 'value', code.wrapper, 'v');
   await p.connect(code.wrapper, 'result', preview.wrapper, 'input');
@@ -68,7 +68,10 @@ test('Complex Nodes are built in the Library editor and behave as plain nodes in
   const lib = {id: opened.project_id, workflow: {workflow_id: opened.workflow_id}};
   const add = (node_type, config) =>
     app.api('POST', `projects/${lib.id}/typed-nodes`, {...lib.workflow, node_type, config, position: {x: 40, y: 80}});
-  const inner = await add('custom', script('node.output.out = "A:" + node.input.text; await node.emit("done")'));
+  const inner = await add(
+    'custom',
+    script('node.output.result = "A:" + node.input.text; await node.output.done.emit()')
+  );
   let snap = await app.api('GET', `projects/${lib.id}/workflow`, {}, lib.workflow);
   const root = snap.groups.find(g => g.id === snap.root);
   assert.ok(root.members.includes(inner.id), 'new nodes are adopted into the main group');
@@ -85,7 +88,7 @@ test('Complex Nodes are built in the Library editor and behave as plain nodes in
         {id: 'go', name: 'in', type: 'signal', bound: [{node_id: inner.id, port_id: 'in'}]},
       ],
       outputs: [
-        {id: 'out', name: 'out'},
+        {id: 'out', name: 'result'},
         {id: 'done', name: 'done', type: 'signal'},
       ],
     },
@@ -96,10 +99,7 @@ test('Complex Nodes are built in the Library editor and behave as plain nodes in
   });
   const saved = (await app.api('GET', 'resources', {})).find(r => r.id === opened.resource_id);
   assert.equal(saved?.name, 'Wrap', 'renaming the main group renames the node');
-  assert.ok(
-    saved && !('kind' in saved) && !('version' in saved),
-    'the node is saved automatically, without versions'
-  );
+  assert.ok(saved && !('kind' in saved) && !('version' in saved), 'the node is saved automatically, without versions');
   assert.equal(saved.payload.bundle.complex[0].interface.inputs.length, 2);
   // 4. Place it in a project: one collapsed, locked node.
   const p = await newProject(app);
@@ -128,7 +128,14 @@ test('Complex Nodes are built in the Library editor and behave as plain nodes in
   await app.api('PUT', `projects/${again.project_id}/typed-nodes/${encodeURIComponent(script2.id)}`, {
     ...lib2,
     node_type: 'custom',
-    config: {...script2.config, inputs: script2.config.inputs.map(i => (i.name === 'script' ? {...i, default: 'node.output.out = "B:" + node.input.text; await node.emit("done")'} : i))},
+    config: {
+      ...script2.config,
+      inputs: script2.config.inputs.map(i =>
+        i.name === 'script'
+          ? {...i, default: 'node.output.result = "B:" + node.input.text; await node.output.done.emit()'}
+          : i
+      ),
+    },
   });
   psnap = await p.snapshot();
   assert.equal(psnap.edges.length, 4, 'wires survive the refresh');
@@ -220,7 +227,12 @@ test('the code of a Custom node can be a bare expression, and it can run code th
   const app = createApp(),
     p = await newProject(app);
   const flag = await p.node('custom', nodes.value('boolean', false));
-  const expr = await p.fn({code: 'node.output.result = condition ? "yes" : "no"; await node.emit("out")', inputs: ['condition'], outputs: ['result'], signals: ['out']});
+  const expr = await p.fn({
+    code: 'node.output.result = condition ? "yes" : "no"',
+    inputs: ['condition'],
+    outputs: ['result'],
+    signals: ['out'],
+  });
   const preview = await p.show();
   await p.connect(flag.id, 'value', expr.wrapper, 'condition');
   await p.connect(expr.wrapper, 'result', preview.wrapper, 'input');
@@ -229,7 +241,7 @@ test('the code of a Custom node can be a bare expression, and it can run code th
   // Code arriving as text is just a text input and `new AsyncFunction`: nothing special is needed for it.
   const source = await p.node('custom', nodes.value('text', '40 + 2'));
   const dynamic = await p.fn({
-    code: 'node.output.result = await new (Object.getPrototypeOf(async function () {}).constructor)("return (" + code + ")")(); await node.emit("out")',
+    code: 'node.output.result = await new (Object.getPrototypeOf(async function () {}).constructor)("return (" + code + ")")()',
     inputs: ['code'],
     outputs: ['result'],
     signals: ['out'],
@@ -251,13 +263,14 @@ test('a new connection replaces the one on an occupied input', async () => {
   const snap = await p.snapshot();
   assert.equal(snap.edges.length, 1);
   assert.equal(snap.edges[0].source, b.id);
-
 });
 
 test('a Custom node knows its own node, workflow and project through context', async () => {
   const app = createApp(),
     p = await newProject(app);
-  const s = await p.fn({code: 'node.display(JSON.stringify([context.node_id, context.workflow_id, context.project_id]))'});
+  const s = await p.fn({
+    code: 'node.display(JSON.stringify([context.node_id, context.workflow_id, context.project_id]))',
+  });
   const out = await p.run(s.step);
   assert.deepEqual(JSON.parse(shown(out, s.id)), [s.id, p.id, p.id]);
 });
@@ -296,7 +309,10 @@ test('a Reroute joins any ports: nothing says what flows through a wire', async 
     splits: [{edge_id: edge.id, position: {x: 5, y: 5}}],
   });
   const point = (await p.snapshot()).nodes.find(n => n.id === ids[0]);
-  assert.deepEqual(point.inputs.map(i => i.id), ['in']);
+  assert.deepEqual(
+    point.inputs.map(i => i.id),
+    ['in']
+  );
   assert.equal(shown(await p.evaluate([anything.id]), anything.id), 'hi');
 });
 
@@ -358,7 +374,14 @@ test('changing the ports of a Custom node drops the wires of the slots that are 
       config,
     });
   const source = await p.node('custom', {title: 'Source', inputs: [], outputs: [{id: 'result', name: 'result'}]}),
-    target = await p.node('custom', {title: 'Target', inputs: [{id: 't', name: 't'}, {id: 'u', name: 'u'}], outputs: []});
+    target = await p.node('custom', {
+      title: 'Target',
+      inputs: [
+        {id: 't', name: 't'},
+        {id: 'u', name: 'u'},
+      ],
+      outputs: [],
+    });
   await p.connect(source.id, 'result', target.id, 't');
   // The input keeps its wire while the slot is there.
   await update(target.id, {title: 'Target', inputs: [{id: 't', name: 't'}], outputs: []});
@@ -412,15 +435,25 @@ test('a Custom Node being edited can be read like a project, but not renamed, de
 test('uploaded icons persist with Library nodes and folders', async () => {
   const app = createApp();
   const opened = await app.api('POST', 'library/node-editor', {});
-  const image = 'data:image/png;base64,iVBORw0KGgoAAAANSUhEUgAAAAEAAAABCAQAAAC1HAwCAAAAC0lEQVR42mP8/x8AAwMCAO+jCTYAAAAASUVORK5CYII=';
+  const image =
+    'data:image/png;base64,iVBORw0KGgoAAAANSUhEUgAAAAEAAAABCAQAAAC1HAwCAAAAC0lEQVR42mP8/x8AAwMCAO+jCTYAAAAASUVORK5CYII=';
   const item = await app.api('GET', `resources/${opened.resource_id}`);
   await app.api('PUT', `resources/${item.id}`, {name: item.name, payload: {...item.payload, icon: image}});
   assert.equal((await app.api('GET', `resources/${item.id}`)).payload.icon, image);
   await app.api('POST', 'library/node-folders', {action: 'create', path: '', name: 'Images'});
   await app.api('POST', 'library/node-folders', {action: 'icon', path: 'Images', icon: image});
   assert.equal((await app.api('GET', 'settings')).node_folder_icons.Images, image);
-  await rejects(app.api('POST', 'library/node-folders', {action: 'icon', path: 'Images', icon: 'data:text/html;base64,eA=='}), /icon/);
-  await rejects(app.api('PUT', `resources/${item.id}`, {name: item.name, payload: {...item.payload, icon: 'data:image/png;base64,' + 'a'.repeat(100000)}}), /icon/);
+  await rejects(
+    app.api('POST', 'library/node-folders', {action: 'icon', path: 'Images', icon: 'data:text/html;base64,eA=='}),
+    /icon/
+  );
+  await rejects(
+    app.api('PUT', `resources/${item.id}`, {
+      name: item.name,
+      payload: {...item.payload, icon: 'data:image/png;base64,' + 'a'.repeat(100000)},
+    }),
+    /icon/
+  );
 });
 
 test('turning Developer mode off also protects a previously opened Library graph', async () => {

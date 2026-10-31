@@ -135,10 +135,12 @@ function diagnostics(snapshot) {
       }
   }
   /** The ports a wire end lands on once Complex Nodes are looked through (an input bound to several ports lands on all of them). */
-  const endpoints = (nid, pid, direction, depth = 0) => {
+  const endpoints = (nid, pid, direction, seen = new Set()) => {
+    const address = nid + '|' + pid;
+    if (seen.has(address)) throw bad('Cyclic interface binding');
     const list = (nodes.get(nid)?.interface?.[direction] || []).find(p => p.id === pid)?.bound ?? [];
-    return list.length && depth < 32
-      ? list.flatMap(b => endpoints(b.node_id, b.port_id, direction, depth + 1))
+    return list.length
+      ? list.flatMap(b => endpoints(b.node_id, b.port_id, direction, new Set(seen).add(address)))
       : [[nid, pid]];
   };
   const adjacency = new Map(),
@@ -263,8 +265,12 @@ function buildSnapshot(project, workflow, doc, structure = false) {
   const groupById = new Map(groups.map(g => [g.id, g]));
   for (const group of groups) {
     group.muted = false;
-    for (let up = groupById.get(group.parent), n = 0; up && n < 64; up = groupById.get(up.parent), n++)
+    const ancestors = new Set();
+    for (let up = groupById.get(group.parent); up; up = groupById.get(up.parent)) {
+      if (ancestors.has(up.id)) throw bad('Groups cannot contain cycles');
+      ancestors.add(up.id);
       if (up.disabled) group.muted = true;
+    }
   }
   const byId = new Map(groups.map(g => [g.id, g]));
   const wrapped = new Set(doc.complex.map(c => c.id).filter(id => byId.has(id)));
@@ -322,7 +328,11 @@ function buildSnapshot(project, workflow, doc, structure = false) {
 }
 /** True when `group` sits somewhere below the group `ancestor`. */
 function isInside(byId, group, ancestor) {
-  for (let g = byId.get(group.parent), steps = 0; g && steps < 64; g = byId.get(g.parent), steps++)
+  const seen = new Set();
+  for (let g = byId.get(group.parent); g; g = byId.get(g.parent)) {
+    if (seen.has(g.id)) throw bad('Groups cannot contain cycles');
+    seen.add(g.id);
     if (g.id === ancestor) return true;
+  }
   return false;
 }

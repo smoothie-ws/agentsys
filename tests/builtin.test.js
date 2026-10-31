@@ -5,26 +5,38 @@ const {createApp} = require('./harness');
 
 const names = async app => (await app.api('GET', 'resources')).map(r => r.name);
 
-test('Execute passes the checked API, context and intrinsics into its nested Script',async t=>{
-  const app=createApp({scripts:'worker'});t.after(()=>app.Backend.shutdownPlugins());
-  await app.api('POST','library/builtin',{});
-  await app.api('POST','plugins/builtin',{});
-  const project=await app.api('POST','projects',{name:'Execute bridge'});
-  const item=(await app.api('GET','resources')).find(r=>r.name==='Execute');
-  await app.api('PUT','resources/'+item.id,{name:item.name,payload:{...item.payload,capabilities:['library.read'],grants:['library.read']}});
-  const copy=await app.api('POST',`projects/${project.id}/custom-nodes/${item.id}`,{point:{x:0,y:0}});
-  const wrapper='complex:'+copy.roots[0];
-  const code=`const nodes=await agentsys('GET','resources');
+test('Execute passes the checked API, context and intrinsics into its nested Script', async t => {
+  const app = createApp({scripts: 'worker'});
+  t.after(() => app.Backend.shutdownPlugins());
+  await app.api('POST', 'library/builtin', {});
+  await app.api('POST', 'plugins/builtin', {});
+  const project = await app.api('POST', 'projects', {name: 'Execute bridge'});
+  const item = (await app.api('GET', 'resources')).find(r => r.name === 'Execute');
+  await app.api('PUT', 'resources/' + item.id, {
+    name: item.name,
+    payload: {...item.payload, grants: ['library.read']},
+  });
+  const copy = await app.api('POST', `projects/${project.id}/custom-nodes/${item.id}`, {point: {x: 0, y: 0}});
+  const wrapper = 'complex:' + copy.roots[0];
+  const code = `const nodes=await agentsys('GET','resources');
     const {items}=await agentsys('GET','library/sections/ai.providers/items');
     node.display('Execute API works');
     return {nodes:nodes.length,providers:items.length,project:context.project_id,year:new Date(0).getUTCFullYear(),rounded:Math.round(1.7)};`;
-  await app.api('PUT',`projects/${project.id}/input-values`,{node_id:wrapper,values:{pr97li:code}});
-  const snapshot=await app.api('GET',`projects/${project.id}/workflow`);
-  const script=snapshot.nodes.find(n=>snapshot.complex.find(c=>c.id===copy.roots[0]).members.includes(n.id)&&n.config?.op==='script');
-  const result=await app.api('POST',`projects/${project.id}/execution`,{node_ids:[script.id],wait:true});
-  assert.equal(result.status,'completed',JSON.stringify(result.errors));
-  assert.deepEqual(result.outputs[script.id].pxltyf,{nodes:(await names(app)).length,providers:0,project:project.id,year:1970,rounded:2});
-  assert.equal(result.displays[script.id],'Execute API works');
+  await app.api('PUT', `projects/${project.id}/input-values`, {node_id: wrapper, values: {pr97li: code}});
+  const snapshot = await app.api('GET', `projects/${project.id}/workflow`);
+  const script = snapshot.nodes.find(
+    n => snapshot.complex.find(c => c.id === copy.roots[0]).members.includes(n.id) && n.config?.op === 'script'
+  );
+  const result = await app.api('POST', `projects/${project.id}/execution`, {node_ids: [script.id], wait: true});
+  assert.equal(result.status, 'idle', JSON.stringify(result.errors));
+  assert.deepEqual(result.outputs[script.id].pxltyf, {
+    nodes: (await names(app)).length,
+    providers: 0,
+    project: project.id,
+    year: 1970,
+    rounded: 2,
+  });
+  assert.equal(result.displays[script.id], 'Execute API works');
 });
 
 test('built-in nodes: added to an empty Library, once, with stable ids and their groups', async () => {
@@ -41,7 +53,10 @@ test('built-in nodes: added to an empty Library, once, with stable ids and their
   assert.ok(items.every(r => r.id.startsWith('builtin.')));
   assert.ok(items.some(r => r.payload.folder === 'Flow'));
   assert.deepEqual((await app.api('POST', 'library/builtin', {})).added, []);
-  assert.equal((await app.api('GET', 'library/builtin')).every(n => n.installed), true);
+  assert.equal(
+    (await app.api('GET', 'library/builtin')).every(n => n.installed),
+    true
+  );
 });
 
 test('built-in nodes: a node the person has is kept, one they deleted stays deleted until restored', async () => {

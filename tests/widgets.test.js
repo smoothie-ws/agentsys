@@ -28,15 +28,18 @@ async function project(app) {
 /** The titles of the Scripts that a bundle gets: `scripts` is {title: code}. Each is in the scope of the copy. */
 const titled = (title, code) => ({...nodes.script(code), title});
 
-test('empty widget updates perform no work and add no undo entry',async()=>{
-  const app=createApp(), p=await project(app), node=await p.node(nodes.script(''));
-  const before=await p.snapshot(), history=await p.call('GET','edit-history');
-  await p.values(node.id,{});
-  await p.use(node.id,{});
+test('empty widget updates perform no work and add no undo entry', async () => {
+  const app = createApp(),
+    p = await project(app),
+    node = await p.node(nodes.script(''));
+  const before = await p.snapshot(),
+    history = await p.call('GET', 'edit-history');
+  await p.values(node.id, {});
+  await p.use(node.id, {});
   await p.idle();
-  assert.deepEqual(await p.snapshot(),before);
-  assert.deepEqual(await p.call('GET','edit-history'),history);
-  assert.deepEqual(await app.api('GET','node-hooks'),[]);
+  assert.deepEqual(await p.snapshot(), before);
+  assert.deepEqual(await p.call('GET', 'edit-history'), history);
+  assert.deepEqual(await app.api('GET', 'node-hooks'), []);
 });
 
 test('code makes widgets on the copy it is part of when the copy is placed, and reads their values when it runs', async () => {
@@ -266,7 +269,7 @@ test('nothing in the engine insists on a behaviour: no code, no outputs, odd res
     func = await fn(app, p.id, q, {code: 'node.output.o = () => 1;', outputs: ['o']});
   const bad = await p.evaluate([stray.id, signalled.id, func.id]);
   assert.match(bad.errors[stray.id], /no free output “zzz”/);
-  assert.match(bad.errors[signalled.id], /signal output.*emit\("out"\)/);
+  assert.match(bad.errors[signalled.id], /node.output.out.emit/);
   assert.match(bad.errors[func.id], /output\.o cannot be sent/);
   assert.deepEqual(r.outputs[quiet.id], {});
   assert.deepEqual(r.outputs[weird.id], {});
@@ -281,13 +284,16 @@ test('a Custom node placed in a library node shows its widgets through the Compl
       'Widgeted',
       {
         Body: {inputs: [], outputs: []},
-        S: titled('S', `node.output.out = context.widgets.w + ${JSON.stringify(suffix)}; await node.emit("done")`),
+        S: titled(
+          'S',
+          `node.output.result = context.widgets.w + ${JSON.stringify(suffix)}; await node.output.done.emit()`
+        ),
       },
       {
         widgets: {Body: [{id: 'w', kind: 'text', value}]},
         inputs: [{id: 'go', name: 'in', type: 'signal', node: 'S', port: 'in'}],
         outputs: [
-          {id: 'out', name: 'out', node: false},
+          {id: 'out', name: 'result', node: false},
           {id: 'done', name: 'done', type: 'signal', node: false},
         ],
       }

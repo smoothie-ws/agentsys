@@ -1,6 +1,6 @@
 'use strict';
-// The HTTP side: the API next to the site (/api), webhooks (/hooks), the browser's storage (/__data) and how the
-// three share one data folder. Starts a real server on a free port with a temporary data folder.
+// The HTTP API, browser storage and site share one data folder.
+// Starts a real server on a free port with a temporary data folder.
 const test = require('node:test');
 const assert = require('node:assert/strict');
 const fs = require('node:fs');
@@ -43,8 +43,8 @@ const call = async (url, method, route, body, headers = {}) => {
 /** Gives a workflow the types that the nodes of the harness use. */
 const typed = async (url, id, headers = {}) => {
   const {body} = await call(url, 'GET', `projects/${id}/types`, undefined, headers);
-  const types=[...body.types,...Object.values(TYPES).filter(t=>!body.types.some(old=>old.id===t.id))];
-  return call(url, 'PUT', `projects/${id}/types`, {workflow_id:id,types}, headers);
+  const types = [...body.types, ...Object.values(TYPES).filter(t => !body.types.some(old => old.id === t.id))];
+  return call(url, 'PUT', `projects/${id}/types`, {workflow_id: id, types}, headers);
 };
 /** An on_run node wired to `ids` (each: [node id, input port, output port] or just the id), one after another; answers its ID. */
 async function startOf(url, id, w, ids, headers = {}) {
@@ -87,7 +87,7 @@ test('the API creates, runs and persists: projects become files in the data fold
     assert.equal(created.status, 200);
     const id = created.body.id,
       w = {workflow_id: id};
-    await call(url, 'PUT', `projects/${id}/policy`, {allow: nodes.script('').capabilities});
+    await call(url, 'PUT', `projects/${id}/policy`, {allow: nodes.script('').grants});
     await typed(url, id);
     const node = (node_type, config) =>
       call(url, 'POST', `projects/${id}/typed-nodes`, {...w, node_type, config, position: {x: 0, y: 0}}).then(
@@ -98,7 +98,7 @@ test('the API creates, runs and persists: projects become files in the data fold
     // Scripts run in worker threads here.
     const run = await call(url, 'POST', `projects/${id}/execution`, {...w, wait: true});
     assert.equal(run.status, 200);
-    assert.equal(run.body.status, 'completed');
+    assert.equal(run.body.status, 'idle');
     assert.equal(run.body.displays[script.id], 'hi?32');
     // The data is plain JSON files, including the run history.
     assert.ok(fs.existsSync(path.join(dataDir, 'projects.json')));
@@ -124,7 +124,10 @@ test('a request writes only what it changed: a default that was only read is not
     walk(dataDir);
     for (const junk of ['other/triggers.json', 'other/node_disabled_folders.json'])
       assert.ok(!files.includes(junk), `${junk} holds only a default and is not written`);
-    assert.ok(JSON.parse(fs.readFileSync(path.join(dataDir,'other/node_folder_icons.json'),'utf8')).AI,'the installed plugin has a real AI group icon');
+    assert.ok(
+      JSON.parse(fs.readFileSync(path.join(dataDir, 'other/node_folder_icons.json'), 'utf8')).AI,
+      'the installed plugin has a real AI group icon'
+    );
     for (const file of files.filter(f => f.endsWith('.json')))
       assert.notEqual(
         fs.readFileSync(path.join(dataDir, file), 'utf8').trim(),
@@ -185,12 +188,24 @@ test('who may use the API: header for changes, Host check, token', async () => {
     for (const prefix of ['', '/editor']) {
       for (const suffix of ['', '/prefs', '/events'])
         assert.equal((await fetch(`${url}${prefix}/__data${suffix}`)).status, 401);
-      assert.equal((await fetch(`${url}${prefix}/__data`, {
-        method: 'POST', headers: {'X-AgentSys': '1'}, body: '{"set":{"prefs":{}}}',
-      })).status, 401);
-      assert.equal((await fetch(`${url}${prefix}/__data/prefs`, {
-        headers: {Authorization: 'Bearer s3cret'},
-      })).status, 200);
+      assert.equal(
+        (
+          await fetch(`${url}${prefix}/__data`, {
+            method: 'POST',
+            headers: {'X-AgentSys': '1'},
+            body: '{"set":{"prefs":{}}}',
+          })
+        ).status,
+        401
+      );
+      assert.equal(
+        (
+          await fetch(`${url}${prefix}/__data/prefs`, {
+            headers: {Authorization: 'Bearer s3cret'},
+          })
+        ).status,
+        200
+      );
     }
     assert.equal((await call(url, 'GET', 'projects')).status, 401);
     assert.equal((await call(url, 'GET', 'projects', undefined, {Authorization: 'Bearer nope'})).status, 401);
@@ -259,7 +274,8 @@ test('API and raw-storage commits fingerprint only their own keys, without scann
       const created = await call(url, 'POST', 'projects', {name: 'Fast commit'});
       assert.equal(created.status, 200);
       const response = await fetch(`${url}/__data`, {
-        method: 'POST', headers: {'X-AgentSys': '1', 'Content-Type': 'application/json'},
+        method: 'POST',
+        headers: {'X-AgentSys': '1', 'Content-Type': 'application/json'},
         body: JSON.stringify({set: {'latency-probe': {value: 1}}}),
       });
       assert.equal(response.status, 200);
@@ -270,13 +286,51 @@ test('API and raw-storage commits fingerprint only their own keys, without scann
   });
 });
 
+test('workflow JSON state and previews survive a real server restart', async () => {
+  const dataDir = fs.mkdtempSync(path.join(os.tmpdir(), 'agentsys-durable-'));
+  let app = createServer({dataDir}),
+    url = await app.listen(0);
+  try {
+    await call(url, 'PUT', 'settings', {developer_mode: true});
+    const {body: project} = await call(url, 'POST', 'projects', {name: 'Durable graph'});
+    await typed(url, project.id);
+    const {body: node} = await call(url, 'POST', `projects/${project.id}/typed-nodes`, {
+      node_type: 'custom',
+      config: nodes.script('context.state.count=(context.state.count??0)+1;node.display(context.state.count);'),
+    });
+    const route = `projects/${project.id}/execution`;
+    assert.equal((await call(url, 'POST', route, {node_ids: [node.id], wait: true})).body.state.count, 1);
+    const stored = JSON.parse(fs.readFileSync(path.join(dataDir, 'workflows', project.id, 'runtime.json'), 'utf8'));
+    assert.equal(stored.state.count, 1);
+    assert.equal(stored.displays[node.id], '1');
+    await app.close();
+    app = createServer({dataDir});
+    url = await app.listen(0);
+    const restored = (await call(url, 'GET', route)).body;
+    assert.equal(restored.state.count, 1);
+    assert.equal(restored.displays[node.id], '1');
+    assert.equal((await call(url, 'POST', route, {node_ids: [node.id], wait: true})).body.state.count, 2);
+  } finally {
+    await app.close();
+    fs.rmSync(dataDir, {recursive: true, force: true});
+  }
+});
+
 test('asynchronous file polling still detects external Script and layout edits', async () => {
   await withServer({}, async ({url, dataDir}) => {
     const {body: project} = await call(url, 'POST', 'projects', {name: 'External files'}),
-      {body: node} = await call(url, 'POST', `projects/${project.id}/primitives`, {primitive: 'script', point: {x: 0, y: 0}});
-    const config = (await call(url, 'GET', `projects/${project.id}/workflow`)).body.nodes.find(n => n.id === node.id).config;
+      {body: node} = await call(url, 'POST', `projects/${project.id}/primitives`, {
+        primitive: 'script',
+        point: {x: 0, y: 0},
+      });
+    const config = (await call(url, 'GET', `projects/${project.id}/workflow`)).body.nodes.find(
+      n => n.id === node.id
+    ).config;
     config.inputs.find(p => p.id === 'script').default = 'node.display("initial");';
     await call(url, 'PUT', `projects/${project.id}/typed-nodes/${node.id}`, {node_type: 'custom', config});
+    await call(url, 'POST', `projects/${project.id}/execution`, {node_ids: [node.id], wait: true});
+    await call(url, 'POST', `projects/${project.id}/execution/pause`, {});
+    await call(url, 'POST', `projects/${project.id}/execution`, {node_ids: [node.id]});
     const controller = new AbortController();
     const stream = await fetch(`${url}/__data/events`, {signal: controller.signal});
     try {
@@ -291,13 +345,26 @@ test('asynchronous file polling still detects external Script and layout edits',
         }
         assert.fail('External file edit was not observed');
       };
-      await until(async () => (await call(url, 'GET', `projects/${project.id}/workflow`)).body.nodes
-        .find(n => n.id === node.id).config.inputs.find(p => p.id === 'script').default === 'node.display("external edit");');
-      const file = path.join(sidecar, 'layout.json'), layout = JSON.parse(fs.readFileSync(file, 'utf8'));
+      await until(
+        async () =>
+          (await call(url, 'GET', `projects/${project.id}/workflow`)).body.nodes
+            .find(n => n.id === node.id)
+            .config.inputs.find(p => p.id === 'script').default === 'node.display("external edit");'
+      );
+      await call(url, 'POST', `projects/${project.id}/execution/resume`, {});
+      await until(
+        async () =>
+          (await call(url, 'GET', `projects/${project.id}/execution`)).body.displays[node.id] === 'external edit'
+      );
+      const file = path.join(sidecar, 'layout.json'),
+        layout = JSON.parse(fs.readFileSync(file, 'utf8'));
       layout['["value","layout"]'][node.id].x = 123;
       fs.writeFileSync(file, JSON.stringify(layout));
-      await until(async () => (await call(url, 'GET', `projects/${project.id}/workflow`)).body.nodes
-        .find(n => n.id === node.id).position.x === 123);
+      await until(
+        async () =>
+          (await call(url, 'GET', `projects/${project.id}/workflow`)).body.nodes.find(n => n.id === node.id).position
+            .x === 123
+      );
     } finally {
       controller.abort();
       await stream.body.cancel().catch(() => {});
@@ -310,7 +377,11 @@ test('the site itself is still served, without the data folder or dotfiles', asy
   const privateFile = path.resolve(__dirname, '../data/__audit-private.json');
   let privateRead = false;
   t.mock.method(fs, 'readFile', (file, ...args) => {
-    if (String(file).replace(/[. ]+(?=[\\/]|$)/g, '').toLowerCase() === privateFile.toLowerCase()) {
+    if (
+      String(file)
+        .replace(/[. ]+(?=[\\/]|$)/g, '')
+        .toLowerCase() === privateFile.toLowerCase()
+    ) {
       privateRead = true;
       return args.at(-1)(null, Buffer.from('{"private":true}'));
     }
@@ -354,7 +425,16 @@ test('the app is at /editor/ (/ goes there) and everything it loads is under /ed
     assert.match(page, /id="brand"/);
     assert.match(page, /src="\/editor\/js\/app\/router\.js"/);
     assert.equal((await fetch(url + '/editor/js/nothing.js')).status, 404);
-    for (const page of ['api', 'api/', 'settings/', 'projects/', 'library', 'library/nodes', 'library/ai.providers/provider.example', 'p/lib-builtin.delay/w/lib-builtin.delay/']) {
+    for (const page of [
+      'api',
+      'api/',
+      'settings/',
+      'projects/',
+      'library',
+      'library/nodes',
+      'library/ai.providers/provider.example',
+      'p/lib-builtin.delay/w/lib-builtin.delay/',
+    ]) {
       const response = await fetch(url + '/editor/' + page);
       assert.equal(response.status, 200, page);
       assert.match(response.headers.get('content-type'), /text\/html/, page);

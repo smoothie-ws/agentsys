@@ -21,7 +21,11 @@ PAGES.workflow = async (view, route) => {
   clearTimeout(W.reloadTimer);
   let project, policy;
   try {
-    [project, , policy] = await Promise.all([api(`projects/${route.project}`), loadLibrary(), api(`projects/${route.project}/policy`)]);
+    [project, , policy] = await Promise.all([
+      api(`projects/${route.project}`),
+      loadLibrary(),
+      api(`projects/${route.project}/policy`),
+    ]);
   } catch (error) {
     if (app.route !== route) return;
     Tabs.drop(route.workflow);
@@ -52,12 +56,13 @@ PAGES.workflow = async (view, route) => {
     policyDirty: false,
     unsubscribe: null,
     camera: null,
-    previewSignature: null,
     running: false,
-    executionEpoch: 0,
-    executionId: null,
-    startRequest: null,
+    runtimeRevision: null,
+    runtimeState: {},
     runPaused: false,
+    executionReady: false,
+    executionCommand: null,
+    executionStatus: 'idle',
     mapDrag: null,
     frameWork: new Map(),
     frameHandle: 0,
@@ -86,7 +91,7 @@ PAGES.workflow = async (view, route) => {
   view.innerHTML = `<div class="editor opening">
     <div class="canvas" id="canvas" tabindex="0" aria-label="Workflow canvas">
       <div class="toolbar" role="toolbar" aria-label="Workflow actions">
-        ${W.library ? '' : `<button class="run" id="start" title="Run the workflow (${esc(shortcutText('run'))})">${icon('play')}<span>Run</span></button><button class="icon" id="pause" title="Pause the run" aria-label="Pause the run" hidden>${icon('pause')}</button>`}
+        ${W.library ? '' : `<button class="run" id="start" title="Run the workflow (${esc(shortcutText('run'))})">${icon('play')}<span>Run</span></button><button class="icon" id="stop" title="Stop current work" aria-label="Stop current work">${icon('stop')}</button><button class="icon" id="pause" title="Pause graph" aria-label="Pause graph">${icon('pause')}</button>`}
         <button class="icon mobile-only" type="button" data-empty-add title="Add node" aria-label="Add node">${icon('plus')}</button>
         <button class="icon" id="undo" title="Undo (${esc(shortcutText('undo'))})" aria-label="Undo">${icon('undo')}</button>
         <button class="icon" id="redo" title="Redo (${esc(shortcutText('redo'))})" aria-label="Redo">${icon('redo')}</button>
@@ -107,15 +112,19 @@ PAGES.workflow = async (view, route) => {
     <aside class="side" id="side" data-collapsed="${collapsed}"></aside>
   </div>`;
   W.canvas = $('#canvas');
+  W.executionSession = {canvas: W.canvas, project: W.project, workflow: W.workflow, revision: 0, starts: new Set()};
   W.world = $('#world');
   wireCanvas();
   Inspector.mount($('#side'));
   // Subscribe before reading the first snapshot: a hook may finish while the page is mounting.
-  W.unsubscribe = Backend.subscribe(keys => {
-    if (app.route !== route) return;
-    if (keys.includes('policy:' + route.project)) W.policyDirty = true;
-    if (keys.includes('wf:' + route.workflow) || keys.includes('policy:' + route.project)) scheduleReload();
-  }, {own:true});
+  W.unsubscribe = Backend.subscribe(
+    keys => {
+      if (app.route !== route) return;
+      if (keys.includes('policy:' + route.project)) W.policyDirty = true;
+      if (keys.includes('wf:' + route.workflow) || keys.includes('policy:' + route.project)) scheduleReload();
+    },
+    {own: true}
+  );
   leaveGuards.push(async () => {
     for (const element of W.elements.values()) forgetFieldHeights(element);
     clearTimeout(W.reloadTimer);
@@ -134,9 +143,10 @@ PAGES.workflow = async (view, route) => {
   else fit();
   const focus = routeQuery().get('node');
   if (focus) reveal(focus);
-  const execution=await api('projects/'+W.project+'/execution',{query:{workflow_id:W.workflow}});
-  if(app.route!==route)return;
-  if(['running','paused'].includes(execution.status)) followExecution(execution).catch(fail);
+  const execution = await api('projects/' + W.project + '/execution', {query: {workflow_id: W.workflow}});
+  if (app.route !== route) return;
+  W.executionReady = true;
+  followExecution(execution).catch(fail);
   const editor = $('.editor', view);
   requestAnimationFrame(() => requestAnimationFrame(() => editor.classList.remove('opening')));
 };

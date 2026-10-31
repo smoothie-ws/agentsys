@@ -86,7 +86,6 @@
               "id": "record:be809cdefebe7110a05cf031f27def6e",
               "payload": {
                 "config": {
-                  "capabilities": [],
                   "grants": [],
                   "inputs": [
                     {
@@ -104,7 +103,13 @@
                     }
                   ],
                   "op": "script",
-                  "outputs": [],
+                  "outputs": [
+                    {
+                      "id": "out",
+                      "name": "out",
+                      "type": "signal"
+                    }
+                  ],
                   "title": "Script"
                 },
                 "kind": "function",
@@ -149,7 +154,6 @@
           "version": 3,
           "widgets": {}
         },
-        "capabilities": [],
         "description": "Runs `body` once for each number from `from` (included) to `to` (not included), going up or down by `step`; the number is on `index`. `done` fires when the loop ends. A Break node ends it early, a Continue node ends only the pass.",
         "folder": "Flow",
         "frame": {
@@ -237,7 +241,6 @@
               "id": "record:5bec4c119eb4201aeb688bfd462efda8",
               "payload": {
                 "config": {
-                  "capabilities": [],
                   "grants": [],
                   "inputs": [
                     {
@@ -255,7 +258,13 @@
                     }
                   ],
                   "op": "script",
-                  "outputs": [],
+                  "outputs": [
+                    {
+                      "id": "out",
+                      "name": "out",
+                      "type": "signal"
+                    }
+                  ],
                   "title": "Script"
                 },
                 "kind": "function",
@@ -300,7 +309,6 @@
           "version": 3,
           "widgets": {}
         },
-        "capabilities": [],
         "description": "Runs `body` once for each element of `list`; the element is on `item` and its position on `index`. `done` fires when the loop ends. Break and Continue work as in For.",
         "folder": "Flow",
         "frame": {
@@ -345,12 +353,6 @@
                     "id": "condition",
                     "name": "condition",
                     "type": "t:d1714f2eec0f4bcfa0edc8602f7f67c2"
-                  },
-                  {
-                    "default": 100000,
-                    "id": "max",
-                    "name": "max",
-                    "type": "t:fbe54fdd1dd24d55a0ec083cc057017e"
                   }
                 ],
                 "outputs": [
@@ -387,7 +389,6 @@
               "id": "record:a87b17b08cac3cb378138c3bb5c0133d",
               "payload": {
                 "config": {
-                  "capabilities": [],
                   "grants": [],
                   "inputs": [
                     {
@@ -405,7 +406,13 @@
                     }
                   ],
                   "op": "script",
-                  "outputs": [],
+                  "outputs": [
+                    {
+                      "id": "out",
+                      "name": "out",
+                      "type": "signal"
+                    }
+                  ],
                   "title": "Script"
                 },
                 "kind": "function",
@@ -457,7 +464,6 @@
           "version": 3,
           "widgets": {}
         },
-        "capabilities": [],
         "description": "Runs `body` again and again while `condition` is true; the condition is read again before every pass (wire it to the latest result of a node that the body changes, or to a node with an on_read). `max` stops a loop that never ends. `done` fires when the loop ends. Break and Continue work as in For.",
         "folder": "Flow",
         "frame": {
@@ -521,7 +527,6 @@
               "id": "record:dacd35f6cdbff5863aadb46b38bcdd07",
               "payload": {
                 "config": {
-                  "capabilities": [],
                   "grants": [],
                   "inputs": [
                     {
@@ -539,7 +544,13 @@
                     }
                   ],
                   "op": "script",
-                  "outputs": [],
+                  "outputs": [
+                    {
+                      "id": "out",
+                      "name": "out",
+                      "type": "signal"
+                    }
+                  ],
                   "title": "Script"
                 },
                 "kind": "function",
@@ -577,7 +588,6 @@
           "version": 3,
           "widgets": {}
         },
-        "capabilities": [],
         "description": "Ends the loop that is running this pass: what the pass has not started does not start, and the loop fires `done`. Put it in the body of For, For each or While.",
         "folder": "Flow",
         "frame": {
@@ -641,7 +651,6 @@
               "id": "record:d1171f869734b48a87d77629138a0551",
               "payload": {
                 "config": {
-                  "capabilities": [],
                   "grants": [],
                   "inputs": [
                     {
@@ -659,7 +668,13 @@
                     }
                   ],
                   "op": "script",
-                  "outputs": [],
+                  "outputs": [
+                    {
+                      "id": "out",
+                      "name": "out",
+                      "type": "signal"
+                    }
+                  ],
                   "title": "Script"
                 },
                 "kind": "function",
@@ -697,7 +712,6 @@
           "version": 3,
           "widgets": {}
         },
-        "capabilities": [],
         "description": "Ends this pass of the loop that is running it, and the loop goes on with the next pass. A pass also ends where its signal path ends, so Continue is only needed to stop other branches of the pass.",
         "folder": "Flow",
         "frame": {
@@ -775,7 +789,6 @@
               "id": "record:8da6cc3459d5d440c80fe7ad4ffbcc7d",
               "payload": {
                 "config": {
-                  "capabilities": [],
                   "grants": [],
                   "inputs": [
                     {
@@ -793,7 +806,13 @@
                     }
                   ],
                   "op": "script",
-                  "outputs": [],
+                  "outputs": [
+                    {
+                      "id": "out",
+                      "name": "out",
+                      "type": "signal"
+                    }
+                  ],
                   "title": "Script"
                 },
                 "kind": "function",
@@ -831,7 +850,6 @@
           "version": 3,
           "widgets": {}
         },
-        "capabilities": [],
         "description": "Holds a value: signal `set` stores `to` on `value`, then `done` fires. Reading `value` gives what was stored last (nothing before the first set).",
         "folder": "Flow",
         "frame": {

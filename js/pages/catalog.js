@@ -101,17 +101,15 @@ function catalogControls(section, item = {}) {
   const values = item.values ?? {};
   const fields = section.item.fields;
   return (
-    field(
-      'Name',
-      `<input name="item_name" required maxlength="100" value="${esc(item.name ?? '')}" autofocus>`
-    ) +
+    field('Name', `<input name="item_name" required maxlength="100" value="${esc(item.name ?? '')}" autofocus>`) +
     field(
       'Description',
       `<textarea name="item_description" rows="2" maxlength="1024" >${esc(item.description ?? '')}</textarea>`
     ) +
     fields
       .map(f => {
-        if (f.type === 'list') return `<section class="field"><div class="button-row"><strong>${esc(f.label)}</strong><button type="button" class="ghost" data-list-refresh="${esc(f.key)}" ${item.id ? '' : 'disabled'}>${icon('refresh')}Refresh</button></div>${f.help ? `<small>${esc(f.help)}</small>` : ''}<div data-catalog-list="${esc(f.key)}" aria-live="polite"><p class="muted small">Save this resource to load the list.</p></div></section>`;
+        if (f.type === 'list')
+          return `<section class="field"><div class="button-row"><strong>${esc(f.label)}</strong><button type="button" class="ghost" data-list-refresh="${esc(f.key)}" ${item.id ? '' : 'disabled'}>${icon('refresh')}Refresh</button></div>${f.help ? `<small>${esc(f.help)}</small>` : ''}<div data-catalog-list="${esc(f.key)}" aria-live="polite"><p class="muted small">Save this resource to load the list.</p></div></section>`;
         const value = values[f.key] ?? f.default ?? '',
           attrs = `name="value_${esc(f.key)}" ${f.required && !(f.type === 'secret' && item.secrets?.[f.key]) ? 'required' : ''}`;
         let control;
@@ -121,8 +119,7 @@ function catalogControls(section, item = {}) {
           control = `<select ${attrs}>${f.options.map(o => `<option ${o === value ? 'selected' : ''}>${esc(o)}</option>`).join('')}</select>`;
         else if (f.type === 'json')
           control = `<textarea ${attrs} rows="4" spellcheck="false">${esc(pretty(value === '' ? (f.shape === 'array' ? [] : {}) : value))}</textarea>`;
-        else if (f.type === 'textarea')
-          control = `<textarea ${attrs} rows="4">${esc(value)}</textarea>`;
+        else if (f.type === 'textarea') control = `<textarea ${attrs} rows="4">${esc(value)}</textarea>`;
         else if (f.type === 'secret')
           control = `<input ${attrs} type="password" autocomplete="new-password" placeholder="${item.secrets?.[f.key] ? 'Saved key (leave empty to keep)' : 'Not configured'}">${item.secrets?.[f.key] ? `<label class="check small"><input type="checkbox" name="clear_${esc(f.key)}">Remove saved key</label>` : ''}`;
         else
@@ -161,22 +158,33 @@ function readCatalogControls(form, section) {
   return {name: form.elements.item_name.value.trim(), description: form.elements.item_description.value, values};
 }
 async function loadCatalogLists(form, section, item) {
-  await Promise.all(section.item.fields.filter(f => f.type === 'list').map(async field => {
-    const host = $(`[data-catalog-list="${field.key}"]`, form), button = $(`[data-list-refresh="${field.key}"]`, form);
-    const revision = host.loadRevision = (host.loadRevision ?? 0) + 1;
-    button.disabled = true;
-    host.innerHTML = '<p class="muted small">Loading…</p>';
-    try {
-      const result = await api(`plugins/${section.plugin}/call/${field.endpoint}`, {method:'POST',body:{item_id:item.id}});
-      if (!host.isConnected || host.loadRevision !== revision) return;
-      if (!Array.isArray(result?.items)) throw new Error('The endpoint did not return a list');
-      host.innerHTML = result.items.length ? `<ul class="catalog-remote-items">${result.items.map(row => `<li><code>${esc(row.id)}</code>${row.label && row.label !== row.id ? ' — ' + esc(row.label) : ''}</li>`).join('')}</ul>` : '<p class="muted small">No items returned.</p>';
-    } catch (error) {
-      if (host.isConnected && host.loadRevision === revision) host.innerHTML = `<p class="form-error">${esc(error.message)}</p>`;
-    } finally {
-      if (host.loadRevision === revision) button.disabled = false;
-    }
-  }));
+  await Promise.all(
+    section.item.fields
+      .filter(f => f.type === 'list')
+      .map(async field => {
+        const host = $(`[data-catalog-list="${field.key}"]`, form),
+          button = $(`[data-list-refresh="${field.key}"]`, form);
+        const revision = (host.loadRevision = (host.loadRevision ?? 0) + 1);
+        button.disabled = true;
+        host.innerHTML = '<p class="muted small">Loading…</p>';
+        try {
+          const result = await api(`plugins/${section.plugin}/call/${field.endpoint}`, {
+            method: 'POST',
+            body: {item_id: item.id},
+          });
+          if (!host.isConnected || host.loadRevision !== revision) return;
+          if (!Array.isArray(result?.items)) throw new Error('The endpoint did not return a list');
+          host.innerHTML = result.items.length
+            ? `<ul class="catalog-remote-items">${result.items.map(row => `<li><code>${esc(row.id)}</code>${row.label && row.label !== row.id ? ' — ' + esc(row.label) : ''}</li>`).join('')}</ul>`
+            : '<p class="muted small">No items returned.</p>';
+        } catch (error) {
+          if (host.isConnected && host.loadRevision === revision)
+            host.innerHTML = `<p class="form-error">${esc(error.message)}</p>`;
+        } finally {
+          if (host.loadRevision === revision) button.disabled = false;
+        }
+      })
+  );
 }
 function newCatalogItem(section, folder = '') {
   dialog(
@@ -245,6 +253,7 @@ function catalogFolderActions(section, folder) {
           await loadLibrary();
           await go(catalogHref(section.id, next), true);
         }),
+      {icon: 'pencil'},
     ],
     [
       'Delete',
@@ -262,14 +271,16 @@ function catalogFolderActions(section, folder) {
           },
           'Delete'
         ),
-      {danger: true},
+      {danger: true, icon: 'trash'},
     ],
   ];
 }
 async function catalogItemActions(section, id) {
   const item = await api(`library/sections/${section.id}/items/${id}`);
   return [
-    ['Settings', () => go(catalogHref(section.id, item.folder, id)), {icon: 'settings'}],
+    ...(app.route?.page === 'resources' && app.route.section === section.id && app.route.id === id
+      ? []
+      : [['Settings', () => go(catalogHref(section.id, item.folder, id)), {icon: 'settings'}]]),
     [
       'Move',
       () =>
@@ -296,7 +307,7 @@ async function catalogItemActions(section, id) {
     [
       'Export resource',
       () => {
-        return downloadJSON({name:item.name,description:item.description,values:item.values},item.name);
+        return downloadJSON({name: item.name, description: item.description, values: item.values}, item.name);
       },
       {icon: 'upload'},
     ],
@@ -315,7 +326,7 @@ async function catalogItemActions(section, id) {
           },
           'Delete'
         ),
-      {danger: true},
+      {danger: true, icon: 'trash'},
     ],
   ];
 }

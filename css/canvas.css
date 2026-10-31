@@ -437,6 +437,14 @@
   color: var(--accent);
   border: 2px solid color-mix(in srgb, var(--accent) 45%, transparent);
 }
+.run-state.sleeping {
+  color: var(--accent);
+  background: color-mix(in srgb, var(--accent) 15%, transparent);
+}
+.run-state.waiting,
+.run-state.stopped {
+  color: var(--muted);
+}
 .run-state.completed,
 .run-state.blocked,
 .run-state.failed {
@@ -466,8 +474,12 @@
   display: flex;
   align-items: center;
   gap: 0.45rem;
-  min-height: 24px;
-  margin-bottom: 0.35rem;
+  box-sizing: border-box;
+  min-height: calc(var(--node-radius, 16px) * 2);
+  margin: -0.65rem -0.75rem 0.5rem;
+  padding: 0 0.75rem;
+  border-radius: var(--node-radius, 16px);
+  background: color-mix(in srgb, var(--text) 7%, transparent);
 }
 .node .title {
   font-weight: 640;
@@ -530,7 +542,7 @@
   background: var(--node-color);
   color: var(--node-ink);
 }
-.node.colored.folded > header {
+.node.folded > header {
   margin: 0;
   padding: 0 1.1rem;
   border-radius: inherit;

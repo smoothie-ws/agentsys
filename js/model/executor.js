@@ -1,52 +1,24 @@
-// The part of the engine that runs a workflow. A run is compiled into a plan (compilePlan in evaluate.js: plain data, every wire
-// already resolved) and this function carries it out: one Web Worker (or, in the tests, this process) for the whole run.
-// It is written to be embedded as source text in the Worker (see backend/scripts.js), so it uses nothing but its own body and `env`.
+// A persistent interpreter for the live graph. Shared values survive signal dispatches.
 'use strict';
-
-/**
- * Carries out a plan (the model is in docs/engine.md). Data is read when a node runs and needs it; things happen when a
- * signal reaches a node.
- *
- *   plan.nodes   [{id, label, kind: 'custom' | 'reroute' | 'plain', op, running, prefix, inputs: [{id, name, signal?, ref, has, fallback}],
- *                  outputs: [{id, name, signal?}], preset: {output name: typed value},
- *                  targets: {signal output ID: [node ID]}, event: {output name: value} | null, context}]
- *   plan.roots   [{id, node: true} | {id, ports: [{id, ref}]} | {id, error}]
- *   a `ref` says where a value comes from: {n: node id, p: port id}, {err: message} or null (nothing: undefined)
- *   env          {AsyncFunction, displayText(values), emit(event), call(node id, method, path, body, query), gate? ({paused, waiters}: a pause),
- *                 limits: {result, bytes, chain, timeout, parallel}}
- *   events       {ev: 'start' | 'done' | 'fail' | 'skip' | 'pause' | 'resume' | 'root', ...}; every root ends with one 'root' event
- *                ('skip': a node did not start because the wave it belongs to was cancelled, see *Flow control* below)
- *
- * Nodes are *pure* (values, Reroutes: computed when read, once in each read) or *running* (a Script, the
- * event nodes: they do something when a signal reaches them and keep their latest outputs, which is what a read of them gives;
- * before they ran, undefined). A Library node's copy that contains an on_read node (a *read scope*) computes its outputs when they
- * are read: the first read fires the on_read and waits until what its signal started has finished; later reads give the result
- * again until something the scope reads has changed (a result of another node that is not the same as before), and then it is
- * computed again. Dependencies are brought up to date first, in the order of the inputs. A signal output goes to every node it is wired to at once; they run independently. A root is
- * fired (an event node), run as if a signal reached it (a Script) or read (a pure node, or the ports of a Complex Node).
- * The run lasts until nothing is running.
- *
- * Every value that crosses from one node to another is kept as JSON and read back for each reader, so a node can change what it
- * received without anyone else seeing it. The code of a Script gets `node` (the Library node it is in: input, output, emit, display, widgets, reread),
- * `agentsys` and `context` as its own variables; nothing is added to the global scope.
- */
-async function executePlan(plan, env) {
-  const {AsyncFunction, displayText, emit, call, limits, gate} = env;
-  const nodes = new Map(plan.nodes.map(n => [n.id, n]));
+function createGraphInterpreter(document, saved, env) {
+  const {AsyncFunction, displayText, emit, call, gate} = env;
+  let view = createGraphView(document, {context: env.context});
+  let graphRevision = document.graph_revision ?? null;
+  const generations = new Map(),
+    readScope = ctx => Object.assign(new Map(), {ctx});
+  const nodes = {get: id => view.get(id)};
+  let sequence = 0;
+  const identityKey = (ctx, kind) => `${ctx.execution?.dispatch_id ?? 'local'}:${kind}:${++sequence}`;
   const latest = new Map(); // node id -> Map(port id -> {v: value} | {j: json text of an object}): what a running node left last
-  const sizes = new Map(); // node id -> characters of its latest result (what counts against limits.bytes)
-  const pending = new Set(); // runs of Scripts that have not ended: the run lasts until they have
-  const queue = [];
   const versions = new Map(), // node id -> how many times its latest result has changed
     signatures = new Map(), // node id -> its latest result as text, to see whether a new one is different
     dependencyCache = new Map(), // read scope -> [ids of the running nodes outside it that it reads]
     states = new Map(), // read scope -> {seen: Map(node id -> version read), at, done, promise, error}
     readNodes = new Map(); // read scope -> ids of its on_read nodes
-  let bytes = 0,
-    active = 0,
-    tick = 0; // grows whenever any latest result changes
+  let tick = 0,
+    stateRevision = 0;
   const scopeOf = node => node?.context?.instance_id ?? null;
-  for (const n of plan.nodes)
+  for (const n of view.values())
     if (n.op === 'on_read' && scopeOf(n)) readNodes.set(scopeOf(n), [...(readNodes.get(scopeOf(n)) ?? []), n.id]);
   const SCOPE = 'scope:';
 
@@ -67,7 +39,7 @@ async function executePlan(plan, env) {
     };
     return wave;
   };
-  const runWave = newWave(null); // every wave is below it: cancelling it stops the whole run (node.flow.abort())
+  let runWave = newWave(null); // every wave is below it: cancelling it stops the whole run (node.flow.abort())
   const cancelledWave = wave => {
     for (let w = wave; w; w = w.parent) if (w.cancelled) return true;
     return false;
@@ -75,18 +47,9 @@ async function executePlan(plan, env) {
   /** What node.flow.break() & co throw to end the code of the Script that called them: not a failure of the node. */
   const control = what => Object.assign(new Error(`node.flow.${what}()`), {control: what});
 
-  /** Code runs a few nodes at a time; the rest wait here (a node waiting for its inputs or in emit() does not take a place). */
-  const take = () =>
-    active < limits.parallel ? (active++, Promise.resolve()) : new Promise(resolve => queue.push(resolve));
-  /** While the run is paused (`gate.paused`) no code starts and none goes on after an emit(); what is running finishes first. */
+  /** Pause gates new invocations and continuations. */
   const enter = async () => {
-    await take();
     while (gate?.paused) await new Promise(resolve => gate.waiters.push(resolve));
-  };
-  const leave = () => {
-    const next = queue.shift();
-    if (next) next();
-    else active--;
   };
   const unwrap = entry => (entry === undefined ? undefined : 'j' in entry ? JSON.parse(entry.j) : entry.v);
   /** What a node left for one port, as an entry that every reader copies out for itself (so nobody sees another's changes). */
@@ -100,9 +63,61 @@ async function executePlan(plan, env) {
   /** An error that is the node's own message as it is: it does not get the "Node code:" prefix of an error in code. */
   const plain = message => Object.assign(new Error(message), {plain: true});
   const EMPTY = new Map();
+  const state = copyOf(saved.state ?? {});
+  const stateCopy = value =>
+    JSON.parse(
+      JSON.stringify(value, function (_, item) {
+        if (item === undefined && Array.isArray(this)) return null;
+        if (
+          ['undefined', 'function', 'symbol', 'bigint'].includes(typeof item) ||
+          (typeof item === 'number' && !Number.isFinite(item))
+        )
+          throw plain('context.state accepts JSON values only');
+        return item;
+      })
+    );
+  const watchState = (value, guard, identity, proxies = new WeakMap()) => {
+    if (value === null || typeof value !== 'object') return value;
+    if (proxies.has(value)) return proxies.get(value);
+    const proxy = new Proxy(value, {
+      get: (target, name) => watchState(Reflect.get(target, name), guard, identity, proxies),
+      set(target, name, value) {
+        guard();
+        if (typeof name !== 'string' || ['__proto__', 'prototype', 'constructor'].includes(name))
+          throw plain('Invalid state key');
+        Reflect.set(target, name, stateCopy(value));
+        stateRevision++;
+        tick++;
+        emit({ev: 'state', state: stateCopy(state)});
+        emit({ev: 'state.changed', ...identity});
+        return true;
+      },
+      deleteProperty(target, name) {
+        guard();
+        Reflect.deleteProperty(target, name);
+        stateRevision++;
+        tick++;
+        emit({ev: 'state', state: stateCopy(state)});
+        emit({ev: 'state.changed', ...identity});
+        return true;
+      },
+      defineProperty() {
+        throw plain('Use assignment to change context.state');
+      },
+      setPrototypeOf() {
+        throw plain('context.state accepts JSON values only');
+      },
+    });
+    proxies.set(value, proxy);
+    return proxy;
+  };
+  for (const [id, values] of Object.entries(saved.outputs ?? {}))
+    keep(id, {
+      map: new Map(Object.entries(values).map(([port, value]) => [port, entryOf(value, JSON.stringify(value))])),
+    });
   // A Library node copy that Scripts write to starts with what was typed into its outputs.
-  for (const n of plan.nodes)
-    if (n.op === 'scope') {
+  for (const n of view.values())
+    if (n.op === 'scope' && !latest.has(n.id)) {
       const map = new Map();
       for (const p of n.outputs) {
         const t = Object.hasOwn(n.preset, p.name) ? JSON.stringify(n.preset[p.name]) : undefined;
@@ -110,7 +125,6 @@ async function executePlan(plan, env) {
       }
       keep(n.id, {
         map,
-        size: [...map.values()].reduce((a, e) => a + ('j' in e ? e.j.length : JSON.stringify(e.v).length), 0),
       });
     }
 
@@ -125,15 +139,16 @@ async function executePlan(plan, env) {
   function outputsOf(id, scope, path) {
     const node = nodes.get(id),
       home = scopeOf(node);
-    if (!node) return Promise.reject(plain(plan.diagnostics?.[id] ?? 'Node not found: ' + id));
+    if (!node) return Promise.reject(plain(Object.fromEntries(view.issues)?.[id] ?? 'Node not found: ' + id));
+    if (node.error) return Promise.reject(plain(node.error));
     if (node.running) {
       const give = () => latest.get(id) ?? EMPTY;
       // The outputs of a read scope are brought up to date first (unless the reader is inside it).
-      return readNodes.has(home) && !path.has(SCOPE + home) ? freshen(home, path).then(give) : Promise.resolve(give());
+      return readNodes.has(home) && !path.has(SCOPE + home)
+        ? freshen(home, path, scope.ctx).then(give)
+        : Promise.resolve(give());
     }
     if (path.has(id)) return Promise.reject(new Error('Graph contains a cycle'));
-    if (path.size >= limits.chain)
-      return Promise.reject(new Error(`Graph evaluation reaches more than ${limits.chain} chained nodes`));
     if (!scope.has(id)) {
       const promise = Promise.resolve().then(() => compute(node, scope, new Set(path).add(id)));
       scope.set(id, promise);
@@ -163,17 +178,16 @@ async function executePlan(plan, env) {
     }
     return result;
   }
-  /** What the code of a node left in `output` for its data ports: {map, size}. */
+  /** What the code of a node left in `output` for its data ports. */
   function collect(node, output) {
     const map = new Map();
-    let size = 0;
     if (output !== null && typeof output === 'object' && !Array.isArray(output)) {
       // What the code of a Script puts in `output` must be a free output of its Library node: a slip in a name is an error, not a value that goes nowhere.
       if (node.op === 'script')
         for (const name of Object.keys(output)) {
           if (node.outputs.some(p => p.name === name)) continue;
-          if (Object.hasOwn(node.scope_signals ?? {}, name))
-            throw plain(`“${name}” is a signal output: fire it with node.emit("${name}")`);
+          if (Object.hasOwn(node.signals ?? {}, name))
+            throw plain(`“${name}” is a signal output: fire it with node.output.${name}.emit()`);
           throw plain(
             node.scope
               ? `The Library node has no free output “${name}” (an output that a node inside feeds cannot be set by code)`
@@ -188,29 +202,23 @@ async function executePlan(plan, env) {
             throw plain(`node.output.${p.name} cannot be sent: a function or a symbol is not data`);
           continue;
         }
-        size += text.length + p.id.length + 4;
-        if (size > limits.result) throw plain('Graph evaluation exceeds the output size limit');
         map.set(p.id, entryOf(output[p.name], text));
       }
     }
-    return {map, size};
+    return {map};
   }
   /** What a node's code left in `output` becomes what readers get: a Script writes into the copy it is in (what it did not set stays as it was). */
   function commit(node, output) {
+    if (!nodes.get(node.id)) return;
     const result = collect(node, output);
     if (!node.scope) return keep(node.id, result);
     const map = new Map([...(latest.get(node.scope) ?? EMPTY), ...result.map]);
-    let size = 0;
-    for (const [port, entry] of map)
-      size += ('j' in entry ? entry.j.length : JSON.stringify(entry.v).length) + port.length + 4;
-    if (size > limits.result) throw plain('Graph evaluation exceeds the output size limit');
-    keep(node.scope, {map, size});
+    for (const p of node.outputs)
+      if (!p.signal && Object.hasOwn(output, p.name) && output[p.name] === undefined) map.delete(p.id);
+    keep(node.scope, {map});
   }
-  /** The result of a running node from now on (what readers get), counted against the limit of the run. */
-  function keep(id, {map, size}) {
-    bytes += size - (sizes.get(id) || 0);
-    sizes.set(id, size);
-    if (bytes > limits.bytes) throw plain('Graph evaluation exceeds the output size limit');
+  /** Publish the current JSON values and invalidate dependent reads. */
+  function keep(id, {map}) {
     latest.set(id, map);
     const signature = [...map]
       .map(([port, entry]) => port + '=' + ('j' in entry ? entry.j : JSON.stringify(entry.v)))
@@ -219,6 +227,7 @@ async function executePlan(plan, env) {
       signatures.set(id, signature);
       versions.set(id, (versions.get(id) ?? 0) + 1);
       tick++;
+      emit({ev: 'values', id, outputs: Object.fromEntries([...map].map(([port, value]) => [port, unwrap(value)]))});
     }
   }
 
@@ -235,58 +244,61 @@ async function executePlan(plan, env) {
       if (n.running) found.add(n.id);
       else for (const p of n.inputs) if (!p.signal) origin(p.ref, seen);
     };
-    for (const n of plan.nodes)
+    for (const n of view.values())
       if (scopeOf(n) === scope) for (const p of n.inputs) if (!p.signal) origin(p.ref, new Set());
     const list = [...found].filter(id => scopeOf(nodes.get(id)) !== scope);
     dependencyCache.set(scope, list);
     return list;
   }
   /** Brings the outputs of a read scope up to date: computes them if they never were, or if something they read has changed. */
-  function freshen(scope, path) {
+  function freshen(scope, path, ctx) {
     const mark = SCOPE + scope;
     if (path.has(mark)) return Promise.reject(new Error('Graph contains a cycle'));
-    if (path.size >= limits.chain)
-      return Promise.reject(new Error(`Graph evaluation reaches more than ${limits.chain} chained nodes`));
     let st = states.get(scope);
     if (!st) states.set(scope, (st = {seen: new Map(), at: -1, done: false, promise: null, error: null}));
     if (!st.promise) {
       if (st.done && st.at === tick) return st.error ? Promise.reject(st.error) : Promise.resolve();
       const state = st;
-      state.promise = update(scope, state, new Set(path).add(mark), tick).finally(() => (state.promise = null));
+      state.promise = update(scope, state, new Set(path).add(mark), tick, ctx).finally(() => (state.promise = null));
     }
     return st.promise.then(() => {
       if (st.error) throw st.error;
     });
   }
-  async function update(scope, st, path, at) {
+  async function update(scope, st, path, at, ctx) {
     try {
-      let stale = !st.done;
+      let stale = !st.done || st.contextAt !== stateRevision;
       for (const id of dependencies(scope)) {
         const home = scopeOf(nodes.get(id));
-        if (readNodes.has(home)) await freshen(home, path);
+        if (readNodes.has(home)) await freshen(home, path, ctx);
         if (st.seen.get(id) !== (versions.get(id) ?? 0)) stale = true;
       }
       if (stale) {
         for (const id of dependencies(scope)) st.seen.set(id, versions.get(id) ?? 0);
         st.error = null;
         const via = new Set([...path].filter(x => typeof x === 'string' && x.startsWith(SCOPE)));
-        st.key ??= `read:${scope}:${tick}`;
+        st.key = `${ctx?.execution?.dispatch_id ?? 'read'}:read:${scope}:${tick}:${++sequence}`;
+        const work = new Set();
         const outcomes = await Promise.allSettled(
           (readNodes.get(scope) ?? []).map(id =>
             track(
               run(id, {
-                depth: 0,
-                read_key: st.key,
+                ...ctx,
+                parent: ctx?.key ?? ctx?.parent_invocation_id ?? null,
+                work,
                 via,
                 key: `${st.key}:${id}`,
                 wave: newWave(runWave, {}, `${st.key}:${id}`),
-              })
+              }),
+              work
             )
           )
         );
+        while (work.size) await Promise.allSettled([...work]);
         const bad = outcomes.find(o => o.status === 'rejected');
         if (bad) st.error = bad.reason;
       }
+      st.contextAt = stateRevision;
       st.done = !st.error;
       if (st.done) st.key = null;
     } catch (error) {
@@ -301,13 +313,21 @@ async function executePlan(plan, env) {
 
   /** A signal leaves the output `port` of a node: every node it is wired to runs, at the same time. Answers when they and what they
    *  started have finished; throws the first error (in the order of the wires). */
-  const fire = (node, port, ctx) => fireTo(node.targets[port.id] || [], {...ctx, invocation: ctx.key});
+  const fire = (node, port, ctx) =>
+    fireTo(nodes.get(node.id)?.targets?.[port.id] || [], {...ctx, invocation: ctx.key, port_id: port.id});
   async function fireTo(ids, ctx) {
     if (!ids.length) return;
-    if (ctx.depth >= limits.chain) throw plain(`Signal chain is longer than ${limits.chain} nodes`);
+    const signalId = identityKey(ctx, 'signal');
+    emit({
+      ev: 'signal.sent',
+      ...identityOf(ctx),
+      graph_revision: graphRevision,
+      signal_id: signalId,
+      port_id: ctx.port_id,
+    });
     const outcomes = await Promise.allSettled(
-      ids.map((id, i) =>
-        trigger(id, {...ctx, parent: ctx.invocation ?? ctx.key, depth: ctx.depth + 1, key: `${ctx.key}/${i}:${id}`})
+      ids.map(id =>
+        trigger(id, {...ctx, signal_id: signalId, parent: ctx.invocation ?? ctx.key, key: identityKey(ctx, 'invoke')})
       )
     );
     const bad = outcomes.find(o => o.status === 'rejected');
@@ -316,53 +336,86 @@ async function executePlan(plan, env) {
   /** A signal reaches a node. In a cancelled wave it does not start. */
   function trigger(id, ctx) {
     const node = nodes.get(id);
-    if (node && !node.running) return Promise.resolve();
+    if (!node || (!node.running && !node.error)) return Promise.resolve();
+    emit({ev: 'signal.received', ...identityOf(ctx, id), graph_revision: graphRevision, signal_id: ctx.signal_id});
     if (cancelledWave(ctx.wave)) {
       emit({ev: 'skip', id, label: node?.label});
       return Promise.resolve();
     }
-    return track(run(id, ctx));
+    return track(run(id, ctx), ctx.work);
   }
-  const track = promise => {
-    const entry = promise.catch(() => {}).finally(() => pending.delete(entry));
-    pending.add(entry);
+  const track = (promise, work) => {
+    const entry = promise.catch(() => {}).finally(() => work.delete(entry));
+    work.add(entry);
     return promise;
   };
+  const identityOf = (ctx, id) => ({
+    ...ctx.execution,
+    node_id: id ?? ctx.node_id,
+    run_id: ctx.execution?.run_id,
+    invocation_id: ctx.key,
+    parent_invocation_id: ctx.parent ?? ctx.execution?.parent_invocation_id ?? null,
+    graph_revision: ctx.graph_revision ?? graphRevision,
+  });
   /** The execution of a running node (a Script or an event node). Answers when it and what its signals started have finished. */
   async function run(id, ctx) {
-    if (cancelledWave(ctx.wave)) {emit({ev:'skip',id}); return;}
+    if (cancelledWave(ctx.wave)) {
+      emit({ev: 'skip', id});
+      return;
+    }
     const node = await execute(id, ctx);
-    if (node && node.op !== 'script')
+    if (node && !cancelledWave(ctx.wave))
       for (const port of node.outputs.filter(p => p.signal)) await fire(node, port, ctx);
   }
   async function execute(id, ctx) {
+    ctx.node_id = id;
     let node = nodes.get(id);
-    const announce = event => emit({...event, prefix: node?.prefix, invocation: ctx.key, wave_path: ctx.wave.key});
+    const generation = generations.get(id) ?? 0;
+    const valid = () => !env.closed?.() && nodes.get(id) && (generations.get(id) ?? 0) === generation;
+    const controlled = Object.keys(ctx.execution?.policy ?? {}).length > 0;
+    const guard = (requireOpen = true) => {
+      if (!valid()) {
+        ctx.batch.cancelled = true;
+        throw control('cancel');
+      }
+      if (closed && (requireOpen || controlled)) throw control('cancel');
+    };
+    const announce = event => {
+      if (valid())
+        emit({...event, ...identityOf(ctx, id), prefix: node?.prefix, invocation: ctx.key, wave_path: ctx.wave.key});
+    };
     const started = Date.now();
     let announced = false,
-      holding = false,
       closed = false,
-      shown,
-      clock = null;
-    const give = () => {
-      if (holding) {
-        holding = false;
-        leave();
-      }
-    };
+      shown;
     try {
-      if (!node) throw plain(plan.diagnostics?.[id] ?? 'Node not found: ' + id);
+      await enter();
+      node = nodes.get(id);
+      if (!node) throw plain(Object.fromEntries(view.issues)?.[id] ?? 'Node not found: ' + id);
+      if (node.error) throw plain(node.error);
+      const readingView = view;
       const data = node.inputs.filter(p => !p.signal);
-      const outcomes = await Promise.allSettled(data.map(p => inputEntry(p, new Map(), new Set([node.id, ...ctx.via]))));
+      const outcomes = await Promise.allSettled(
+        data.map(p => inputEntry(p, readScope(ctx), new Set([node.id, ...ctx.via])))
+      );
       const bad = outcomes.find(o => o.status === 'rejected');
       if (bad) throw bad.reason;
-      const values = new Map(data.map((p,i) => [p.id, outcomes[i].value === undefined ? undefined : unwrap(outcomes[i].value)]));
-      await enter(); holding = true;
-      if (cancelledWave(ctx.wave)) {announce({ev:'skip',id}); return false;}
+      const values = new Map(
+        data.map((p, i) => [p.id, outcomes[i].value === undefined ? undefined : unwrap(outcomes[i].value)])
+      );
+      await enter();
+      if (view !== readingView) return execute(id, ctx);
+      ctx.graph_revision = graphRevision;
+      if (cancelledWave(ctx.wave)) {
+        announce({ev: 'skip', id});
+        return false;
+      }
+      if (ctx.execution?.policy && Object.keys(ctx.execution.policy).length) await env.admit(identityOf(ctx, id));
+      guard();
       announced = true;
-      announce({ev:'start',id:node.id,label:node.label});
+      announce({ev: 'start', id: node.id, label: node.label});
       const own = Date.now();
-      const output = {...(node.preset ?? {}), ...(node.event ?? {})};
+      const output = {...(node.preset ?? {}), ...(node.op === 'script' ? {} : (ctx.event ?? {}))};
       // A Script of a Library node reads the outputs of the node as they are now (what was typed there, what a Script left last).
       if (node.scope)
         for (const p of node.outputs) {
@@ -370,78 +423,73 @@ async function executePlan(plan, env) {
           if (!p.signal && held !== undefined) output[p.name] = unwrap(held);
         }
       const display = (...parts) => {
+        guard();
+        if (closed) throw plain('The code of this node has ended');
         shown = displayText(parts);
+        announce({ev: 'display', id: node.id, display: shown});
       };
       if (node.op === 'script') {
-        const agentsys = async (method, route, body, query) =>
-          call(node.id, method, route, body, query);
+        const agentsys = async (method, route, body, query) => {
+          guard(false);
+          commit(node, output);
+          const result = await call(node.id, identityOf(ctx, id), method, route, body, query);
+          guard(false);
+          return result;
+        };
         // widgets(list) puts widgets on this node (replacing its list; one that stays keeps its value); widgets.set({id: value}) sets values.
         const widgetsRoute = () => `projects/${node.context.project_id}/widgets/${node.id}`;
         const widgets = Object.assign(list => agentsys('PUT', widgetsRoute(), {widgets: list}), {
           set: values => agentsys('PUT', widgetsRoute(), {values}),
         });
-        // context.event: what the event nodes beside it (in the same Library node, or at the root) carry: payload, wired, widget.
-        const event = Object.assign(
-          {},
-          ...plan.nodes.filter(n => n.event && scopeOf(n) === scopeOf(node)).map(n => n.event)
-        );
-        const context = Object.freeze({...node.context, event});
+        // context.event: what the event nodes beside it (in the same Library node, or at the root) carry: payload, connected, widget.
+        const event = ctx.event ?? {};
+        const {grant_chain, ...publicContext} = node.context;
+        const context = Object.freeze({
+          ...publicContext,
+          event,
+          execution: Object.freeze(identityOf(ctx, id)),
+          state: watchState(state, () => guard(false), identityOf(ctx, id)),
+        });
         const codeInput = node.inputs.find(p => p.code);
         const code = codeInput ? values.get(codeInput.id) : '';
         if (typeof code === 'string' && /\bimport\s*\(/.test(code))
           throw plain('Dynamic import is not available in Script nodes');
         if (code !== undefined && code !== null && typeof code !== 'string')
           throw plain(`${node.prefix}: the script is text`);
-        // emit(name): the signal output `name` of the Library node fires now, from the middle of the code; the code does not run, so neither its time
-        // limit nor its place among the running nodes counts the wait. The outputs as they are now are what readers get from then on.
-        // emit(name, {handles, failFast}) answers what the signal started once it has finished: `handles` (["break", "continue"]) are the control
-        // signals this emit takes: when a node calls node.flow.break() or .continue(), the rest of what this emit started does not start, and
-        // emit answers "break" or "continue" (else undefined). `failFast`: the first failure in what this emit started cancels the rest of it.
-        let emitIndex = 0;
+        // A manual signal publishes current values and joins its own branches.
         const emitSignal = async (name, options) => {
-          if (typeof name !== 'string') throw plain('node.emit needs the name of a signal output: node.emit("out")');
+          guard();
           if (closed) throw plain('The code of this node has ended');
           if (options !== undefined && (options === null || typeof options !== 'object'))
-            throw plain('node.emit(name, options): the options are an object {handles, failFast}');
+            throw plain('emit(options): options must be {handles, failFast}');
           const handles = options?.handles ?? [];
           if (!Array.isArray(handles) || handles.some(h => h !== 'break' && h !== 'continue'))
-            throw plain('node.emit: handles is a list of "break" and "continue"');
+            throw plain('emit handles must be a list of "break" and "continue"');
           // The flow this node belongs to was cancelled: the code ends here (a loop must not go on spinning).
           if (cancelledWave(ctx.wave)) throw control('cancel');
           // A Script fires a free signal output of the Library node it belongs to.
           const current = nodes.get(node.id);
-          // Names of ports start with a small letter now: code written for “Out” still finds “out”.
-          if (!Object.hasOwn(current?.scope_signals ?? {}, name)) {
-            const same = Object.keys(current?.scope_signals ?? {}).find(k => k.toLowerCase() === name.toLowerCase());
-            if (same) name = same;
-          }
-          const targets = Object.hasOwn(current?.scope_signals ?? {}, name)
-            ? current.scope_signals[name]
-            : current
-              ? null
-              : [];
+          const targets = Object.hasOwn(current?.signals ?? {}, name) ? current.signals[name] : current ? null : [];
           if (!targets)
             throw plain(
               node.scope
                 ? `The Library node has no free signal output “${name}”`
-                : `This Script is not in a Library node, so it has no signal outputs to fire: “${name}”`
+                : `This Script has no signal output: “${name}”`
             );
           commit(node, output);
-          clock.pause();
-          announce({ev: 'pause', id: node.id});
-          give();
-          const childKey = `${ctx.key}/emit:${emitIndex++}`;
+
+          announce({ev: 'pause', id: node.id, reason: 'signal'});
+
+          const childKey = identityKey(ctx, 'emit');
           const wave = newWave(ctx.wave, {handles, failFast: options?.failFast === true}, childKey);
           try {
-            await fireTo(targets, {...ctx, invocation: ctx.key, wave, key: childKey});
+            await fireTo(targets, {...ctx, invocation: ctx.key, wave, key: childKey, port_id: name});
           } catch (error) {
-
             throw plain(error.message);
           } finally {
             await enter();
-            holding = true;
+
             announce({ev: 'resume', id: node.id});
-            clock.resume();
           }
           return wave.control ?? undefined;
         };
@@ -461,32 +509,37 @@ async function executePlan(plan, env) {
             }
           }
           throw plain(
-            `node.flow.${what}() outside a loop: no node above handles it (node.emit(name, {handles: ["${what}"]}))`
+            `node.flow.${what}() outside a loop: no node above handles it (node.output.name.emit({handles: ["${what}"]}))`
           );
         };
         const flow = Object.freeze({
           break: () => unwind('break'),
           continue: () => unwind('continue'),
           cancel: () => {
+            ctx.batch.cancelled = true;
+            announce({ev: 'cancel', id, reason: 'flow'});
             ctx.wave.cancelled = true;
             throw control('cancel');
           },
           abort: () => {
+            ctx.batch.cancelled = true;
+            announce({ev: 'cancel', id, reason: 'flow'});
             runWave.cancelled = true;
             throw control('abort');
           },
         });
         // `node` is the Library node the Script is in: node.input.<name> reads its data inputs, node.output.<name> sets its free data outputs,
-        // node.emit(name) fires a free signal output, node.display(...) shows text on it, node.widgets(list) puts widgets on it and
+        // node.output.name.emit() fires a signal output, node.display(...) shows text on it, node.widgets(list) puts widgets on it and
         // node.reread(name) reads an input again.
         const input = Object.freeze(
           Object.fromEntries(node.inputs.filter(p => p.wrapper).map(p => [p.name, values.get(p.id)]))
         );
         // node.reread(name) reads an input again: the latest result of the node it comes from (for a loop that watches a value).
         const reread = async name => {
-          const p = node.inputs.find(q => q.wrapper && q.name === name);
+          const p = nodes.get(node.id)?.inputs.find(q => q.wrapper && q.name === name);
           if (!p) throw plain(`This node has no input “${name}”`);
-          const scope = new Map();
+          guard();
+          const scope = readScope(ctx);
           scope.consumer = ctx.key;
           scope.input = p.id;
           const entry = await inputEntry(p, scope, new Set([node.id, ...ctx.via]));
@@ -494,46 +547,98 @@ async function executePlan(plan, env) {
         };
         // node.cancelled: the flow this node belongs to was cancelled (a long code can look and end early).
         const sleep = async ms => {
-          if (!Number.isFinite(ms) || ms < 0 || ms > 2147483647) throw plain('Invalid delay');
-          clock.pause(); announce({ev:'pause',id:node.id}); give();
-          try {await new Promise(resolve=>setTimeout(resolve,ms));}
-          finally {await enter();holding=true;announce({ev:'resume',id:node.id});clock.resume();}
+          if (!Number.isFinite(ms) || ms < 0) throw plain('Invalid delay');
+          commit(node, output);
+          announce({ev: 'pause', id: node.id, reason: 'delay'});
+          try {
+            for (let remaining = ms; remaining > 0; ) {
+              const chunk = Math.min(remaining, 2147483647);
+              await new Promise(resolve => setTimeout(resolve, chunk));
+              remaining -= chunk;
+            }
+          } finally {
+            await enter();
+            announce({ev: 'resume', id: node.id});
+          }
           if (cancelledWave(ctx.wave)) throw control('cancel');
+          guard();
         };
-        const self = Object.freeze({input, output, emit:emitSignal, display, widgets, reread, flow, sleep,
-          get cancelled(){return cancelledWave(ctx.wave);}
+        for (const name of Object.keys(node.signals ?? {})) {
+          if (Object.hasOwn(output, name)) throw plain('A data output and signal output cannot share the name ' + name);
+          Object.defineProperty(output, name, {
+            value: Object.freeze({emit: options => track(emitSignal(name, options), ctx.work)}),
+            enumerable: false,
+          });
+        }
+        const outputProxy = new Proxy(output, {
+          get(target, name) {
+            if (typeof name === 'string' && name !== 'toJSON' && !Reflect.has(target, name))
+              throw plain('Unknown output ' + name);
+            return Reflect.get(target, name);
+          },
+          set(target, name, value) {
+            guard(false);
+            if (Object.hasOwn(node.signals ?? {}, name))
+              throw plain('Use node.output.' + String(name) + '.emit() for a signal output');
+            if (!node.outputs.some(port => !port.signal && port.name === name))
+              throw plain('The Library node has no free output “' + String(name) + '”');
+            target[name] = value;
+            commit(node, target);
+            return true;
+          },
+          deleteProperty(target, name) {
+            guard(false);
+            target[name] = undefined;
+            commit(node, target);
+            delete target[name];
+            return true;
+          },
         });
-        clock = deadline(limits.timeout, node.prefix);
+        const self = Object.freeze({
+          input,
+          output: outputProxy,
+          display,
+          widgets,
+          reread,
+          flow,
+          sleep,
+          get cancelled() {
+            return cancelledWave(ctx.wave);
+          },
+        });
+
         try {
-          await Promise.race([
-            Promise.resolve().then(() =>
-              new AsyncFunction('node', 'agentsys', 'context', 'Date', 'Math', '"use strict";\n' + (code ?? ''))(
-                self,
-                agentsys,
-                context,
-                Date,
-                Math
-              )
-            ),
-            clock.limit,
-          ]);
+          await Promise.resolve().then(() =>
+            new AsyncFunction('node', 'agentsys', 'context', 'Date', 'Math', '"use strict";\n' + (code ?? ''))(
+              self,
+              agentsys,
+              context,
+              Date,
+              Math
+            )
+          );
         } catch (error) {
           // node.flow.* ended the code on purpose: the node ends normally.
+          if (error?.code === 'permission_denied') throw Object.assign(new Error(error.message), {blocked: true});
           if (!(error && error.control))
-            throw error && (error.timeout || error.plain)
+            throw error && error.plain
               ? error
-              : new Error(`${node.prefix}: ${String((error && error.message) || error).slice(0, 2000)}`);
+              : new Error(`${node.prefix}: ${String((error && error.message) || error)}`);
         } finally {
-          clock.stop();
           closed = true;
         }
       }
+      if (!valid()) {
+        ctx.batch.cancelled = true;
+        return false;
+      }
       commit(node, output);
-      give();
+
       announce({ev: 'done', id: node.id, label: node.label, ms: Date.now() - own, display: shown});
       return node;
     } catch (error) {
       // A failure inside a wave of an emit with failFast cancels that wave (and the ones between).
+      if (ctx.errors && valid()) ctx.errors[id] = error.message;
       const between = [];
       for (let w = ctx.wave; w; w = w.parent) {
         between.push(w);
@@ -553,34 +658,8 @@ async function executePlan(plan, env) {
       });
       throw error;
     } finally {
-      give();
+      if (controlled) emit({ev: 'invocation.closed', ...identityOf(ctx, id)});
     }
-  }
-
-  /** A time limit that can be paused: the promise `limit` is rejected when the code has run `ms` (not counting the pauses). */
-  function deadline(ms, prefix) {
-    let timer,
-      held = 0,
-      stopped = false,
-      reject;
-    const limit = new Promise((_, no) => (reject = no));
-    limit.catch(() => {});
-    const arm = () => {
-      clearTimeout(timer);
-      if (stopped) return;
-      timer = setTimeout(() => {
-        const error = new Error(`${prefix} execution timed out`);
-        error.timeout = true;
-        reject(error);
-      }, ms);
-    };
-    arm();
-    return {
-      limit,
-      pause: () => (held++, clearTimeout(timer)),
-      resume: () => (--held === 0 ? arm() : undefined),
-      stop: () => ((stopped = true), clearTimeout(timer)),
-    };
   }
 
   // ----- Roots -----
@@ -591,41 +670,93 @@ async function executePlan(plan, env) {
     for (const [port, entry] of latest.get(id) ?? EMPTY) out[port] = unwrap(entry);
     return out;
   };
-  async function startRoot(root) {
+  async function startRoot(id, batch, event, index) {
+    const ctx = {
+      execution: batch.execution,
+      batch,
+      key: `${batch.id}:root:${index}:${id}`,
+      parent: batch.execution?.parent_invocation_id,
+      event,
+      errors: batch.errors,
+      work: batch.pending,
+      via: new Set(),
+      wave: newWave(runWave, {}, `${batch.id}:root:${id}`),
+    };
     try {
-      if (root.error) throw new Error(root.error);
       const outputs = {};
-      if (root.node) {
-        const node = nodes.get(root.id);
-        if (!node || node.running) {
-          await track(
-            run(root.id, {
-              depth: 0,
-              via: new Set(),
-              key: `root:${root.id}`,
-              wave: newWave(runWave, {}, `root:${root.id}`),
-            })
-          ); // a Script runs as if a signal reached it, an event node carries its data and fires
-          Object.assign(outputs, reported(node?.scope ?? root.id)); // what a Script sets belongs to its Library node: that is what it reports
-        } else
-          for (const [port, entry] of await outputsOf(root.id, new Map(), new Set())) outputs[port] = unwrap(entry);
+      if (id.startsWith('complex:')) {
+        for (const port of view.outputRefs(id))
+          outputs[port.id] =
+            port.ref && 'value' in port.ref
+              ? copyOf(port.ref.value)
+              : unwrap(await entryAt(port.ref, readScope(ctx), new Set()));
       } else {
-        const scope = new Map(),
-          path = new Set();
-        const got = await Promise.allSettled(root.ports.map(p => entryAt(p.ref, scope, path)));
-        const bad = got.find(o => o.status === 'rejected');
-        if (bad) throw bad.reason;
-        root.ports.forEach((p, i) => (outputs[p.id] = unwrap(got[i].value)));
+        const node = nodes.get(id);
+        if (!node) Object.assign(outputs, reported(id));
+        else if (node.running) {
+          await track(run(id, ctx), batch.pending); // a Script runs as if a signal reached it, an event node carries its data and fires
+          Object.assign(outputs, reported(node.scope ?? id));
+        } else
+          for (const [port, entry] of await outputsOf(id, readScope(ctx), new Set())) outputs[port] = unwrap(entry);
       }
-      emit({ev: 'root', id: root.id, outputs});
+      if (nodes.get(id)) emit({ev: 'root', id, outputs, ...identityOf(ctx, id)});
+      return {id, outputs};
     } catch (error) {
-      emit({ev: 'root', id: root.id, error: error.message});
+      if (nodes.get(id)) emit({ev: 'root', id, error: error.message, ...identityOf(ctx, id)});
+      return {id, error: error.message};
     }
   }
 
-  await Promise.all(plan.roots.map(startRoot));
-  // The run lasts as long as there is code running: a Script that signals from a loop is part of it.
-  while (pending.size) await Promise.allSettled([...pending]);
-  return {status: 'completed'};
-
+  return {
+    update(document) {
+      graphRevision = document.graph_revision ?? graphRevision;
+      const previous = view;
+      view = createGraphView(document, {context: env.context});
+      states.clear();
+      dependencyCache.clear();
+      readNodes.clear();
+      const alive = new Set([...document.nodes.map(n => n.id), ...document.complex.map(c => 'complex:' + c.id)]);
+      for (const n of previous.values()) if (!alive.has(n.id)) generations.set(n.id, (generations.get(n.id) ?? 0) + 1);
+      for (const id of latest.keys())
+        if (!alive.has(id)) {
+          latest.delete(id);
+          versions.delete(id);
+          signatures.delete(id);
+        }
+      for (const n of view.values()) {
+        if (n.op === 'on_read' && scopeOf(n)) readNodes.set(scopeOf(n), [...(readNodes.get(scopeOf(n)) ?? []), n.id]);
+        if (n.op === 'scope') {
+          const before = previous.get(n.id)?.preset ?? {},
+            map = new Map(latest.get(n.id) ?? []);
+          for (const port of n.outputs)
+            if (!latest.has(n.id) || JSON.stringify(before[port.name]) !== JSON.stringify(n.preset[port.name])) {
+              if (Object.hasOwn(n.preset, port.name))
+                map.set(port.id, entryOf(n.preset[port.name], JSON.stringify(n.preset[port.name])));
+              else map.delete(port.id);
+            }
+          keep(n.id, {map});
+        }
+      }
+    },
+    async signal(roots, event = {}, execution = {}) {
+      execution = Object.freeze({...execution, policy: Object.freeze({...execution.policy})});
+      if (runWave.cancelled) runWave = newWave(null);
+      const batch = {
+        id: execution.dispatch_id ?? ++sequence,
+        execution,
+        pending: new Set(),
+        errors: {},
+        cancelled: false,
+      };
+      const results = await Promise.all(roots.map((id, index) => startRoot(id, batch, event, index)));
+      while (batch.pending.size) await Promise.allSettled([...batch.pending]);
+      return {
+        errors: {
+          ...batch.errors,
+          ...Object.fromEntries(results.filter(result => result.error).map(result => [result.id, result.error])),
+        },
+        cancelled: batch.cancelled,
+      };
+    },
+  };
 }

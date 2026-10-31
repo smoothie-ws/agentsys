@@ -50,9 +50,8 @@ const exclusive = work => {
   return run;
 };
 
-// ----- on_placed / on_deleted / on_wired / on_widget: the event nodes of a Library node, fired when a copy is added, removed, rewired or used -----
-const HOOKS = {queue: Promise.resolve(), waiting: 0, log: [], listeners: new Set()};
-const MAX_WAITING_HOOKS = 100;
+// ----- on_placed / on_deleted / on_input_connected / on_widget: the event nodes of a Library node, fired when a copy is added, removed, rewired or used -----
+const HOOKS = {pending: new Set(), log: [], listeners: new Set()};
 const MAX_HOOK_LOG = 200;
 function noteHook(entry) {
   HOOKS.log.push(entry);
@@ -73,31 +72,28 @@ function runHooks(events) {
       error: null,
       ms: 0,
     };
-    // A hook that keeps creating nodes that run hooks would never end: past a limit the rest is dropped and logged.
-    if (HOOKS.waiting >= MAX_WAITING_HOOKS) {
-      noteHook({...entry, ok: false, error: `More than ${MAX_WAITING_HOOKS} hooks are waiting; this one was skipped`});
-      continue;
-    }
-    HOOKS.waiting++;
-    HOOKS.queue = HOOKS.queue.then(async () => {
-      const started = Date.now();
-      try {
-        let plan=event.plan;
-        if(event.hook!=='on_deleted'){
-          const snapshot=await Backend.request('GET',`projects/${event.project_id}/workflow`,{query:{workflow_id:event.workflow_id}});
-          plan=hookPlan(snapshot,event.hook,event.group,event.data,{project_id:event.project_id,workflow_id:event.workflow_id});
+    const work = Promise.resolve()
+      .then(async () => {
+        const started = Date.now();
+        try {
+          const result = await dispatchGraphEvent(
+            event.project_id,
+            event.workflow_id,
+            event.hook,
+            event.group,
+            event.data,
+            event.removed
+          );
+          if (Object.keys(result.errors).length) throw new Error(Object.values(result.errors)[0]);
+          DB.announce(['wf:' + event.workflow_id]); // the code may have edited the workflow: open editors reload it
+        } catch (error) {
+          Object.assign(entry, {ok: false, error: error.message || String(error)});
         }
-        const result = plan ? await runPlanned(plan, runPlan) : {errors:{}};
-        if (result.crash) throw result.crash;
-        if (Object.keys(result.errors).length) throw new Error(Object.values(result.errors)[0]);
-        DB.announce(['wf:' + event.workflow_id]); // the code may have edited the workflow: open editors reload it
-      } catch (error) {
-        Object.assign(entry, {ok: false, error: error.message || String(error)});
-      }
-      entry.ms = Date.now() - started;
-      HOOKS.waiting--;
-      noteHook(entry);
-    });
+        entry.ms = Date.now() - started;
+        noteHook(entry);
+      })
+      .finally(() => HOOKS.pending.delete(work));
+    HOOKS.pending.add(work);
   }
 }
 
@@ -269,8 +265,7 @@ class Call {
       editor = new Editor(project, meta, doc);
     const nested = id => {
       const parent = new Map(doc.groups.map(g => [g.id, g.parent]));
-      for (let p = parent.get(id), n = 0; p && n < 64; p = parent.get(p), n++)
-        if (doc.complex.some(x => x.id === p && x.source)) return true;
+      for (let p = parent.get(id); p; p = parent.get(p)) if (doc.complex.some(x => x.id === p && x.source)) return true;
       return false;
     };
     for (const id of ids) {
@@ -345,7 +340,7 @@ class Call {
     }
   }
   /**
-   * on_placed, on_deleted, on_wired and on_widget: the copies of Library nodes that are in this workflow now but were not before
+   * on_placed, on_deleted, on_input_connected and on_widget: the copies of Library nodes that are in this workflow now but were not before
    * (placed, pasted, created by a script, brought back by redo), the ones that were and are gone, copies whose wired inputs
    * changed, and the widgets a person used. For each, the event nodes of that kind inside the copy fire (see hookPlan), and the graph
    * does the rest. Comparing the two documents means every way of adding or removing a node is covered, and nothing else is:
@@ -364,13 +359,22 @@ class Call {
       return snapshots.get(state);
     };
     const event = (hook, group, state, data) => {
-      const plan = hookPlan(snapshotOf(state), hook, group, data, context);
-      if (plan)
-        this.hookEvents.push({hook, group, data, project_id: project, workflow_id: workflow, node_id: 'complex:' + group, plan});
+      const graph = snapshotOf(state),
+        view = createGraphView(graph, {context});
+      if (view.values().some(node => node.op === hook && view.scopes.get(node.id)?.group === group))
+        this.hookEvents.push({
+          hook,
+          group,
+          data,
+          project_id: project,
+          workflow_id: workflow,
+          node_id: 'complex:' + group,
+          ...(hook === 'on_deleted' ? {removed: graph} : {}),
+        });
     };
     for (const id of now.keys()) if (!old.has(id)) event('on_placed', id, doc, {});
     for (const id of old.keys()) if (!now.has(id)) event('on_deleted', id, was, {});
-    // on_wired: a copy whose wired inputs are not the ones they were.
+    // on_input_connected: a copy whose wired inputs are not the ones they were.
     const wiredIds = (state, id) =>
       state.port_edges
         .filter(e => e.target === 'complex:' + id)
@@ -378,19 +382,20 @@ class Call {
         .sort();
     for (const [id, c] of now) {
       const ids = wiredIds(doc, id);
-      const sources = state => state.port_edges.filter(e=>e.target==='complex:'+id)
-        .map(e=>JSON.stringify([e.target_port,e.source,e.source_port])).sort();
+      const sources = state =>
+        state.port_edges
+          .filter(e => e.target === 'complex:' + id)
+          .map(e => JSON.stringify([e.target_port, e.source, e.source_port]))
+          .sort();
       if (!old.has(id) || JSON.stringify(sources(doc)) === JSON.stringify(sources(was))) continue;
-      event('on_wired', id, doc, {wired: ids.map(pid => c.interface.inputs.find(p => p.id === pid)?.name ?? pid)});
+      event('on_input_connected', id, doc, {
+        connected: ids.map(pid => c.interface.inputs.find(p => p.id === pid)?.name ?? pid),
+      });
     }
     // on_widget: one call for each widget a person changed, on every Library node copy around the node that has the widget.
     const around = nodeId => {
       const found = [];
-      for (
-        let g = doc.groups.find(x => x.members.includes(nodeId)), n = 0;
-        g && n < 64;
-        g = doc.groups.find(x => x.id === g.parent), n++
-      )
+      for (let g = doc.groups.find(x => x.members.includes(nodeId)); g; g = doc.groups.find(x => x.id === g.parent))
         if (now.has(g.id)) found.push(g);
       return found;
     };
@@ -430,7 +435,7 @@ class Call {
 }
 
 const Backend = {
-  /** Same contract as the old REST API: resolves with the parsed result or throws an ApiError. */
+  /** Resolves with the parsed result or throws an ApiError. */
   async request(method, path, {body = {}, query = {}, edit = null, scriptContext = null} = {}) {
     path = path.replace(/^\/+|\/+$/g, '');
     const found = ROUTES.find(r => r.methods.has(method) && r.regex.test(path));
@@ -449,18 +454,43 @@ const Backend = {
     );
     const call = new Call(method, body ?? {}, query ?? {}, edit);
     call.scriptContext = scriptContext;
+    assertExecutionCurrent(scriptContext);
+    if (scriptContext?.execution) {
+      const entry = GRAPH_RUNTIMES.get(scriptContext.execution.workflow_id);
+      if (entry) traceExecution(entry, scriptContext.execution, 'api.call', {method, route: found.pattern});
+    }
     if (scriptContext?.signal?.aborted) throw bad('Execution stopped');
     if (found.unlocked) return found.handler(call, params);
     const result = await exclusive(async () => {
+      assertExecutionCurrent(scriptContext);
       if (scriptContext?.signal?.aborted) throw bad('Execution stopped');
       const result = await found.handler(call, params);
       if (method !== 'GET') await call.finish(found.pattern.split('/')[2] || found.pattern.split('/')[0]);
       // A read that found something to bring up to date (a copy of a Library node, a type) stores it.
       if (method === 'GET' && call.refreshed) for (const {doc} of call.docs.values()) doc.types = ownTypes(doc.types);
+      assertExecutionCurrent(scriptContext);
       if (method !== 'GET' || call.refreshed) await call.ctx.commit();
+      for (const [id, {doc, project}] of call.docs) {
+        const types = [...(await call.libraryTypes()), ...ownTypes(doc.types)];
+        syncRuntimeGraph(id, buildSnapshot({id: project}, {id, name: ''}, {...doc, types}, false));
+      }
       return result;
     });
-    // The code of on_placed / on_deleted / on_wired / on_widget runs after the change is saved and the request lock is free, so it can call the API.
+    if (call.libraryTouched) {
+      for (const entry of GRAPH_RUNTIMES.values())
+        if (!call.docs.has(entry.workflow)) {
+          const refresh = new Call('GET', {}, {workflow_id: entry.workflow}, null);
+          await exclusive(async () => {
+            const {editor} = await refresh.workflow(entry.project),
+              document = editor.snapshot();
+            for (const {doc} of refresh.docs.values()) doc.types = ownTypes(doc.types);
+            await refresh.ctx.commit();
+            syncRuntimeGraph(entry.workflow, document);
+          });
+          DB.announce(['wf:' + entry.workflow]);
+        }
+    }
+    // Event handlers run after the edit is saved and the writer lock is free.
     runHooks(call.hookEvents);
     if (call.pluginLifecycle) await call.pluginLifecycle();
     if (call.pluginResult) {
@@ -469,21 +499,20 @@ const Backend = {
     }
     return result;
   },
-  /** Called with a log entry whenever hook code (on_placed, on_deleted, on_wired, on_widget) fails. Returns the function that stops listening. */
+  /** Called with a log entry whenever hook code (on_placed, on_deleted, on_input_connected, on_widget) fails. Returns the function that stops listening. */
   subscribeHooks(listener) {
     HOOKS.listeners.add(listener);
     return () => HOOKS.listeners.delete(listener);
   },
   /** Resolves when no hook code is running or waiting (for tests and programs that must see its effects). */
   async hooksIdle() {
-    for (let queue; queue !== HOOKS.queue; ) await (queue = HOOKS.queue);
+    while (HOOKS.pending.size) await Promise.allSettled([...HOOKS.pending]);
   },
   subscribe(listener, options) {
     return DB.subscribe(listener, options);
   },
   async shutdownExecutions() {
-    for (const id of EXECUTIONS.keys()) stopExecution(id);
-    await Promise.all([...EXECUTIONS.values()].map(entry=>entry.done));
+    await Promise.all([...GRAPH_RUNTIMES.keys()].map(stopGraph));
   },
   async shutdownPlugins() {
     await Promise.all([...PLUGIN_HOSTS.keys()].map(stopPluginRuntime));
@@ -517,6 +546,8 @@ const Backend = {
             200: {description: r.returns || 'Success'},
             400: {description: 'Invalid request'},
             404: {description: 'Not found'},
+            403: {description: 'Permission denied'},
+            409: {description: 'Version conflict, execution budget exceeded, or explicit recovery required'},
           },
           'x-needs': r.needs[method],
         };
