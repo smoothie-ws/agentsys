@@ -43,22 +43,14 @@ route(
   'projects/{project_id}/workflow',
   'Read the workflow graph',
   async (c, {project_id}) => {
-    const {project, meta, doc} = await c.workflow(project_id);
-    return buildSnapshot(project, meta, doc);
-  },
-  {query: ['workflow_id'], returns: 'Nodes with their ports, wires, groups and diagnostics'}
-);
-
-route(
-  'GET',
-  'projects/{project_id}/edit-history',
-  'Read the undo and redo depth',
-  async (c, {project_id}) => {
-    const {meta} = await c.workflow(project_id),
+    const {project, meta, doc} = await c.workflow(project_id),
       h = historyOf(meta.id);
-    return {undo: h.undo.length, redo: h.redo.length};
+    return {...buildSnapshot(project, meta, doc), history: {undo: h.undo.length, redo: h.redo.length}};
   },
-  {query: ['workflow_id']}
+  {
+    query: ['workflow_id'],
+    returns: 'Nodes with their ports, wires, groups and diagnostics, and the undo and redo depth',
+  }
 );
 
 for (const redo of [false, true])
@@ -97,10 +89,6 @@ route(
     returns: 'Entries {at, hook, node_id, project_id, workflow_id, ok, error, ms}, oldest first',
   }
 );
-route('GET', 'projects/{project_id}/node-types', 'List node types', async (c, {project_id}) => {
-  await c.project(project_id);
-  return {definitions: DEFINITIONS, widget_kinds: [...WIDGET_KINDS]};
-});
 
 route(
   'PUT',
@@ -331,11 +319,6 @@ route(
   async (c, {project_id, group_id}) => (await c.workflow(project_id)).editor.complex(group_id, c.body),
   {body: {wrap: true, collapsed: false}}
 );
-route('GET POST', 'projects/{project_id}/graph-validation', 'Check the graph for problems', async (c, {project_id}) => {
-  const {editor} = await c.workflow(project_id),
-    issues = editor.snapshot().diagnostics;
-  return {valid: !issues.length, errors: issues.map(i => i.message)};
-});
 route(
   'PUT',
   'projects/{project_id}/groups',
@@ -408,7 +391,7 @@ route(
     const multiple = Array.isArray(ids);
     const entry = await graphRuntime(c, project_id);
     const roots = multiple ? ids : [ids],
-      result = await signalGraph(entry, roots, {}, {parent: c.scriptContext, policy: body.policy});
+      result = await signalGraph(entry, roots, {}, c.scriptContext);
     const errors = Object.fromEntries(roots.filter(id => result.errors[id]).map(id => [id, result.errors[id]]));
     if (!body.collect && Object.keys(errors).length) throw Error(Object.values(errors)[0]);
     return {
@@ -418,10 +401,6 @@ route(
       errors,
       displays: result.displays,
       status: Object.fromEntries(result.nodes.map(node => [node.node_id, node.status])),
-      evaluated_nodes: result.evaluated_nodes,
-      run_id: result.run_id,
-      dispatch_id: result.dispatch_id,
-      parent_dispatch_id: result.parent_dispatch_id,
       dispatch_status: result.dispatch_status,
     };
   },

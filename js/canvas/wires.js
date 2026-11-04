@@ -42,7 +42,9 @@ function startWire(event, nodeId, socket) {
       if (Math.hypot(e.clientX - press.x, e.clientY - press.y) > 4) moved = true;
       const cursor = toWorld(e.clientX, e.clientY);
       $$('.drop-target').forEach(el => el.classList.remove('drop-target'));
-      target(e)?.element.classList.add('drop-target');
+      const over = target(e)?.element;
+      over?.classList.add('drop-target');
+      over?.closest('.node.reroute')?.classList.add('drop-target');
       const a = pointOf(from);
       drawWires(from.dir === 'out' ? {a, b: cursor} : {a: cursor, b: a});
     },
@@ -89,7 +91,9 @@ function startWire(event, nodeId, socket) {
     }
     // Dropped on the node itself: the first free port that the wire fits.
     const free = (node?.[desired === 'in' ? 'inputs' : 'outputs'] || []).find(
-      p => (desired === 'out' || !p.connected || isSignal(p.type)) && endpointsFit(from, {id, port: p.id, dir: desired, face: ''})
+      p =>
+        (desired === 'out' || !p.connected || isSignal(p.type)) &&
+        endpointsFit(from, {id, port: p.id, dir: desired, face: ''})
     );
     return free ? {id, port: free.id, dir: desired, face: '', element} : null;
   }
@@ -111,7 +115,9 @@ async function bindComplexPort(groupId, direction, portId, endpoint, unbind = nu
     [direction]: cx.interface[direction].map(p => {
       if (p.id !== portId) return p;
       const {bound = [], ...rest} = p,
-        other = b => !(endpoint && b.node_id === endpoint.id && b.port_id === endpoint.port) && !(unbind && b.node_id === unbind.node_id && b.port_id === unbind.port_id),
+        other = b =>
+          !(endpoint && b.node_id === endpoint.id && b.port_id === endpoint.port) &&
+          !(unbind && b.node_id === unbind.node_id && b.port_id === unbind.port_id),
         added = endpoint ? [{node_id: endpoint.id, port_id: endpoint.port}] : [],
         next = direction === 'inputs' ? [...bound.filter(other), ...added] : endpoint ? added : bound.filter(other);
       return next.length ? {...rest, bound: next} : rest;

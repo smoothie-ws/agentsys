@@ -1,4 +1,4 @@
-// Keyboard shortcuts and the appearance settings (themes, fonts).
+// Keyboard shortcuts and the appearance settings (palette, fonts, graph look).
 'use strict';
 
 // ----- preferences: shortcuts and appearance -----
@@ -42,13 +42,25 @@ const CYRILLIC_KEYS = Object.fromEntries(
   [...'йцукенгшщзфывапролдячсмить'].map((ch, i) => [ch, [...'qwertyuiopasdfghjklzxcvbnm'][i]])
 );
 Object.assign(CYRILLIC_KEYS, {і: 's', ї: ']', є: "'", ґ: '\\', ё: '`', х: '[', ъ: ']', ж: ';', э: "'", б: ',', ю: '.'});
-const SYMBOL_CODES = {'[': 'BracketLeft', ']': 'BracketRight', ';': 'Semicolon', "'": 'Quote', ',': 'Comma', '.': 'Period', '`': 'Backquote'};
+const SYMBOL_CODES = {
+  '[': 'BracketLeft',
+  ']': 'BracketRight',
+  ';': 'Semicolon',
+  "'": 'Quote',
+  ',': 'Comma',
+  '.': 'Period',
+  '`': 'Backquote',
+};
 function keyCode(event) {
   let code = event.code;
   if (!code || code === 'Unidentified') {
     const k = String(event.key || '').toLowerCase(),
       latin = CYRILLIC_KEYS[k] || k;
-    code = /^[a-z]$/.test(latin) ? 'Key' + latin.toUpperCase() : /^[0-9]$/.test(latin) ? 'Digit' + latin : SYMBOL_CODES[latin] || (event.key === ' ' ? 'Space' : '');
+    code = /^[a-z]$/.test(latin)
+      ? 'Key' + latin.toUpperCase()
+      : /^[0-9]$/.test(latin)
+        ? 'Digit' + latin
+        : SYMBOL_CODES[latin] || (event.key === ' ' ? 'Space' : '');
   }
   return code.replace(/^(Shift|Control|Alt|Meta)(Left|Right)$/, '$1');
 }
@@ -84,8 +96,20 @@ const THEMES = {
 };
 /** Graph Editor look: corner radii (px), wire shape and thickness. Wire shapes are drawn by `wirePath` in render.js. */
 const GRAPH_DEFAULTS = {node_radius: 16, group_radius: 33, wire_style: 'bezier', wire_width: 2, wire_curve: 50};
-const WIRE_STYLES = [['bezier', 'Bezier curve'], ['linear', 'Straight line'], ['step', 'Right angles'], ['rounded', 'Rounded right angles']];
-const STYLE_DEFAULTS = {font_size: 14, font_family: 'system', ...THEMES.Graphite, effects: true, animations: true, ...GRAPH_DEFAULTS, components: {}};
+const WIRE_STYLES = [
+  ['bezier', 'Bezier curve'],
+  ['linear', 'Straight line'],
+  ['step', 'Right angles'],
+  ['rounded', 'Rounded right angles'],
+];
+const STYLE_DEFAULTS = {
+  font_size: 14,
+  font_family: 'system',
+  ...THEMES.Graphite,
+  effects: true,
+  animations: true,
+  ...GRAPH_DEFAULTS,
+};
 let graphStyle = GRAPH_DEFAULTS;
 /** What is on the root element now. Removing a variable and setting it again to the same value would restyle the whole page for nothing,
  *  so a value is written only when it differs from the one in place (a colour drag applies on every frame). */
@@ -113,24 +137,13 @@ function applyStyle(style = {}) {
       .map(i => parseInt(hex.slice(i, i + 2), 16))
       .reduce((sum, c, i) => sum + c * [0.2126, 0.7152, 0.0722][i], 0);
   setRootData('theme', luminance(value.background) > 140 ? 'light' : 'dark');
-  setRootVar('--on-accent', luminance(value.components?.buttons?.primary || value.accent) > 140 ? '#14171c' : '#ffffff');
+  setRootVar('--on-accent', luminance(value.accent) > 140 ? '#14171c' : '#ffffff');
   graphStyle = value;
   setRootVar('--node-radius', value.node_radius + 'px');
   setRootVar('--frame-radius', value.group_radius + 'px');
   setRootVar('--wire-width', value.wire_width);
   setRootData('motion', String(value.animations));
   setRootData('effects', String(value.effects));
-  applyThemeParts(value.components || {});
-  // Colours never move a row; only what changes sizes (the font, the corner radius of the panels) makes the highlights find their rows again.
-  applyNavJoined(value.effects, [value.font_size, value.font_family, value.components?.panels?.radius, value.components?.navigation?.radius].join('|'));
-}
-
-function applyThemeParts(parts) {
-  for (const [group,definition] of Object.entries(THEME_PARTS))
-    for (const [key,rule] of Object.entries(definition.fields)) {
-      const token=`--theme-${group}-${key.replaceAll('_','-')}`;
-      setRootVar(token, parts[group]?.[key]!==undefined ? parts[group][key]+(rule.type==='number'?'px':'') : null);
-    }
-  const native={status:{success:'--ok',error:'--bad',warning:'--warn',muted:'--muted'}};
-  for (const [group,fields] of Object.entries(native)) for (const [key,token] of Object.entries(fields)) setRootVar(token, parts[group]?.[key] || null);
+  // Colours never move a row; only what changes sizes (the font) makes the highlights find their rows again.
+  applyNavJoined(value.effects, value.font_size + '|' + value.font_family);
 }

@@ -48,6 +48,8 @@ PAGES.workflow = async (view, route) => {
     edges: new Set(),
     results: new Map(),
     runStatus: new Map(),
+    runs: new Map(), // node id -> how many passes it has had (the backend counts them)
+    glowUntil: new Map(), // node id -> when the glow of its last pass may end (performance.now())
     history: {undo: 0, redo: 0},
     drag: null,
     spawn: null,
@@ -66,6 +68,17 @@ PAGES.workflow = async (view, route) => {
     mapDrag: null,
     frameWork: new Map(),
     frameHandle: 0,
+    graphCache: null,
+    nodeSignatures: new WeakMap(),
+    innerNodeCache: new WeakMap(),
+    dirtyGeometry: new Set(),
+    socketKeys: new Map(),
+    frameElements: new Map(),
+    wireElements: new Map(),
+    sceneRevision: 0,
+    minimapScene: null,
+    minimapTheme: null,
+    viewportSize: null,
   });
   W.projectData = project;
   W.policy = policy;
@@ -88,10 +101,10 @@ PAGES.workflow = async (view, route) => {
     icon: W.library ? (app.resources || []).find(r => r.id === W.library)?.payload.icon || '' : '',
   });
   const collapsed = sideHidden();
-  view.innerHTML = `<div class="editor opening">
+  view.innerHTML = `<div class="editor opening" data-side-collapsed="${collapsed}">
     <div class="canvas" id="canvas" tabindex="0" aria-label="Workflow canvas">
       <div class="toolbar" role="toolbar" aria-label="Workflow actions">
-        ${W.library ? '' : `<button class="run" id="start" title="Run the workflow (${esc(shortcutText('run'))})">${icon('play')}<span>Run</span></button><button class="icon" id="stop" title="Stop current work" aria-label="Stop current work">${icon('stop')}</button><button class="icon" id="pause" title="Pause graph" aria-label="Pause graph">${icon('pause')}</button>`}
+        ${W.library ? '' : `<button class="run" id="start" title="Run the workflow (${esc(shortcutText('run'))})">${icon('play')}<span>Run</span></button><button class="icon" id="pause" title="Pause graph" aria-label="Pause graph" hidden>${icon('pause')}</button>`}
         <button class="icon mobile-only" type="button" data-empty-add title="Add node" aria-label="Add node">${icon('plus')}</button>
         <button class="icon" id="undo" title="Undo (${esc(shortcutText('undo'))})" aria-label="Undo">${icon('undo')}</button>
         <button class="icon" id="redo" title="Redo (${esc(shortcutText('redo'))})" aria-label="Redo">${icon('redo')}</button>
@@ -128,6 +141,7 @@ PAGES.workflow = async (view, route) => {
   leaveGuards.push(async () => {
     for (const element of W.elements.values()) forgetFieldHeights(element);
     clearTimeout(W.reloadTimer);
+    W.executionSession?.unfollow?.();
     W.unsubscribe?.();
     W.unsubscribe = null;
     return Inspector.leave();

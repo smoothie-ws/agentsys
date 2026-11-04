@@ -47,14 +47,22 @@ function addItems({all = false} = {}) {
   const primitive = (name, kind, glyph) => [
     name,
     async () => {
-      const result = await api(`projects/${W.project}/primitives`, {method: 'POST', body: wf({primitive: kind, point: at}), edit: editToken()});
+      const result = await api(`projects/${W.project}/primitives`, {
+        method: 'POST',
+        body: wf({primitive: kind, point: at}),
+        edit: editToken(),
+      });
       await reload();
       select([result.id]);
     },
     {icon: glyph, hint: ''},
   ];
   const library = menuOf(tree);
-  return [primitive('Script', 'script', 'code'), primitive('Event', 'event', 'bolt'), ...(library.length ? [null, ...library] : [])];
+  return [
+    primitive('Script', 'script', 'code'),
+    primitive('Event', 'event', 'bolt'),
+    ...(library.length ? [null, ...library] : []),
+  ];
 }
 function addMenu(x, y) {
   popup(x, y, addItems(), {search: true, searchItems: addItems({all: true})});
@@ -106,7 +114,11 @@ function selectionMenu() {
       ? [['Rename', () => renameGroup(selectedFrames()[0].id), {icon: 'pencil', hint: shortcut('renameGroup')}]]
       : []),
     [pinned ? 'Unpin' : 'Pin', () => setPinned(!pinned), {icon: pinned ? 'unpin' : 'pin', disabled: !any}],
-    [off ? 'Enable' : 'Disable', () => toggleDisabled()?.catch(fail), {icon: 'power', hint: shortcut('disable'), disabled: !switchable.length}],
+    [
+      off ? 'Enable' : 'Disable',
+      () => toggleDisabled()?.catch(fail),
+      {icon: 'power', hint: shortcut('disable'), disabled: !switchable.length},
+    ],
     [
       folded ? 'Expand' : 'Collapse',
       () => setFolded(foldable, !folded).catch(fail),

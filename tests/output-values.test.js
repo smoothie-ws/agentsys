@@ -21,7 +21,10 @@ async function setup() {
 
 test('the value typed into an editable output is the output of a node without an operation, and of a Script that leaves it alone', async () => {
   const s = await setup();
-  const value = await s.node({title: 'Value', outputs: [{id: 'value', name: 'value', type: 't:' + TEXT.id, editable: true}]});
+  const value = await s.node({
+    title: 'Value',
+    outputs: [{id: 'value', name: 'value', type: 't:' + TEXT.id, editable: true}],
+  });
   assert.deepEqual((await s.run([value.id])).outputs[value.id], {});
   await s.call('PUT', 'output-values', {node_id: value.id, values: {value: 'hello'}});
   assert.equal((await s.run([value.id])).outputs[value.id].value, 'hello');
@@ -29,13 +32,18 @@ test('the value typed into an editable output is the output of a node without an
   const port = snap.nodes.find(n => n.id === value.id).outputs[0];
   assert.deepEqual([port.editable, port.default], [true, 'hello']);
 
-  const reader = await fn(s.app, s.id, {workflow_id: s.id}, {
-    code: 'node.output.b = node.output.a + "!";',
-    outputs: [
-      {name: 'a', type: 't:' + TEXT.id, editable: true},
-      {name: 'b', type: 't:' + TEXT.id, editable: true},
-    ],
-  });
+  const reader = await fn(
+    s.app,
+    s.id,
+    {workflow_id: s.id},
+    {
+      code: 'node.output.b = node.output.a + "!";',
+      outputs: [
+        {name: 'a', type: 't:' + TEXT.id, editable: true},
+        {name: 'b', type: 't:' + TEXT.id, editable: true},
+      ],
+    }
+  );
   await s.call('PUT', 'output-values', {node_id: reader.wrapper, values: {a: 'x', b: 'y'}});
   const out = (await s.run([reader.id])).outputs[reader.id];
   assert.deepEqual([out.a, out.b], ['x', 'x!']); // the code reads what was typed, and may overwrite it
@@ -65,20 +73,45 @@ test('a Library node defines an editable output; each placed copy holds its own 
   const holder = await app.api('POST', `projects/${id}/typed-nodes`, {
     ...q,
     node_type: 'custom',
-    config: {title: 'Value', inputs: [], outputs: [{id: 'out', name: 'out', type: 't:' + type.id, editable: true, default: 'start'}]},
+    config: {
+      title: 'Value',
+      inputs: [],
+      outputs: [{id: 'out', name: 'out', type: 't:' + type.id, editable: true, default: 'start'}],
+    },
     position: {x: 0, y: 0},
   });
   const define = (editable, arbitrary = {inputs: false, outputs: false}) =>
-    app.api('PUT', `projects/${id}/complex/${root}`, {...q, interface: {inputs: [], outputs: [{id: 'out', name: 'out', type: 't:' + type.id, bound: [{node_id: holder.id, port_id: 'out'}], ...(editable ? {editable: true, default: 'start'} : {})}]}, arbitrary});
+    app.api('PUT', `projects/${id}/complex/${root}`, {
+      ...q,
+      interface: {
+        inputs: [],
+        outputs: [
+          {
+            id: 'out',
+            name: 'out',
+            type: 't:' + type.id,
+            bound: [{node_id: holder.id, port_id: 'out'}],
+            ...(editable ? {editable: true, default: 'start'} : {}),
+          },
+        ],
+      },
+      arbitrary,
+    });
   await define(true);
   const {id: wid} = await app.api('POST', 'projects', {name: 'Placed'}),
     wq = {workflow_id: wid};
-  const placed = (await app.api('POST', `projects/${wid}/custom-nodes/${opened.resource_id}`, {workflow_id: wid, point: {x: 0, y: 0}})).roots[0];
-  const output = async () => (await app.api('GET', `projects/${wid}/workflow`, {}, wq)).complex.find(c => c.id === placed).outputs[0];
+  const placed = (
+    await app.api('POST', `projects/${wid}/custom-nodes/${opened.resource_id}`, {workflow_id: wid, point: {x: 0, y: 0}})
+  ).roots[0];
+  const output = async () =>
+    (await app.api('GET', `projects/${wid}/workflow`, {}, wq)).complex.find(c => c.id === placed).outputs[0];
   assert.deepEqual([(await output()).editable, (await output()).default], [true, 'start']);
   await app.api('PUT', `projects/${wid}/output-values`, {...wq, node_id: 'complex:' + placed, values: {out: 'typed'}});
   const show = await fn(app, wid, wq, {code: 'node.display(input)', inputs: ['input']});
-  await app.api('POST', `projects/${wid}/port-connections`, {...wq, add: [{source: 'complex:' + placed, source_port: 'out', target: show.wrapper, target_port: 'input'}]});
+  await app.api('POST', `projects/${wid}/port-connections`, {
+    ...wq,
+    add: [{source: 'complex:' + placed, source_port: 'out', target: show.wrapper, target_port: 'input'}],
+  });
   const run = () => app.api('POST', `projects/${wid}/evaluate-node`, {...wq, node_ids: [show.id], collect: true});
   assert.equal((await run()).displays[show.id], 'typed');
   // The definition changes: the typed value stays.

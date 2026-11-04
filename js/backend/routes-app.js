@@ -34,11 +34,9 @@ route(
     }
     if ('shortcuts' in value) prefs.shortcuts = validateShortcuts(value.shortcuts);
     if ('style' in value) prefs.style = validateAppearance(value.style, prefs.style);
-    if ('themes' in value) prefs.themes = validateThemes(value.themes);
-    if ('theme' in value) {
-      if (typeof value.theme !== 'string' || value.theme.length > 100) throw bad('Invalid theme selection.');
-      prefs.theme = value.theme;
-    }
+    delete prefs.themes; // saved themes and the selected theme were removed: the palette is the style
+    delete prefs.theme;
+    if (prefs.style) delete prefs.style.components;
     c.ctx.set('prefs', prefs);
     return prefs;
   },

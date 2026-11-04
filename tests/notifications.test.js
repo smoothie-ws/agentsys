@@ -34,27 +34,10 @@ test('notifications: input is checked and the list is bounded', async () => {
   assert.equal(list.items[0].title, 'n204');
 });
 
-test('notifications: scripts and plugins need notifications.write, and a plugin cannot sign as another', async () => {
+test('notifications: a Script needs notifications.write to post and system.admin to clear', async () => {
   const app = createApp();
-  const needs = (await app.api('GET', 'openapi.json').catch(() => null))?.paths?.notifications;
-  if (needs) assert.deepEqual(needs.post['x-needs'], ['notifications.write']);
-  const pkg = grants => ({
-    format: 'agentsys.plugin/2',
-    manifest: {id: 'bell', name: 'Bell', version: '1.0.0', permissions: ['notifications.write'], main: 'main.js'},
-    files: {'main.js': 'exports.activate=()=>{};'},
-  });
-  await app.api('POST', 'plugins', {package: pkg(), grants: [], enable: true});
-  const post = () =>
-    app.api('POST', 'plugins/bell/bridge', {
-      method: 'POST',
-      path: 'notifications',
-      body: {title: 'Hi', source: 'someone-else'},
-    });
-  await assert.rejects(post(), /notifications\.write/);
-  await app.api('PUT', 'plugins/bell', {grants: ['notifications.write']});
-  assert.equal((await post()).source, 'plugin:bell');
-  await assert.rejects(
-    app.api('POST', 'plugins/bell/bridge', {method: 'DELETE', path: 'notifications', body: {}}),
-    /system\.admin/
-  );
+  const needs = method => JSON.parse(app.eval(`JSON.stringify(routeNeeds('notifications', '${method}'))`));
+  assert.deepEqual(needs('GET'), ['notifications.read']);
+  assert.deepEqual(needs('POST'), ['notifications.write']);
+  assert.deepEqual(needs('DELETE'), ['system.admin']);
 });

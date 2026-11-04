@@ -1,66 +1,6 @@
 // The API reference: a searchable method tree beside the selected method, inside the page.
 'use strict';
 
-const SCRIPT_API = [
-  ['node.input.name', 'The input values of the enclosing Custom Node, read when this Script starts.'],
-  ['node.output.name = value', 'Write a free data output. Values are copied as JSON and saved with the graph.'],
-  [
-    'await node.output.name.emit(options?)',
-    'Emit a signal and wait for its branches. options: {handles: ["break", "continue"], failFast: true}. Names are exact.',
-  ],
-  [
-    'node.output.out',
-    'The Script’s own completion signal. It emits once after successful completion. A manual .emit() sends an additional signal.',
-  ],
-  ['await node.reread(name)', 'Read an input again using the current graph connections and values.'],
-  ['await node.sleep(ms)', 'Wait, respecting Pause before continuation.'],
-  [
-    'node.display(...values)',
-    'Show text, JSON or {mime_type, data} base64 images immediately. The preview is saved with the graph.',
-  ],
-  ['await node.widgets(list)', 'Replace this Script’s widgets through the checked graph API.'],
-  ['await node.widgets.set(values)', 'Set widget values through the checked graph API.'],
-  ['node.flow.break() / continue()', 'End this Script and signal the nearest emission handling that control.'],
-  ['node.flow.cancel()', 'Cancel this emission’s branch and end this Script.'],
-  ['node.flow.abort()', 'Cancel all currently dispatched graph work and end this Script.'],
-  ['node.cancelled', 'Whether this invocation’s flow was cancelled.'],
-  ['context.project_id / workflow_id / node_id', 'The current project, workflow and Script IDs.'],
-  ['context.instance_id / resource_id', 'The enclosing Custom Node instance and Library resource, or null.'],
-  ['context.event', 'The initiating event: {payload}, {connected} or {widget}, depending on the event source.'],
-  ['context.widgets', 'Widget values of the enclosing Custom Node and this Script.'],
-  [
-    'context.execution',
-    'Immutable run, dispatch, parent invocation and graph revision IDs. Checked child API calls inherit identity and optional budgets.',
-  ],
-  [
-    'context.state',
-    'The workflow’s shared durable JSON object. Assign or delete its properties; nested objects and arrays are supported.',
-  ],
-  [
-    'await agentsys(method, path, body?, query?)',
-    'Call the application API with this node’s current permissions. Paths have no /api prefix.',
-  ],
-  [
-    'globalThis',
-    'Shared JavaScript globals in this workflow’s host. These globals are lost on Stop or application restart; use context.state for durable values.',
-  ],
-];
-function openScriptApi() {
-  dialog(
-    'Script API',
-    `<div class="script-api"><p>A Script has <code>in</code>, <code>script</code> and an automatic completion output <code>out</code>. Run sends a signal to on_run; it does not reset the graph.</p><div class="table-scroll"><table><thead><tr><th>API</th><th>Behavior</th></tr></thead><tbody>${SCRIPT_API.map(([name, description]) => `<tr><td><code>${esc(name)}</code></td><td>${esc(description)}</td></tr>`).join('')}</tbody></table></div><pre class="code">context.state.count = (context.state.count ?? 0) + 1;
-node.display(context.state.count);
-// out emits automatically after success</pre><p>Graph edits affect subsequent nodes and emissions. An invocation already executing keeps its current function. Pause keeps work in memory; Stop cancels work while preserving JSON state and values. Application restart restores values, not JavaScript stacks or timers.</p></div>`,
-    null
-  );
-}
-document.addEventListener('click', event => {
-  if (event.target.closest('[data-script-api]')) {
-    event.preventDefault();
-    openScriptApi();
-  }
-});
-
 /** Stable addresses and a path tree for the searchable reference. */
 const apiCallKey = row => row.method + ' ' + row.path;
 const apiCallHref = row => '/api?call=' + encodeURIComponent(apiCallKey(row));
@@ -187,8 +127,8 @@ function mountApiReference(box, spec = Backend.openapi()) {
 PAGES.api = async (view, route) => {
   const spec = DB.mode === 'files' ? await api('openapi.json') : Backend.openapi();
   if (app.route !== route) return;
-  view.innerHTML = `<div class="page api-page">${pageHead({title: 'API reference', menu: '', sub: 'Every action of the app is an API call.', actions: '<button type="button" data-script-api>Script API</button><button type="button" id="api-download">Download OpenAPI</button>'})}
-    <section id="api-reference"><p class="muted">With the server running: <code>${esc(location.origin)}/api/…</code>. In scripts: <code>agentsys(method, path, body)</code>.</p><div id="api-box"></div></section></div>`;
+  view.innerHTML = `<div class="page api-page">${pageHead({title: 'API reference', menu: '', sub: 'Every action of the app is an API call.', actions: '<button type="button" id="api-download">Download OpenAPI</button>'})}
+    <section id="api-reference"><p class="muted">With the server running: <code>${esc(location.origin)}/api/…</code>.</p><div id="api-box"></div></section></div>`;
   const reference = mountApiReference($('#api-box'), spec);
   app.apiReference = reference;
   $('#api-download', view).onclick = () => reference.download();

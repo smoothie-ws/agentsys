@@ -33,12 +33,12 @@ test('empty widget updates perform no work and add no undo entry', async () => {
     p = await project(app),
     node = await p.node(nodes.script(''));
   const before = await p.snapshot(),
-    history = await p.call('GET', 'edit-history');
+    history = (await p.call('GET', 'workflow')).history;
   await p.values(node.id, {});
   await p.use(node.id, {});
   await p.idle();
   assert.deepEqual(await p.snapshot(), before);
-  assert.deepEqual(await p.call('GET', 'edit-history'), history);
+  assert.deepEqual((await p.call('GET', 'workflow')).history, history);
   assert.deepEqual(await app.api('GET', 'node-hooks'), []);
 });
 
@@ -167,7 +167,7 @@ await node.widgets.set({echo: widget.value + "!"});`
   assert.deepEqual(await p.state('last'), {id: 't', kind: 'text', value: 'hi'});
   const values = Object.fromEntries((await p.widgets(body)).map(w => [w.id, w.value]));
   assert.deepEqual(values, {t: 'hi', echo: 'hi!'}, 'the Script set echo, which did not fire on_widget again');
-  assert.equal((await p.call('GET', 'edit-history')).undo > 0, true);
+  assert.equal((await p.call('GET', 'workflow')).history.undo > 0, true);
 });
 
 test('a button counts its clicks; a Script of the copy reads the count', async () => {

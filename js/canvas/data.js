@@ -55,9 +55,8 @@ async function reload(first = false) {
 
 async function loadWorkflowSnapshot(first, task) {
   const canvas = task.canvas;
-  const [snapshot, history, policy] = await Promise.all([
+  const [snapshot, policy] = await Promise.all([
     api(`projects/${W.project}/workflow`, {query: {workflow_id: W.workflow}}),
-    api(`projects/${W.project}/edit-history`, {query: {workflow_id: W.workflow}}),
     W.policy && !W.policyDirty ? W.policy : api(`projects/${W.project}/policy`),
   ]);
   if (canvas !== W.canvas || !canvas.isConnected || snapshot.workflow_id !== W.workflow) return;
@@ -66,7 +65,7 @@ async function loadWorkflowSnapshot(first, task) {
   W.snapshot = snapshot;
   W.policy = policy;
   W.policyDirty = false;
-  W.history = history;
+  W.history = snapshot.history;
   discardStaleRun();
   for (const node of snapshot.nodes) if (W.runStatus.has(node.id)) node.status = W.runStatus.get(node.id);
   W.nodes = new Map(snapshot.nodes.map(n => [n.id, n]));
@@ -131,7 +130,18 @@ function hiddenSets() {
 }
 const isUnder = (group, ancestor) => isInside(W.groups, group, ancestor);
 function visibleNodes() {
-  return [...W.nodes.values()].filter(n => !W.hidden.nodes.has(n.id) && (n.kind !== 'complex' || n.collapsed));
+  const cache = canvasGraphCache();
+  return (cache.nodes ??= [...W.nodes.values()].filter(
+    n => !W.hidden.nodes.has(n.id) && (n.kind !== 'complex' || n.collapsed)
+  ));
+}
+// Visibility and port resolution depend on the graph, not selection, execution status or camera.
+function canvasGraphCache() {
+  if (W.graphCache?.snapshot !== W.snapshot || W.graphCache?.hidden !== W.hidden) {
+    W.graphCache = {snapshot: W.snapshot, hidden: W.hidden};
+    W.innerNodeCache = new WeakMap();
+  }
+  return W.graphCache;
 }
 /** The groups a node sits in, innermost first. */
 function groupChain(id) {

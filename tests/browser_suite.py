@@ -1,4 +1,4 @@
-"""Run every browser regression with isolated server/browser data.
+"""Run the browser scenarios with isolated server/browser data.
 
 Requires Playwright and Chromium; optional script names select a subset.
 Logs go to a temporary directory printed at startup. No project data is used.
@@ -14,7 +14,7 @@ import threading
 import time
 
 ROOT = Path(__file__).resolve().parents[1]
-SELF_HOSTED = {'available_nodes', 'catalog', 'permissions', 'workspace_layout', 'canvas_latency', 'ai_nodes', 'execution_ui', 'durable_execution'}
+SELF_HOSTED = {'execution_ui', 'plugins'}
 
 
 class QuietHandler(http.server.SimpleHTTPRequestHandler):
@@ -25,7 +25,7 @@ class QuietHandler(http.server.SimpleHTTPRequestHandler):
 def main():
     selected = sys.argv[1:] or [
         p.stem.removeprefix('browser_') for p in sorted((ROOT / 'tests').glob('browser_*.py'))
-        if p.stem not in {'browser_server', 'browser_suite', 'browser_performance'}
+        if p.stem not in {'browser_server', 'browser_suite'}
     ]
     logs = Path(tempfile.mkdtemp(prefix='agentsys-browser-suite-'))
     print(f'Logs: {logs}', flush=True)

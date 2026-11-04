@@ -152,7 +152,7 @@ const Inspector = {
     this.workflowPolicySave = null;
     this.root = root;
     root.hidden = false;
-    root.dataset.collapsed = String(sideHidden());
+    this.setCollapsed(sideHidden());
     root.innerHTML = `<nav class="side-tabs" aria-label="Canvas panel sections">${[
       ['workflow', 'Workflow settings', 'settings'],
       ['properties', 'Properties', 'node'],
@@ -227,9 +227,15 @@ const Inspector = {
     });
   },
 
+  /** The editor's grid follows the panel's state through an attribute (a :has() selector would restyle the whole page on every edit). */
+  setCollapsed(collapsed) {
+    this.root.dataset.collapsed = String(collapsed);
+    this.root.parentElement.dataset.sideCollapsed = String(collapsed);
+  },
+
   /** Shows or hides the panel; `save` remembers the choice (a change of layout only follows the remembered one). */
   toggle(visible = this.root.dataset.collapsed === 'true', save = true) {
-    this.root.dataset.collapsed = String(!visible);
+    this.setCollapsed(!visible);
     $$('[data-side-tab]', this.root).forEach(b => {
       const on = visible && b.dataset.sideTab === this.tab;
       b.classList.toggle('active', on);
@@ -268,6 +274,13 @@ const Inspector = {
   refresh() {
     if (this.root.dataset.collapsed === 'true') return;
     if (this.tab === 'workflow') return this.workflow();
+    if (
+      this.tab === 'properties' &&
+      !W.selected.size &&
+      !W.edges.size &&
+      this.body()?.querySelector('[data-selection-empty]')
+    )
+      return;
     // A completed permission save must not replace a radio during the next pointer click.
     if ($('#placed-grants, #script-grants', this.body())?.contains(document.activeElement)) {
       this.connections();
@@ -295,6 +308,9 @@ const Inspector = {
   },
 
   async show(soft = false) {
+    if (!W.snapshot || !W.canvas?.isConnected) return;
+    const canvas = W.canvas,
+      root = this.root;
     if (!this.root || this.root.dataset.collapsed === 'true') return syncToolbar();
     syncToolbar();
     if (soft && this.editing?.isConnected) {
@@ -310,6 +326,7 @@ const Inspector = {
     const pending = this.pending;
     this.pending = null;
     if (!soft) await pending?.();
+    if (canvas !== W.canvas || root !== this.root || !W.snapshot || !canvas.isConnected) return;
     this.editing = null;
     this.body().onclick = null;
     this.body().onchange = null;
@@ -354,7 +371,9 @@ const Inspector = {
 
   /** Nothing is selected. */
   nothing() {
-    this.body().innerHTML = '<p class="muted small">Select a node or a group to edit its properties here.</p>';
+    const html =
+      '<p class="muted small" data-selection-empty>Select a node or a group to edit its properties here.</p>';
+    if (this.body().innerHTML !== html) this.body().innerHTML = html;
   },
 
   /** Each workflow keeps its own opt-in set. Group checkboxes toggle all current descendants. */
@@ -425,6 +444,7 @@ const Inspector = {
 
   /** The Workflow section: its name, its types and problems. */
   workflow() {
+    if (!W.snapshot) return;
     const issues = W.snapshot.diagnostics || [],
       host = $('#side-workflow');
     const existingPolicy = $('#workflow-policy, #library-permissions', host);
@@ -450,10 +470,9 @@ const Inspector = {
             )
           : ''
       }
-      ${section('execution', 'Execution', 'play', 'Signals, values and pause', `<div class="workflow-guide"><p><strong>Run</strong> signals every enabled on_run Event. Further signals use the same mechanism, including while other work is active.</p><p><strong>Pause</strong> keeps variables and outputs in memory. New code and continuations wait for Resume. Switching tabs keeps this execution.</p><p><strong>Stop</strong> cancels active work and keeps graph values. Graph edits affect the next node or emission; code already executing finishes its current invocation.</p><div class="execution-legend"><span>${icon('play')}Running code</span><span>${icon('timer')}Waiting for a timer</span><span>${icon('chevron')}Waiting for a branch</span></div><p class="muted">A Script emits its own <code>out</code> automatically after success. <code>await node.output.name.emit()</code> emits a signal from its code and waits for that branch. <code>context.state</code> is the shared JSON context saved with the workflow.</p></div>`)}
       ${section('available', 'Available nodes', 'package', plural(W.snapshot.library_nodes?.length ?? 0, 'Library node') + ' included in the Add menu', '<div data-available-nodes></div>')}
       ${W.library ? (resource ? section('permissions', 'Default permissions', 'lock', 'For new copies of this Library node', `<form id="library-permissions">${grantControls(resource.payload.grants ?? [], {title: 'Allowed operations', hint: 'Copied to new instances. Existing instances keep their own permissions.'})}</form>`) : '') : section('permissions', 'Project permissions', 'lock', 'Shared by every workflow in this project', `<form id="workflow-policy">${grantControls(W.policy.allow, {title: 'Allowed operations', hint: 'Nodes can only perform operations allowed by both the project and the node.'})}</form>`)}
-      ${developerMode() ? section('types', 'Types', 'code', plural(W.snapshot.types.length, 'type'), this.typesSection()) : ''}`;
+      ${developerMode() ? section('types', 'Types', 'code', plural(this.ownTypes().length, 'type') + ' of this workflow', this.typesSection()) : ''}`;
     for (const details of $$('[data-workflow-section]', host)) {
       const remember = open =>
         open ? opened.add(key(details.dataset.workflowSection)) : opened.delete(key(details.dataset.workflowSection));
@@ -465,10 +484,6 @@ const Inspector = {
     }
     this.wireReveal();
     this.wireTypes();
-    const executionSection = $('[data-workflow-section=execution] .workflow-section-body', host);
-    const history = Object.assign(document.createElement('button'), {type: 'button', textContent: 'Execution history'});
-    history.onclick = () => showExecutionHistory().catch(fail);
-    executionSection?.append(history);
     this.availableNodes($('[data-available-nodes]', host));
     const libraryForm = $('#library-permissions', host),
       resourceId = resource?.id;
@@ -507,8 +522,12 @@ const Inspector = {
   },
 
   /** The types of the workflow: what they are made of, where they came from, and (in developer mode) how to change them. */
+  /** The types made in this workflow. Library types are available everywhere but belong to the Custom Nodes that define them. */
+  ownTypes() {
+    return String(W.project).startsWith('lib-') ? W.snapshot.types : W.snapshot.types.filter(t => !t.library);
+  },
   typesSection() {
-    const types = W.snapshot.types,
+    const types = this.ownTypes(),
       dev = developerMode(),
       used = new Set(
         [
@@ -671,7 +690,8 @@ const Inspector = {
       const permissionPath = `projects/${project}/node-permissions/${encodeURIComponent(node.id)}`;
       const showPermissions = detail => {
         if (!panel.isConnected) return;
-        panel.innerHTML = `<h3>Permissions</h3>${detail.editable ? grantControls(detail.grants) : '<p class="muted small">Permissions come from the enclosing Custom Nodes.</p>'}<p class="small" data-effective-permissions>Effective: ${esc(detail.effective.join(', ') || 'none')}</p><details><summary>Permission constraints</summary><p class="small">Project: ${esc(detail.project_allow.join(', ') || 'none')}</p>${detail.layers.map((layer, i) => `<p class="small">Layer ${i + 1}: ${esc(layer.join(', ') || 'none')}</p>`).join('')}</details>`;
+        const open = panel.querySelector('.script-permissions')?.open;
+        panel.innerHTML = `<details class="script-permissions"${open ? ' open' : ''}><summary>Permissions</summary>${detail.editable ? grantControls(detail.grants, {title: 'Allowed operations'}) : '<p class="muted small">Permissions come from the enclosing Custom Nodes.</p>'}<p class="small" data-effective-permissions>Effective: ${esc(detail.effective.join(', ') || 'none')}</p><details><summary>Permission constraints</summary><p class="small">Project: ${esc(detail.project_allow.join(', ') || 'none')}</p>${detail.layers.map((layer, i) => `<p class="small">Layer ${i + 1}: ${esc(layer.join(', ') || 'none')}</p>`).join('')}</details></details>`;
       };
       api(permissionPath, {query: {workflow_id}}).then(showPermissions).catch(fail);
       let permissionSave = Promise.resolve();
@@ -749,12 +769,7 @@ const Inspector = {
         removeWidget.closest('[data-widget-row]').remove();
         this.pending.changed();
       }
-      if (movePortRow(event.target)) this.pending.changed();
-      const remove = event.target.closest('[data-remove-port]');
-      if (remove) {
-        remove.closest('.port-row').remove();
-        this.pending.changed();
-      }
+      if (editPortRows(event.target)) this.pending.changed();
     };
     this.editing = form;
     this.pending = autoForm(
@@ -850,18 +865,7 @@ const Inspector = {
         : '';
     this.body().innerHTML = `${this.nameHeading(group.name)}<div class="stack" id="placed">${description ? `<p class="muted">${esc(description)}</p>` : ''}${slots}${cx.source ? `<div id="placed-grants">${grantControls(cx.grants ?? [])}</div>` : ''}
       <div class="button-row" data-node-actions>${cx.source && developerMode() ? `<button type="button" data-act="edit">${icon('pencil')}Edit graph</button>` : ''}<button type="button" class="danger" data-act="delete">${icon('trash')}Delete</button></div></div>`;
-    this.wireName(async name => {
-      await saveGroups(
-        W.snapshot.groups.map(g => ({
-          id: g.id,
-          name: g.id === group.id ? name : g.name,
-          members: g.members,
-          parent: g.parent,
-          position: g.position,
-        }))
-      );
-      await reload();
-    });
+    this.wireName(name => saveGroupName(group.id, name));
     $('#placed').onclick = event => {
       const act = event.target.closest('[data-act]')?.dataset.act;
       if (act === 'edit') editInLibrary(cx.source.resource_id).catch(fail);
@@ -906,11 +910,7 @@ const Inspector = {
         );
         this.pending.changed();
       }
-      if (movePortRow(event.target)) this.pending.changed();
-      if (event.target.closest('[data-remove-port]')) {
-        event.target.closest('.port-row').remove();
-        this.pending.changed();
-      }
+      if (editPortRows(event.target)) this.pending.changed();
     };
     const read = dir =>
       $$(`#own-${dir} .port-row`, form)
@@ -982,12 +982,7 @@ const Inspector = {
         );
         this.pending.changed();
       }
-      if (movePortRow(event.target)) this.pending.changed();
-      const remove = event.target.closest('[data-remove-port]');
-      if (remove) {
-        remove.closest('.port-row').remove();
-        this.pending.changed();
-      }
+      if (editPortRows(event.target)) this.pending.changed();
       const act = event.target.closest('[data-act]')?.dataset.act;
       if (act === 'ungroup') {
         W.selected = new Set(['frame:' + group.id]);
@@ -1159,6 +1154,7 @@ const Inspector = {
       const dir = holder.dataset.connDir,
         port = (current[dir] || []).find(p => p.id === holder.dataset.connPort);
       holder.innerHTML = port ? controls(dir, port) : '';
+      holder.closest('.slot-value')?.classList.toggle('has-connection', dir === 'inputs' && holder.innerHTML !== '');
       wireCodeEditors(holder);
       placed[dir].add(holder.dataset.connPort);
     }
@@ -1166,10 +1162,10 @@ const Inspector = {
     const hosts = $$('[data-conn-host]', body);
     const cards = (ports, dir) =>
       ports
-        .map(
-          p =>
-            `<div class="connection-port"><div class="connection-label">${typeDot(p.type)}<small>${esc(typeLabel(p.type))}</small><strong>${esc(p.name)}</strong></div><div class="port-conn" data-conn-port="${esc(p.id)}" data-conn-dir="${dir}">${controls(dir, p, true)}</div></div>`
-        )
+        .map(p => {
+          const body = controls(dir, p, true);
+          return `<div class="connection-port${body.includes('<textarea') ? ' has-textarea' : ''}"><div class="connection-label">${typeDot(p.type)}<small>${esc(typeLabel(p.type))}</small><strong>${esc(p.name)}</strong></div><div class="port-conn" data-conn-port="${esc(p.id)}" data-conn-dir="${dir}">${body}</div></div>`;
+        })
         .join('');
     const section = (title, dir) => {
       const ports = (current[dir] || []).filter(p => !placed[dir].has(p.id)),
@@ -1241,8 +1237,13 @@ function slotName(list, base, others = []) {
   return name;
 }
 
-/** Moves the row of a clicked move button one place up or down among its neighbours; answers whether it moved one. */
-function movePortRow(target) {
+/** Moves the row of a clicked move button one place up or down among its neighbours, or removes the row of a clicked remove button; answers whether it did. */
+function editPortRows(target) {
+  const remove = target.closest('[data-remove-port]');
+  if (remove) {
+    remove.closest('.port-row').remove();
+    return true;
+  }
   const button = target.closest('[data-move-port]');
   if (!button) return false;
   const row = button.closest('.port-row'),

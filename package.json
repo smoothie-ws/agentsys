@@ -1,10 +1,9 @@
 {
   "name": "agentsys",
   "private": true,
-  "description": "AgentSys: a node-graph workflow editor that runs in the browser, with a tiny Node server that keeps the data as JSON files.",
+  "description": "AgentSys: a live graph programming environment with a small Node server that keeps the data as JSON files.",
   "scripts": {
     "start": "node server.js",
-    "build:plugins": "node tools/build-builtin-plugins.js",
     "test": "node --test",
     "format": "prettier --write \"js/**/*.js\" \"css/*.css\" \"tests/*.js\""
   },

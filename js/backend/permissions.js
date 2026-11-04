@@ -1,7 +1,7 @@
 'use strict';
 
 const CAPABILITY =
-  /^(graph\.(read|write)|library\.(read|write)|net\.fetch:[A-Za-z0-9.*:\[\]-]+|run\.(read|start)|notifications\.(read|write)|secrets\.use:[A-Za-z0-9_-]+)$/;
+  /^(graph\.(read|write)|library\.(read|write)|net\.fetch:[A-Za-z0-9.*:\[\]-]+|run\.(read|start)|notifications\.(read|write)|plugins\.call|secrets\.use:[A-Za-z0-9_-]+)$/;
 function checkManifest(manifest) {
   for (const field of ['grants'])
     if (
@@ -19,6 +19,7 @@ function routeNeeds(pattern, method) {
   if (pattern === 'net') return ['net.fetch:{host}'];
   if (pattern === 'notifications')
     return [method === 'GET' ? 'notifications.read' : method === 'POST' ? 'notifications.write' : 'system.admin'];
+  if (pattern === 'plugins/{id}/{name}') return ['plugins.call'];
   if (/^(resources|library)(\/|$)/.test(pattern)) return [method === 'GET' ? 'library.read' : 'library.write'];
   if (/^projects(\/|$)/.test(pattern) || pattern === 'search/nodes')
     return [method === 'GET' ? 'graph.read' : 'graph.write'];
@@ -34,14 +35,7 @@ async function permissionNeeds(method, path, body) {
   const params = Object.fromEntries(
     Object.entries(path.match(found.regex).groups ?? {}).map(([k, v]) => [k, decodeURIComponent(v)])
   );
-  let needs = found.needs[method];
-  if (found.pattern === 'plugins/{id}/call/{name}') {
-    const plugin = ((await DB.get(PLUGIN_INDEX)) ?? []).find(p => p.id === params.id && p.enabled);
-    const endpoint = pluginContributions(plugin).endpoints?.find(
-      e => e.name === params.name && e.methods.includes(method)
-    );
-    needs = endpoint?.permissions ?? needs;
-  }
+  const needs = found.needs[method];
   if (needs.some(need => need.includes('{host}'))) {
     try {
       params.host = new URL(body.url).host;
@@ -71,9 +65,18 @@ function quarantineWrite(value) {
   }
   if (Array.isArray(value)) return value.map(quarantineWrite);
   const out = Object.fromEntries(Object.entries(value).map(([k, v]) => [k, quarantineWrite(v)]));
-  if (value.op === 'script') {
+  // Supplied wrappers cannot lend a generated Script trusted Library instance grants.
+  if (value.op === 'script' || (value.source && value.interface)) {
     out.grants = ['graph.read'];
   }
+  return out;
+}
+// Script writes must apply the same policy at the API boundary.
+function quarantineRequest(path, body) {
+  const out = quarantineWrite(body);
+  if (path === 'resources' || (path.startsWith('resources/') && out.payload))
+    out.payload = {...out.payload, grants: ['graph.read']};
+  if (out.config) out.config = {...out.config, grants: ['graph.read']};
   return out;
 }
 async function injectSecrets(value) {

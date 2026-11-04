@@ -59,137 +59,7 @@ function validateShortcuts(value) {
   return value;
 }
 
-/** Component-level appearance options, shared by validation and the theme editor. */
-const themeColour = (label, fallback) => ({label, type: 'color', fallback});
-const themeRadius = label => ({label, type: 'number', min: 0, max: 48});
-const THEME_PARTS = {
-  panels: {
-    label: 'Panels',
-    icon: 'panel',
-    fields: {
-      sidebar: themeColour('Primary panel', '--panel'),
-      secondary: themeColour('Navigation panel', '--card'),
-      content: themeColour('Content', '--background'),
-      inspector: themeColour('Inspector', '--panel'),
-      outline: themeColour('Outline', '--line'),
-      radius: themeRadius('Roundness'),
-    },
-  },
-  navigation: {
-    label: 'Navigation',
-    icon: 'folder',
-    fields: {
-      text: themeColour('Text', '--muted'),
-      background: themeColour('Item', '--field'),
-      hover: themeColour('Hover', '--hover'),
-      selected: themeColour('Selected', '--current'),
-      selected_text: themeColour('Selected text', '--text'),
-      radius: themeRadius('Roundness'),
-    },
-  },
-  buttons: {
-    label: 'Buttons',
-    icon: 'play',
-    fields: {
-      text: themeColour('Text', '--text'),
-      background: themeColour('Fill', '--field'),
-      hover: themeColour('Hover', '--hover'),
-      pressed: themeColour('Pressed', '--press'),
-      outline: themeColour('Outline', '--line'),
-      primary: themeColour('Primary fill', '--accent'),
-      primary_text: themeColour('Primary text', '--on-accent'),
-      radius: themeRadius('Roundness'),
-    },
-  },
-  fields: {
-    label: 'Text and number fields',
-    icon: 'text',
-    fields: {
-      text: themeColour('Text', '--text'),
-      background: themeColour('Fill', '--field'),
-      hover: themeColour('Hover', '--hover'),
-      focus: themeColour('Focused', '--soft'),
-      placeholder: themeColour('Placeholder', '--muted'),
-      outline: themeColour('Outline', '--line'),
-      radius: themeRadius('Roundness'),
-    },
-  },
-  menus: {
-    label: 'Menus and dialogs',
-    icon: 'list',
-    fields: {
-      text: themeColour('Text', '--text'),
-      background: themeColour('Fill', '--float'),
-      hover: themeColour('Item hover', '--hover'),
-      selected: themeColour('Selected item', '--current'),
-      outline: themeColour('Outline', '--line'),
-      radius: themeRadius('Roundness'),
-    },
-  },
-  cards: {
-    label: 'Cards',
-    icon: 'library',
-    fields: {
-      text: themeColour('Text', '--text'),
-      background: themeColour('Fill', '--glass-card'),
-      hover: themeColour('Hover', '--hover'),
-      outline: themeColour('Outline', '--line'),
-      radius: themeRadius('Roundness'),
-    },
-  },
-  nodes: {
-    label: 'Graph nodes',
-    icon: 'node',
-    fields: {
-      text: themeColour('Text', '--text'),
-      background: themeColour('Fill', '--glass-card'),
-      hover: themeColour('Hover', '--hover'),
-      outline: themeColour('Outline', '--line'),
-      selected_outline: themeColour('Selected outline', '--accent'),
-    },
-  },
-  canvas: {
-    label: 'Canvas and wires',
-    icon: 'complex',
-    fields: {
-      background: themeColour('Canvas', '--canvas-bg'),
-      grid: themeColour('Grid dots', '--grid-colour'),
-      wire: themeColour('Wires', '--idle'),
-      selection: themeColour('Selection', '--soft'),
-    },
-  },
-  status: {
-    label: 'Status and secondary text',
-    icon: 'activity',
-    fields: {
-      success: themeColour('Success', '--ok'),
-      error: themeColour('Error', '--bad'),
-      warning: themeColour('Warning', '--warn'),
-      muted: themeColour('Secondary text', '--muted'),
-    },
-  },
-};
-function validateThemeParts(parts) {
-  if (!isObject(parts)) throw bad('Theme components must be an object.');
-  const result = {};
-  for (const [group, values] of Object.entries(parts)) {
-    if (!Object.hasOwn(THEME_PARTS, group) || !isObject(values)) throw bad('Unknown theme component.');
-    const fields = {};
-    for (const [key, value] of Object.entries(values)) {
-      const rule = THEME_PARTS[group].fields[key];
-      if (!rule || !Object.hasOwn(THEME_PARTS[group].fields, key)) throw bad('Unknown component setting.');
-      if (rule.type === 'color' && (typeof value !== 'string' || !/^#[0-9a-f]{6}([0-9a-f]{2})?$/i.test(value)))
-        throw bad('Component colours must use #RRGGBB or #RRGGBBAA.');
-      if (rule.type === 'number' && (!Number.isInteger(value) || value < rule.min || value > rule.max))
-        throw bad('Component roundness must be from 0 to 32 pixels.');
-      fields[key] = value;
-    }
-    if (Object.keys(fields).length) result[group] = fields;
-  }
-  return result;
-}
-
-/** Shared validation for the active appearance and saved/imported themes. */
+/** Validation of the appearance (the style). `base` is what is stored; `style` changes it. */
 function validateAppearance(style, base = {}) {
   if (
     !isObject(style) ||
@@ -206,7 +76,6 @@ function validateAppearance(style, base = {}) {
           'animations',
           ...Object.keys(GRAPH_RANGES),
           'wire_style',
-          'components',
         ].includes(k)
     )
   )
@@ -228,31 +97,5 @@ function validateAppearance(style, base = {}) {
   if ('wire_style' in merged && !WIRE_STYLE_IDS.includes(merged.wire_style)) throw bad('Unsupported wire style');
   for (const k of ['effects', 'animations'])
     if (k in merged && typeof merged[k] !== 'boolean') throw bad('Style toggles must be booleans');
-  if ('components' in merged) merged.components = validateThemeParts(merged.components);
   return merged;
-}
-
-function validateThemes(themes) {
-  if (!Array.isArray(themes) || themes.length > 100) throw bad('Save at most 100 themes.');
-  const ids = new Set(),
-    names = new Set();
-  return themes.map(theme => {
-    if (
-      !isObject(theme) ||
-      typeof theme.id !== 'string' ||
-      !/^[a-z0-9_-]{1,80}$/i.test(theme.id) ||
-      typeof theme.name !== 'string' ||
-      !theme.name.trim() ||
-      theme.name.trim().length > 100
-    )
-      throw bad('A theme needs an id and a name of 1 to 100 characters.');
-    const name = theme.name.trim();
-    if (ids.has(theme.id) || names.has(name.toLocaleLowerCase())) throw bad('Theme ids and names must be unique.');
-    ids.add(theme.id);
-    names.add(name.toLocaleLowerCase());
-    const style = validateAppearance(theme.style);
-    if (!['background', 'surface', 'text', 'accent'].every(k => k in style))
-      throw bad('A theme needs four palette colours.');
-    return {id: theme.id, name, style};
-  });
 }

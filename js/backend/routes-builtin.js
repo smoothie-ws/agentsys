@@ -4,7 +4,12 @@
 'use strict';
 
 const BUILTIN = 'builtin';
-const builtinId = name => 'builtin.' + name.toLowerCase().replace(/[^a-z0-9]+/g, '-').replace(/^-|-$/g, '');
+const builtinId = name =>
+  'builtin.' +
+  name
+    .toLowerCase()
+    .replace(/[^a-z0-9]+/g, '-')
+    .replace(/^-|-$/g, '');
 
 route(
   'GET POST',
@@ -17,7 +22,11 @@ route(
       restore = c.method === 'POST' && c.body.restore === true,
       made = [];
     if (c.method === 'GET')
-      return BUILTIN_NODES.map(n => ({name: n.name, folder: n.payload.folder || '', installed: items.some(r => r.name === n.name)}));
+      return BUILTIN_NODES.map(n => ({
+        name: n.name,
+        folder: n.payload.folder || '',
+        installed: items.some(r => r.name === n.name),
+      }));
     for (const node of BUILTIN_NODES) {
       const id = builtinId(node.name);
       if (items.some(r => r.name === node.name)) {

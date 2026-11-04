@@ -1,6 +1,6 @@
 # Browser smoke test. Usage: python3 tests/browser_smoke.py <port>  (serve the site first: python3 -m http.server <port>)
 # Needs: pip install playwright && playwright install chromium. Covers the main canvas and Library flows.
-import asyncio, base64, os, sys
+import asyncio, os, sys
 from playwright.async_api import async_playwright
 from browser_server import expand_workflow_section
 U=f'http://127.0.0.1:{sys.argv[1]}/index.html'
@@ -22,10 +22,9 @@ async def main():
         await pg.evaluate("api('settings',{method:'PUT',body:{developer_mode:true}}).then(s=>{app.preferences=s})")
         # Nodes are test fixtures imported explicitly, never built-in seed data.
         for catalog in ['basic-nodes','flow-nodes']:
-            await pg.evaluate("async name=>addEntries(TextGraph.decode(await fetch('examples/'+name+'.json').then(r=>r.json())),'Smoke fixture')",catalog)
+            await pg.evaluate("async name=>addEntries(TextGraph.decode(await fetch('tests/fixtures/library-'+name+'.json').then(r=>r.json())),'Smoke fixture')",catalog)
         pid=await pg.evaluate("api('projects',{method:'POST',body:{name:'T'}}).then(p=>p.id)")
         await pg.goto(f'{U}#/p/{pid}/w/{pid}'); await pg.wait_for_selector('#canvas'); await pg.wait_for_timeout(400)
-        ok('workflow controls float at canvas top left',await pg.evaluate("(()=>{const c=document.querySelector('#canvas'),t=c.querySelector('.toolbar'),e=document.querySelector('.editor'),r=c.getBoundingClientRect(),b=t.getBoundingClientRect();return !!t.querySelector('#start')&&!!t.querySelector('#undo')&&!!t.querySelector('#redo')&&Math.abs(r.top-e.getBoundingClientRect().top)<1&&Math.abs(b.top-r.top-12)<1&&Math.abs(b.left-r.left-12)<1})()"))
         ids=await pg.evaluate('''async()=>{const P=W.project,w={workflow_id:W.workflow};
           const a=await api(`projects/${P}/typed-nodes`,{method:'POST',body:{...w,node_type:'custom',config:{title:'Value',inputs:[],outputs:[{id:'value',name:'value'}]},position:{x:0,y:0}}});
           const s=await api(`projects/${P}/typed-nodes`,{method:'POST',body:{...w,node_type:'custom',config:{title:'Script',inputs:[{id:'v',name:'v'}],outputs:[{id:'result',name:'result'}]},position:{x:400,y:0}}});
@@ -62,7 +61,6 @@ async def main():
         await pg.click('[data-side-tab=workflow]'); await pg.wait_for_timeout(300)
         ok('the Workflow section shows the workflow and not the node',await pg.evaluate("document.querySelector('#side-workflow h2')?.textContent===W.snapshot.workflow_name&&!document.querySelector('#side-workflow').hidden&&document.querySelector('#side-selection').hidden"))
         await pg.click('[data-side-tab=properties]'); await pg.wait_for_timeout(300)
-        ok('node headers show their icons',await pg.evaluate("[...document.querySelectorAll('.node:not(.reroute) header')].every(h=>h.querySelector('.head-icon svg')&&h.querySelector('.head-icon').nextElementSibling.classList.contains('title'))"))
         await pg.evaluate("api(`projects/${W.project}/port-connections`,{method:'POST',body:{workflow_id:W.workflow,add:[{source:W.snapshot.nodes.find(n=>n.config?.title==='Value').id,source_port:'value',target:W.snapshot.nodes.find(n=>n.config?.title==='Script').id,target_port:'v'}]}}).then(()=>reload())")
         await pg.hover(f'[data-id="{ids[1]}"] header'); await pg.click(f'[data-id="{ids[1]}"] .fold'); await pg.wait_for_timeout(500)
         ok('fold keeps only the connected input',await pg.evaluate(f"(()=>{{const n=document.querySelector('[data-id=\"{ids[1]}\"]'),s=n.querySelector('.sock');return n.querySelectorAll('.sock').length===1&&s.dataset.port==='v'&&s.dataset.dir==='in'&&n.offsetHeight===56}})()"))
@@ -73,7 +71,6 @@ async def main():
         await pg.click(f'[data-id="{ids[1]}"] .fold'); await pg.wait_for_timeout(500)
         ok('the same button opens it again',not await pg.evaluate("W.snapshot.nodes.find(n=>n.config?.title==='Script').folded"))
         await pg.evaluate("api(`projects/${W.project}/node-style`,{method:'PUT',body:{workflow_id:W.workflow,node_id:W.snapshot.nodes.find(n=>n.config?.title==='Script').id,color:'#3b6ea8',pinned:false}}).then(()=>reload())"); await pg.wait_for_timeout(500)
-        ok('a coloured node has its header filled with exactly that colour',await pg.evaluate("(()=>{const c=getComputedStyle(document.querySelector('.node.colored > header')).backgroundColor,n=c.match(/[\\d.]+/g).map(Number),f=c.startsWith('color(')?255:1;return [59,110,168].every((v,i)=>Math.abs(n[i]*f-v)<1)})()"))
         await pg.click('[data-selection-color]'); await pg.fill('.color-picker .alpha-number','40'); await pg.press('.color-picker .alpha-number','Tab'); await pg.wait_for_timeout(500)
         ok('opacity saves RGBA without dimming node content',await pg.evaluate("W.snapshot.nodes.find(n=>n.config?.title==='Script').color==='#3b6ea866'&&getComputedStyle(document.querySelector('.node.colored')).opacity==='1'"))
         await pg.keyboard.press('Escape'); await pg.click('[data-selection-color]')
@@ -140,8 +137,6 @@ async def main():
         await pg.click('.tab >> nth=0', button='right'); await pg.click('.popup button:has-text("Close All")'); await pg.wait_for_timeout(500)
         ok('Close All keeps pinned',await pg.evaluate("document.querySelectorAll('.tab').length===1"))
         ok('every wire style draws a valid path',await pg.evaluate("WIRE_STYLES.every(([id])=>{graphStyle={...graphStyle,wire_style:id};const d=wirePath({x:0,y:0},{x:-200,y:90})+wirePath({x:0,y:0},{x:300,y:-40});return /^M/.test(d)&&!/NaN/.test(d)})"))
-        ok('switching rows of the Library: the highlight glides to the new row, the second panel is not rebuilt',await pg.evaluate("""(async()=>{await go('/library/nodes');setGroupOpen(document.querySelector('#subnav [data-group="s:nodes"]'),true);await new Promise(r=>setTimeout(r,500));const pill=document.querySelector('#subnav-body .nav-pill'),list=document.querySelector('#subnav-list'),tops=new Set(),t0=performance.now();const sample=()=>{tops.add(Math.round(pill.getBoundingClientRect().top));if(performance.now()-t0<500)requestAnimationFrame(sample)};sample();await go('/library/nodes?folder=Mine');await new Promise(r=>setTimeout(r,600));return tops.size>3&&list===document.querySelector('#subnav-list')})()"""))
-        ok('the sidebar highlight glides between sections too',await pg.evaluate("""(async()=>{const pill=document.querySelector('#sidebar .nav-pill'),tops=new Set(),t0=performance.now();const sample=()=>{tops.add(Math.round(pill.getBoundingClientRect().top));if(performance.now()-t0<500)requestAnimationFrame(sample)};sample();await go('/');await new Promise(r=>setTimeout(r,600));return tops.size>3})()"""))
         await pg.goto(U+'#/settings'); await pg.wait_for_timeout(300); await pg.goto(U+'#/library/nodes'); await pg.wait_for_timeout(300)
         ok('pages have no tabs: only graph editors do',await pg.evaluate("![...document.querySelectorAll('.tab-title')].some(e=>['Settings','Library','API','Projects'].includes(e.textContent))&&document.querySelectorAll('.tab.active').length===0"))
         ok('no breadcrumb: the open section and item are shown on the left',await pg.evaluate("!document.querySelector('#crumbs')&&document.querySelector('#subnav-title').textContent==='Library'&&document.querySelector('#sidebar [data-section=library]').classList.contains('active')"))
@@ -156,33 +151,7 @@ async def main():
         pid2=await pg.evaluate("api('projects',{method:'POST',body:{name:'T2'}}).then(p=>p.id)"); pid3=await pg.evaluate("api('projects',{method:'POST',body:{name:'T3'}}).then(p=>p.id)")
         for q in (pid2,pid3): await pg.goto(f'{U}#/p/{q}/w/{q}'); await pg.wait_for_selector('#canvas'); await pg.wait_for_timeout(400)
         ok('the second panel stays in an editor, the project and its workflow shown',await pg.evaluate("!document.querySelector('#subnav').hidden&&document.querySelector('#subnav').getBoundingClientRect().width>100&&!!document.querySelector('#subnav .subnav-branch .subnav-row.active')"))
-        ok('open sections have four rounded corners, connected tabs reach the section edge, and the glow stays outside the icon rail',await pg.evaluate("""(()=>{
-          const corners=['borderTopLeftRadius','borderTopRightRadius','borderBottomRightRadius','borderBottomLeftRadius'];
-          const rounded=[...document.querySelectorAll('#subnav, main, .side-content')].every(e=>corners.every(k=>parseFloat(getComputedStyle(e)[k])>0));
-          const connected=[['#sidebar','#sidebar > .nav-pill'],['#subnav-body','#subnav-body > .nav-pill'],['.side-tabs','.side-tabs > .nav-pill']].every(([host,tab],i)=>{
-            const h=document.querySelector(host).getBoundingClientRect(),t=document.querySelector(tab),r=t.getBoundingClientRect();
-            return Math.abs(i===2?r.left-h.left:r.right-h.right)<1&&['::before','::after'].every(p=>{const c=getComputedStyle(t,p);return c.content!=='none'&&parseFloat(c.width)>0&&c.backgroundImage.includes('radial-gradient')});
-          });
-          const a=document.querySelector('#subnav .subnav-row.active'),closed=a.closest('.subnav-group:not(.open)'),row=closed?closed.querySelector(':scope > .subnav-row'):a;
-          const s=document.querySelector('main > .nav-seam'),m=document.querySelector('main').getBoundingClientRect();
-          const pairs=[['#sidebar','#subnav > .nav-seam'],['#subnav','main > .nav-seam'],['.side-tabs','.side-content > .nav-seam']];
-          const separate=pairs.every(([buttonPanel,glow])=>{const p=document.querySelector(buttonPanel).getBoundingClientRect(),g=document.querySelector(glow).getBoundingClientRect();return g.right<=p.left+1||g.left>=p.right-1});
-          return rounded&&connected&&separate&&!document.querySelector('.nav-halo')&&!!s&&!s.classList.contains('off')&&Math.abs(parseFloat(s.style.getPropertyValue('--y'))-(row.getBoundingClientRect().top-m.top))<2;
-        })()"""))
-        ok('the gradient is continuous across all three panel joins',await pg.evaluate("""async png=>{
-          const image=new Image();image.src='data:image/png;base64,'+png;await image.decode();
-          const canvas=document.createElement('canvas');canvas.width=image.width;canvas.height=image.height;
-          const ctx=canvas.getContext('2d');ctx.drawImage(image,0,0);
-          const pixel=(x,y)=>ctx.getImageData(x,y,1,1).data;
-          return ['#sidebar > .nav-pill','#subnav-body > .nav-pill','.side-tabs > .nav-pill'].every((selector,i)=>{
-            const r=document.querySelector(selector).getBoundingClientRect(),x=Math.round(i===2?r.left:r.right),y=Math.round(r.top+r.height/2);
-            const a=pixel(x-1,y),b=pixel(x,y);
-            return [0,1,2].every(c=>Math.abs(a[c]-b[c])<=4);
-          });
-        }""",base64.b64encode(await pg.screenshot()).decode()))
         await pg.click('[data-side-close]'); await pg.wait_for_timeout(600)
-        ok('folded to its icons the Properties panel is just the rail wide: no strip beside the canvas',await pg.evaluate("(()=>{const e=document.querySelector('.editor').getBoundingClientRect(),c=document.querySelector('#canvas').getBoundingClientRect(),s=document.querySelector('#side').getBoundingClientRect();return Math.abs(s.width-56)<1&&Math.abs(c.right-s.left)<1&&Math.abs(s.right-e.right)<1})()"))
-        ok('the folded Properties rail has no fill or corner clipping',await pg.evaluate("(()=>{const s=getComputedStyle(document.querySelector('#side'));return s.backgroundColor==='rgba(0, 0, 0, 0)'&&s.borderRadius==='0px'})()"))
         await pg.click('[data-side-tab=properties]'); await pg.wait_for_timeout(500)
         await pg.click('#map-toggle'); await pg.wait_for_timeout(450)
         ok('the minimap button folds the map away and the choice is remembered',await pg.evaluate("(()=>{const m=document.querySelector('.map');return m.classList.contains('collapsed')&&m.getBoundingClientRect().height<60&&document.querySelector('#map-toggle').getAttribute('aria-expanded')==='false'&&store.get('agentsys-minimap-hidden')===true})()"))
@@ -206,9 +175,7 @@ async def main():
         await pg.click('.tab:not(.active) >> nth=-1'); await pg.wait_for_timeout(300); ok('clicking a tab opens its editor',(await pg.evaluate("location.hash")).endswith(f'/w/{pid2}')); await pg.goto(f'{U}#/p/{pid3}/w/{pid3}'); await pg.wait_for_selector('#canvas'); await pg.wait_for_timeout(400)
         tabs=await pg.locator('.tab').count(); other=pg.locator('.tab:not(.active):not(.is-pinned)').first
         await other.hover(); await pg.wait_for_timeout(450)
-        ok('active tab has a rounded fill without an underline',await pg.evaluate("(()=>{const t=document.querySelector('.tab.active'),s=getComputedStyle(t);return (s.backgroundColor!=='rgba(0, 0, 0, 0)'||s.backgroundImage!=='none')&&parseFloat(s.borderRadius)>0&&getComputedStyle(t,'::after').content==='none'})()"))
         await other.locator('.tab-close').click(); await pg.wait_for_timeout(120)
-        ok('a closed tab shrinks away before it is removed',await pg.locator('.tab.closing').count()==1 and await pg.locator('.tab').count()==tabs)
         await pg.wait_for_timeout(900)
         ok('then it is gone',await pg.locator('.tab').count()==tabs-1)
         await pg.evaluate("toast('See the [Library](/library) and [a node](node:none).')"); ok('toast text holds links',await pg.locator('.toast a[data-link]').count()==1 and await pg.locator('.toast button.link').count()==1)
@@ -252,7 +219,7 @@ async def main():
         ok('no type of the workflow exists until one is defined (the Library brings its own; any is built in)',await pg.evaluate("W.snapshot.types.filter(t=>!t.library).length===0&&!document.querySelector('.port[class*=\"t-r\"]')"))
         await pg.click('[data-side-tab=workflow]'); await pg.wait_for_timeout(300)
         await expand_workflow_section(pg, 'types')
-        ok('the overview offers New type and lists only the Library types',await pg.locator('[data-workflow-section=types] > summary').count()==1 and await pg.locator('.type-item').count()==await pg.evaluate('W.snapshot.types.length'))
+        ok('the overview offers New type and lists only the types of this workflow',await pg.locator('[data-workflow-section=types] > summary').count()==1 and await pg.locator('.type-item').count()==await pg.evaluate('W.snapshot.types.filter(t=>!t.library).length'))
         tid='a'*32; kid='b'*32
         await pg.evaluate("""async ([tid,kid])=>{const P=W.project,w={workflow_id:W.workflow};
           await api(`projects/${P}/types`,{method:'PUT',body:{...w,types:[...W.snapshot.types,{id:kid,name:'Signal',color:'#33cc99',fields:[]},{id:tid,name:'Person',color:'#ff8800',fields:[{name:'ping',type:'t:'+kid}]}]}});

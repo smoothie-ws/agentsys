@@ -9,11 +9,11 @@ body .mobile-only,
     --mobile-primary: calc(56px + env(safe-area-inset-bottom, 0px));
     --mobile-secondary: 50px;
     --radius: 27px; /* buttons, fields, chips */
-    --theme-navigation-radius: 30px; /* highlights of the open row, tabs, the bottom rails */
+    --nav-radius: 30px; /* highlights of the open row, tabs, the bottom rails */
   }
   html,
   body,
-  html:has(body.nav-joined) {
+  html.nav-joined-root {
     width: 100%;
     height: 100%;
     overflow: hidden;
@@ -90,8 +90,8 @@ body .mobile-only,
   }
   body #sidebar a.active,
   body #sidebar a.active:hover {
-    background: var(--theme-navigation-selected, var(--current));
-    color: var(--theme-navigation-selected-text, var(--text));
+    background: var(--current);
+    color: var(--text);
   }
   body main,
   body.nav-joined main {
@@ -163,14 +163,6 @@ body .mobile-only,
   }
   .cards {
     grid-template-columns: minmax(0, 1fr);
-  }
-  .grid2,
-  .grid4 {
-    grid-template-columns: minmax(0, 1fr);
-  }
-  #settings-form .grid4 {
-    grid-template-columns: repeat(2, minmax(0, 1fr));
-    gap: 0 0.8rem;
   }
   .page .button,
   .page button,
@@ -261,10 +253,10 @@ body .mobile-only,
     height: min(70dvh, 600px);
     max-height: calc(var(--visual-height, 100dvh) - 80px);
     padding: 0.65rem 0.8rem 0.8rem;
-    border-radius: var(--theme-panels-radius, 51px) var(--theme-panels-radius, 51px) 0 0;
-    background: var(--theme-panels-secondary, var(--surface));
+    border-radius: 51px 51px 0 0;
+    background: var(--surface);
     box-shadow:
-      inset 0 0 0 1px var(--theme-panels-outline, transparent),
+      inset 0 0 0 1px transparent,
       var(--shadow-lg);
     overflow: hidden;
     transition: none;
@@ -313,8 +305,7 @@ body .mobile-only,
     height: auto;
   }
   #subnav .subnav-row > a,
-  #subnav .subnav-static,
-  #subnav .subnav-name {
+  #subnav .subnav-static {
     min-height: 44px;
   }
   #subnav .subnav-toggle,
@@ -326,7 +317,7 @@ body .mobile-only,
   }
   #subnav .subnav-row.active,
   #subnav .subnav-row.active:hover {
-    background: var(--theme-navigation-selected, var(--current));
+    background: var(--current);
   }
   body .canvas {
     width: 100%;
@@ -367,7 +358,7 @@ body .mobile-only,
   .hit {
     stroke-width: 22;
   }
-  .connection-grid > .connection-port:has(textarea) > .port-conn {
+  .connection-grid > .connection-port.has-textarea > .port-conn {
     grid-column: 1 / -1;
     margin-top: 0.35rem;
   }
@@ -389,7 +380,7 @@ body .mobile-only,
     width: min(360px, calc(100vw - 16px));
     max-height: calc(var(--visual-height, 100dvh) - 16px);
     z-index: 100;
-    border-radius: var(--theme-menus-radius, 42px);
+    border-radius: 42px;
   }
   .submenu {
     z-index: 101;
@@ -407,7 +398,7 @@ body .mobile-only,
   .popup button,
   .submenu button {
     min-height: 44px;
-    border-radius: var(--theme-menus-radius, 27px);
+    border-radius: 27px;
   }
   .popup .menu-label {
     white-space: normal;
@@ -418,7 +409,7 @@ body .mobile-only,
   dialog {
     width: calc(100vw - 1rem);
     max-height: calc(var(--visual-height, 100dvh) - 1rem);
-    border-radius: var(--theme-menus-radius, 45px);
+    border-radius: 45px;
   }
   dialog form {
     max-height: calc(var(--visual-height, 100dvh) - 1rem);
@@ -440,45 +431,6 @@ body .mobile-only,
   }
   .toast {
     max-width: 100%;
-  }
-  .theme-editor-toolbar {
-    align-items: stretch;
-  }
-  .theme-editor-toolbar h3 {
-    width: 100%;
-  }
-  .theme-editor-toolbar input {
-    width: 100%;
-  }
-  .theme-token-grid {
-    grid-template-columns: minmax(0, 1fr);
-    padding: 0.5rem 0 1rem;
-  }
-  .theme-token-controls input[data-theme-value] {
-    font-size: 16px;
-    min-height: 44px;
-  }
-  .theme-colour-chip {
-    width: 44px;
-    height: 44px;
-  }
-  .theme-custom-count {
-    font-size: 0.7rem;
-  }
-  .theme-component > summary {
-    min-height: 48px;
-    padding-inline: 0;
-  }
-  .theme-component > summary strong {
-    flex: 1;
-    min-width: 0;
-    overflow-wrap: anywhere;
-    line-height: 1.4;
-  }
-  .theme-component > summary .theme-custom-count {
-    flex: none;
-    max-width: 88px;
-    text-align: right;
   }
   /* The two bottom rails join upwards, so both their curves and fades turn with them. */
   body.nav-joined #sidebar {
@@ -509,7 +461,7 @@ body .mobile-only,
     width: var(--w, 0px);
     height: 50px;
     transform: translateX(var(--x, 0px));
-    border-radius: 0 0 var(--theme-navigation-radius, 15px) var(--theme-navigation-radius, 15px);
+    border-radius: 0 0 var(--nav-radius) var(--nav-radius);
     --dir: 0deg;
     background: var(--dither), var(--ramp-pill); /* the selected colour at the bottom edge, eased up into the seam colour of the panel above */
     transition:
@@ -612,24 +564,20 @@ body .mobile-only,
   .page-head {
     flex-wrap: nowrap;
   }
-  .theme-token-grid {
-    grid-template-columns: repeat(2, minmax(0, 1fr));
-  }
 }
 
-/* Rounder corners on a phone: bigger targets under a thumb read better with softer shapes, and everything shares one family of radii.
-   Colour themes can still set their own roundness (the --theme-*-radius variables); these are only the defaults. */
+/* Rounder corners on a phone: bigger targets under a thumb read better with softer shapes, and everything shares one family of radii. */
 @media (max-width: 760px) {
   body.nav-joined {
-    --join-r: var(--theme-panels-radius, 36px); /* the curves where the rails join the sheet above them */
+    --join-r: 36px; /* the curves where the rails join the sheet above them */
   }
   body #sidebar .sidebar-top a,
   body #sidebar .sidebar-footer a,
   #mobile-browse {
-    border-radius: var(--theme-navigation-radius, 30px);
+    border-radius: var(--nav-radius);
   }
   .card {
-    border-radius: var(--theme-cards-radius, max(var(--node-radius, 16px), 45px));
+    border-radius: max(var(--node-radius, 16px), 45px);
   }
   .page pre.code,
   .api pre.code {

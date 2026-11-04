@@ -1,6 +1,7 @@
 'use strict';
 const test = require('node:test'),
   assert = require('node:assert/strict');
+const http = require('node:http');
 const {createApp, nodes, flow, fn, bundleOf, place} = require('./harness');
 const sleep = ms => new Promise(resolve => setTimeout(resolve, ms));
 async function until(app, path, predicate) {
@@ -27,6 +28,35 @@ async function change(app, project, node, code) {
   config.inputs.find(p => p.id === 'script').default = code;
   await app.api('PUT', `projects/${project.id}/typed-nodes/${node.id}`, {node_type: 'custom', config});
 }
+test('flow.abort cancels its owning dispatch without cancelling an unrelated concurrent dispatch', async t => {
+  const {app, project, node, path} = await fixture(
+    t,
+    'context.state.otherStarted=true;await node.sleep(80);context.state.otherFinished=true;'
+  );
+  const abort = await app.api('POST', `projects/${project.id}/typed-nodes`, {
+    node_type: 'custom',
+    config: nodes.script('node.flow.abort();'),
+  });
+  await app.api('POST', path, {node_ids: [node.id]});
+  await until(app, path, state => state.state.otherStarted);
+  const aborted = await app.api('POST', path, {node_ids: [abort.id], wait: true});
+  assert.equal(aborted.dispatch_status, 'cancelled');
+  await until(app, path, runtime => runtime.state.otherFinished);
+});
+test('flow.abort also cancels continuations of other roots in its own dispatch', async t => {
+  const {app, project, node, path} = await fixture(t, 'await node.sleep(80);context.state.shouldNotFinish=true;');
+  const abort = await app.api('POST', `projects/${project.id}/typed-nodes`, {
+    node_type: 'custom',
+    config: nodes.script('await node.sleep(10);node.flow.abort();'),
+  });
+  const stopped = await app.api('POST', path, {node_ids: [node.id, abort.id], wait: true});
+  assert.equal(stopped.dispatch_status, 'cancelled');
+  assert.equal(stopped.state.shouldNotFinish, undefined);
+  await change(app, project, node, 'context.state.fresh=true;');
+  const next = await app.api('POST', path, {node_ids: [node.id], wait: true});
+  assert.equal(next.dispatch_status, 'completed');
+  assert.equal(next.state.fresh, true);
+});
 
 test('Run is a repeatable on_run signal, with one persistent graph context and host', async t => {
   const {app, project, node, path} = await fixture(
@@ -248,3 +278,59 @@ test('an old node error does not mark a later successful editor event as failed'
 });
 
 module.exports = {until};
+test('deleting a node during an await prevents late state mutations', async t => {
+  const {app, project, node, path} = await fixture(
+    t,
+    'context.state.started=true;await new Promise(resolve=>setTimeout(resolve,100));try{context.state.late=true;}catch{}'
+  );
+  await app.api('POST', path, {node_ids: [node.id]});
+  await until(app, path, r => r.state.started);
+  await app.api('POST', `projects/${project.id}/delete-nodes`, {node_ids: [node.id]});
+  await until(app, path, r => r.status === 'idle');
+  assert.equal((await app.api('GET', path)).state.late, undefined);
+});
+test('Stop cancels a real checked network request and the next Run gets a clean host', async t => {
+  let receivedResolve;
+  const received = new Promise(resolve => (receivedResolve = resolve));
+  const server = http.createServer((req, res) => {
+    receivedResolve();
+    req.on('close', () => res.end());
+  });
+  await new Promise(resolve => server.listen(0, '127.0.0.1', resolve));
+  t.after(() => {
+    server.closeAllConnections();
+    server.close();
+  });
+  const {app, project, node, path} = await fixture(
+    t,
+    `await agentsys('POST','net',{url:'http://127.0.0.1:${server.address().port}'});context.state.late=true;`
+  );
+  await app.api('POST', path, {node_ids: [node.id]});
+  await received;
+  await app.api('DELETE', path);
+  assert.equal((await app.api('GET', path)).state.late, undefined);
+  await change(app, project, node, 'context.state.fresh=true;');
+  const result = await app.api('POST', path, {node_ids: [node.id], wait: true});
+  assert.equal(result.state.fresh, true);
+  assert.equal(app.workerStats.started, 2);
+});
+test('Stop of a Script that runs another workflow stops that workflow too', async t => {
+  const {app, project, node, path} = await fixture(t, '');
+  const other = await app.api('POST', 'projects', {name: 'Child workflow'}),
+    otherPath = `projects/${other.id}/execution`;
+  const child = await app.api('POST', `projects/${other.id}/typed-nodes`, {
+    node_type: 'custom',
+    config: nodes.script('await node.sleep(1000);context.state.unwanted=true;'),
+  });
+  await change(
+    app,
+    project,
+    node,
+    `await agentsys('POST','projects/${other.id}/execution',{node_ids:['${child.id}'],wait:true});`
+  );
+  await app.api('POST', path, {node_ids: [node.id]});
+  await until(app, otherPath, r => r.nodes.some(n => n.node_id === child.id && n.status === 'sleeping'));
+  await app.api('DELETE', path);
+  await until(app, otherPath, r => r.status === 'idle');
+  assert.equal((await app.api('GET', otherPath)).state.unwanted, undefined);
+});

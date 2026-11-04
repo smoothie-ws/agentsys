@@ -76,7 +76,7 @@ ${displayText}
 ${createGraphView}
 ${createGraphInterpreter}
 const pending=new Map(),gate={paused:false,waiters:[]};let serial=0,runtime;
-const call=(node,execution,...args)=>new Promise((resolve,reject)=>{const id=++serial;pending.set(id,{resolve,reject});send({type:'call',id,node,execution,args});});
+const call=(node,...args)=>new Promise((resolve,reject)=>{const id=++serial;pending.set(id,{resolve,reject});send({type:'call',id,node,args});});
 const receive=async({data})=>{
   if(data.type==='reply'){
     const item=pending.get(data.id);if(!item)return;pending.delete(data.id);
@@ -85,12 +85,12 @@ const receive=async({data})=>{
   try{let result=null;
     if(data.type==='init'){
       gate.paused=data.paused===true;
-      runtime=createGraphInterpreter(data.graph,data.saved,{AsyncFunction,displayText,call,admit:execution=>call(null,execution,'__admit'),gate,context:data.context,emit:event=>send({type:'event',event})});
+      runtime=createGraphInterpreter(data.graph,data.saved,{AsyncFunction,displayText,call,gate,context:data.context,emit:event=>send({type:'event',event})});
     }else if(data.type==='update')runtime.update(data.graph);
     else if(data.type==='pause'){
       gate.paused=data.paused;
       if(!gate.paused)gate.waiters.splice(0).forEach(wake=>wake());
-    }else if(data.type==='signal')result=await runtime.signal(data.nodes,data.event,data.execution);
+    }else if(data.type==='signal')result=await runtime.signal(data.nodes,data.event);
     send({type:'result',id:data.id,result});
   }catch(error){send({type:'result',id:data.id,error:String(error?.message??error),code:error?.code});}
 };
@@ -113,22 +113,14 @@ const liveBridgeFor = context => ({
       .replace(/\/+$/, '');
     body = {...(body ?? {})};
     query = {...(query ?? {})};
-    const executionDataRoute = /^projects\/[^/]+\/execution\/(scopes|operations)(\/|$)/.test(path);
     if (context.workflow_id && path.startsWith(`projects/${context.project_id}/`)) {
       if (method === 'GET' || method === 'DELETE') query.workflow_id ??= context.workflow_id;
       else body.workflow_id ??= context.workflow_id;
     }
     await assertScriptPermission(context, method, path, body);
-    assertExecutionCurrent(context);
-    if (method !== 'GET' && !executionDataRoute) {
-      body = quarantineWrite(body);
-      if (path === 'resources') body.payload = {...body.payload, grants: ['graph.read']};
-      if (body.config) body.config = {...body.config, grants: ['graph.read']};
-      if (path.startsWith('resources/') && body.payload) body.payload = {...body.payload, grants: ['graph.read']};
-    }
+    if (method !== 'GET') body = quarantineRequest(path, body);
     if (context.signal?.aborted) throw new Error('Execution stopped');
-    const result = await Backend.request(method, path, {body, query, scriptContext: context});
-    return executionDataRoute ? clone(result) : stripSecrets(result);
+    return stripSecrets(await Backend.request(method, path, {body, query, scriptContext: context}));
   },
 });
 
@@ -143,7 +135,7 @@ function scriptCallContext(graph, context, id, signal) {
   };
 }
 function createScriptHost(graph, saved, options) {
-  const {context, onEvent, signal, paused = false, onCall, admit, onFailure} = options;
+  const {context, onEvent, signal, paused = false, onFailure} = options;
   if (!canStartGraphWorker()) return createInlineGraphHost(graph, saved, options);
   const worker = startSourceWorker(GRAPH_WORKER_SOURCE),
     pending = new Map();
@@ -178,13 +170,7 @@ function createScriptHost(graph, saved, options) {
     if (data.type === 'call') {
       let reply;
       try {
-        const checked = onCall?.(data.execution, data.node) ?? {};
-        const result =
-          data.node === null && data.args[0] === '__admit'
-            ? await admit?.(data.execution)
-            : await liveBridgeFor({...scriptCallContext(current, context, data.node, signal), ...checked}).request(
-                data.args
-              );
+        const result = await liveBridgeFor(scriptCallContext(current, context, data.node, signal)).request(data.args);
         reply = {type: 'reply', id: data.id, result};
       } catch (error) {
         reply = {type: 'reply', id: data.id, error: error.message, code: error.code};
@@ -211,14 +197,14 @@ function createScriptHost(graph, saved, options) {
       await ready;
       return request('pause', {paused});
     },
-    async signal(nodes, event, execution) {
+    async signal(nodes, event) {
       await ready;
-      return request('signal', {nodes, event, execution});
+      return request('signal', {nodes, event});
     },
   };
 }
 const canStartGraphWorker = () => typeof AGENTSYS_SPAWN_WORKER === 'function' || typeof Worker === 'function';
-function createInlineGraphHost(graph, saved, {context, onEvent, signal, paused = false, onCall, admit}) {
+function createInlineGraphHost(graph, saved, {context, onEvent, signal, paused = false}) {
   const gate = {paused, waiters: []};
   let current = graph,
     closed = false;
@@ -228,12 +214,10 @@ function createInlineGraphHost(graph, saved, {context, onEvent, signal, paused =
     gate,
     context,
     closed: () => closed,
-    admit,
     emit: event => {
       if (!closed) onEvent(event);
     },
-    call: (id, execution, ...args) =>
-      liveBridgeFor({...scriptCallContext(current, context, id, signal), ...onCall?.(execution, id)}).request(args),
+    call: (id, ...args) => liveBridgeFor(scriptCallContext(current, context, id, signal)).request(args),
   });
   return {
     ready: Promise.resolve(),
@@ -247,8 +231,8 @@ function createInlineGraphHost(graph, saved, {context, onEvent, signal, paused =
       if (!paused) gate.waiters.splice(0).forEach(wake => wake());
       return Promise.resolve();
     },
-    signal: (nodes, event, execution) => {
-      const work = runtime.signal(nodes, event, execution);
+    signal: (nodes, event) => {
+      const work = runtime.signal(nodes, event);
       if (!signal) return work;
       return new Promise((resolve, reject) => {
         const abort = () => reject(Error('Graph work stopped'));

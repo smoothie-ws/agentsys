@@ -176,11 +176,11 @@ dialog[open]::before {
 }
 /* The dialog is glass itself, and glass does not blur glass: inside it the menu is solid, or the dialog's buttons show through. */
 .popup.in-dialog::before {
-  background: color-mix(in srgb, var(--theme-menus-background, var(--surface)) 98%, black);
+  background: color-mix(in srgb, var(--surface) 98%, black);
   backdrop-filter: none;
 }
 .popup button[aria-checked='true'] {
-  background: var(--theme-menus-selected, var(--current));
+  background: var(--current);
 }
 .menu-heading {
   padding: 0.45rem 0.65rem 0.2rem;

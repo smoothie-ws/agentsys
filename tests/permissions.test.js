@@ -7,7 +7,7 @@ async function fakeApp(scripts = 'inline') {
   const p = await app.api('POST', 'projects', {name: 'AI'});
   return {app, p};
 }
-test('Script API calls require instance permissions and project policy', async () => {
+test('API calls from a Script require instance permissions and project policy', async () => {
   const {app, p} = await fakeApp();
   for (const options of [{grants: []}, {grants: ['graph.read']}, {grants: ['graph.write'], grants: []}]) {
     const n = await fn(
@@ -195,4 +195,21 @@ test('permissions are set on the placed node and limit everything inside it', as
   await assert.rejects(app.api('PUT', `projects/${p.id}/complex/${n.group}`, {grants: ['bogus']}), /Invalid grants/);
   await app.api('PUT', `projects/${p.id}/complex/${n.group}`, {grants: ['graph.write']});
   assert.equal((await run()).status, 'idle');
+});
+test('the user sets the grants of a standalone Script; a Script cannot authorize itself', async () => {
+  const {app, p} = await fakeApp('worker');
+  const n = await app.api('POST', `projects/${p.id}/typed-nodes`, {
+    node_type: 'custom',
+    config:
+      nodes.script(`try{await agentsys('PUT','projects/'+context.project_id+'/node-permissions/'+context.node_id,{grants:['net.fetch:*']});}
+      catch(error){context.state.denied=error.code;}`),
+  });
+  await app.api('PUT', 'settings', {developer_mode: false});
+  await app.api('PUT', `projects/${p.id}/node-permissions/${n.id}`, {grants: ['graph.write', 'run.start']});
+  const result = await app.api('POST', `projects/${p.id}/execution`, {node_ids: [n.id], wait: true});
+  assert.equal(result.state.denied, 'permission_denied');
+  const detail = await app.api('GET', `projects/${p.id}/node-permissions/${n.id}`);
+  assert.deepEqual(detail.effective, ['graph.write', 'run.start']);
+  await app.api('PUT', `projects/${p.id}/policy`, {allow: ['graph.read']});
+  assert.deepEqual((await app.api('GET', `projects/${p.id}/node-permissions/${n.id}`)).effective, []);
 });

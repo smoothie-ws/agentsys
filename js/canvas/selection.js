@@ -71,7 +71,7 @@ function drawSelectionTools() {
   if (!tools || !W.camera) return;
   const items = selectionItems(),
     boxes = items.map(n => W.pos.get(n.id)).filter(Boolean);
-  tools.hidden = !boxes.length;
+  if (tools.hidden !== !boxes.length) tools.hidden = !boxes.length;
   if (!boxes.length) return;
   const x = Math.min(...boxes.map(p => p.x)),
     y = Math.min(...boxes.map(p => p.y));

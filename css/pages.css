@@ -1,6 +1,10 @@
 /* Pages: project list, project, settings, Library, API reference. */
 
 /* ----- Page frame ----- */
+.page > section + section,
+.page > .cards + section {
+  margin-top: 2rem;
+}
 .page {
   max-width: 1080px;
   margin: 0 auto;
@@ -11,10 +15,10 @@
   align-items: flex-start;
   justify-content: space-between;
   gap: 1rem;
-  margin-bottom: 1rem;
+  min-height: 4.4rem; /* with or without a line of help, the content of every page starts at the same height */
+  margin-bottom: 1.4rem;
 }
-.page-head .actions,
-.resource-editor .actions {
+.page-head .actions {
   display: flex;
   align-items: center;
   gap: 0.5rem;
@@ -52,12 +56,12 @@
 }
 .card {
   position: relative;
-  border-radius: var(--theme-cards-radius, var(--node-radius, 16px));
-  color: var(--theme-cards-text, var(--text));
-  background: var(--theme-cards-background, color-mix(in srgb, var(--text) 6%, var(--glass-card)));
+  border-radius: var(--node-radius, 16px);
+  color: var(--text);
+  background: color-mix(in srgb, var(--text) 6%, var(--glass-card));
   backdrop-filter: var(--blur-sm);
   box-shadow:
-    inset 0 0 0 1px var(--theme-cards-outline, transparent),
+    inset 0 0 0 1px transparent,
     var(--card-shadow);
   overflow: hidden;
   transition:
@@ -65,20 +69,24 @@
     box-shadow var(--base) var(--ease);
 }
 .card:hover {
-  background: var(--theme-cards-hover, color-mix(in srgb, var(--text) 10%, var(--glass-card)));
+  background: color-mix(in srgb, var(--text) 10%, var(--glass-card));
 }
 /* Made of other nodes, like a Complex Node on the canvas. */
 .card.k-complex {
-  background: var(--theme-cards-background, color-mix(in srgb, var(--accent) 12%, var(--glass-card)));
+  background: color-mix(in srgb, var(--accent) 12%, var(--glass-card));
 }
 .card.k-complex:hover {
-  background: var(--theme-cards-hover, color-mix(in srgb, var(--accent) 16%, var(--glass-card)));
+  background: color-mix(in srgb, var(--accent) 16%, var(--glass-card));
 }
-.card:has(.card-main:focus-visible),
 .card.drop-over {
   box-shadow:
     0 0 0 2px var(--accent),
     var(--card-shadow);
+}
+.card-main:focus-visible {
+  outline: 2px solid var(--accent);
+  outline-offset: -2px;
+  border-radius: inherit;
 }
 .card-main {
   display: grid;
@@ -161,21 +169,7 @@
   padding: 0.75rem 0.85rem;
   background: color-mix(in srgb, var(--background) 62%, transparent);
 }
-.card-text {
-  display: -webkit-box;
-  margin: 0;
-  overflow: hidden;
-  color: var(--muted);
-  font-size: 0.85rem;
-  line-height: 1.5;
-  overflow-wrap: anywhere;
-  white-space: pre-line;
-  -webkit-box-orient: vertical;
-  -webkit-line-clamp: 6;
-}
-.card-text code {
-  color: var(--text);
-}
+
 .card-note ul {
   display: grid;
   gap: 0.4rem;
@@ -280,7 +274,6 @@
   font: 0.8rem var(--mono);
 }
 .form-page section:not([hidden]),
-.resource-editor,
 .api-method {
   animation: fade-in var(--base) var(--ease);
 }
@@ -291,32 +284,83 @@
   font-weight: 620;
 }
 /* ----- Library item ----- */
-.resource-editor {
-  min-width: 0;
-  max-width: 640px;
-}
-.resource-editor .actions {
-  justify-content: flex-end;
-  margin-top: 1rem;
-}
 
 /* ----- API reference: method tree and search stay beside the documentation ----- */
-.api-page { max-width: none; }
-#api-box { display: grid; grid-template-columns: minmax(15rem, 20rem) minmax(0, 1fr); gap: 2rem; align-items: start; }
-.api-navigation { position: sticky; top: 0; display: flex; flex-direction: column; gap: 0.7rem; max-height: calc(100dvh - 170px); min-width: 0; }
-.api-search { display: grid; gap: 0.4rem; font-size: 0.8rem; }
-.api-call-tree { overflow: auto; min-height: 0; padding-right: 0.5rem; }
-.api-call-tree details > div { margin-left: 0.55rem; border-left: 1px solid var(--line); padding-left: 0.35rem; }
-.api-call-tree summary { padding: 0.55rem 0.2rem; overflow-wrap: anywhere; font-size: 0.78rem; cursor: pointer; }
-.api-call { display: flex; gap: 0.45rem; padding: 0.6rem 0.4rem; color: inherit; text-decoration: none; border-radius: 8px; }
-.api-call:hover { background: var(--hover); }
-.api-call[aria-current] { background: color-mix(in srgb, var(--accent) 15%, transparent); }
-.api-call > span:last-child { min-width: 0; }
-.api-call code { font-size: 0.72rem; overflow-wrap: anywhere; }
-.api-call small { display: block; color: var(--muted); margin-top: 0.3rem; font-size: 0.72rem; }
+.api-page {
+  max-width: none;
+}
+#api-box {
+  display: grid;
+  grid-template-columns: minmax(15rem, 20rem) minmax(0, 1fr);
+  gap: 2rem;
+  align-items: start;
+}
+.api-navigation {
+  position: sticky;
+  top: 0;
+  display: flex;
+  flex-direction: column;
+  gap: 0.7rem;
+  max-height: calc(100dvh - 170px);
+  min-width: 0;
+}
+.api-search {
+  display: grid;
+  gap: 0.4rem;
+  font-size: 0.8rem;
+}
+.api-call-tree {
+  overflow: auto;
+  min-height: 0;
+  padding-right: 0.5rem;
+}
+.api-call-tree details > div {
+  margin-left: 0.55rem;
+  border-left: 1px solid var(--line);
+  padding-left: 0.35rem;
+}
+.api-call-tree summary {
+  padding: 0.55rem 0.2rem;
+  overflow-wrap: anywhere;
+  font-size: 0.78rem;
+  cursor: pointer;
+}
+.api-call {
+  display: flex;
+  gap: 0.45rem;
+  padding: 0.6rem 0.4rem;
+  color: inherit;
+  text-decoration: none;
+  border-radius: 8px;
+}
+.api-call:hover {
+  background: var(--hover);
+}
+.api-call[aria-current] {
+  background: color-mix(in srgb, var(--accent) 15%, transparent);
+}
+.api-call > span:last-child {
+  min-width: 0;
+}
+.api-call code {
+  font-size: 0.72rem;
+  overflow-wrap: anywhere;
+}
+.api-call small {
+  display: block;
+  color: var(--muted);
+  margin-top: 0.3rem;
+  font-size: 0.72rem;
+}
 @media (max-width: 800px) {
-  #api-box { grid-template-columns: minmax(0, 1fr); gap: 1rem; }
-  .api-navigation { position: relative; max-height: 40dvh; }
+  #api-box {
+    grid-template-columns: minmax(0, 1fr);
+    gap: 1rem;
+  }
+  .api-navigation {
+    position: relative;
+    max-height: 40dvh;
+  }
 }
 .method {
   width: 3.6rem;
@@ -386,64 +430,7 @@
     padding: 1.2rem 1rem 3rem;
   }
 }
-/* Compact tables for plugin details. */
-.data-table {
-  width: 100%;
-  border-collapse: collapse;
-  text-align: left;
-  font-size: 0.85rem;
-}
-.data-table th {
-  color: var(--muted);
-  font-size: 0.75rem;
-  font-weight: 560;
-}
-.data-table th,
-.data-table td {
-  padding: 0.8rem 0.65rem;
-  border-bottom: 1px solid var(--line);
-  vertical-align: middle;
-}
-.data-table th:first-child,
-.data-table td:first-child {
-  padding-left: 0;
-}
-.data-table th:last-child,
-.data-table td:last-child {
-  padding-right: 0;
-}
-.data-table td small {
-  display: block;
-  margin-top: 0.2rem;
-  color: var(--muted);
-  font-size: 0.75rem;
-}
-.status-badge {
-  display: inline-flex;
-  align-items: center;
-  gap: 0.4rem;
-  font-size: 0.78rem;
-  white-space: nowrap;
-}
-.status-badge::before {
-  content: '';
-  width: 6px;
-  height: 6px;
-  border-radius: 50%;
-  background: var(--idle);
-}
-.status-badge[data-status='enabled']::before {
-  background: var(--ok);
-}
-.status-badge[data-status='failed']::before {
-  background: var(--bad);
-}
-.catalog-remote-items {
-  max-height: 20rem;
-  overflow: auto;
-  overflow-wrap: anywhere;
-  padding-left: 1.5rem;
-}
+
 .dashboard {
   max-width: 1040px;
 }
@@ -503,48 +490,26 @@
   height: 16px;
   color: var(--muted);
 }
-.dashboard-plugins {
-  margin-top: 2rem;
-}
 
 /* ----- Dashboard: counters, the list of what needs attention, the API reference ----- */
-.tiles {
-  display: grid;
-  grid-template-columns: repeat(auto-fill, minmax(180px, 1fr));
-  gap: 0.75rem;
-  margin: 0.8rem 0 1.5rem;
-}
+
 .tile {
   display: grid;
   gap: 0.15rem;
   padding: 0.8rem 0.9rem;
-  border-radius: var(--theme-cards-radius, var(--node-radius, 16px));
+  border-radius: var(--node-radius, 16px);
   color: inherit;
   text-decoration: none;
-  background: var(--theme-cards-background, color-mix(in srgb, var(--text) 6%, var(--glass-card)));
+  background: color-mix(in srgb, var(--text) 6%, var(--glass-card));
 }
 a.tile:hover {
-  background: var(--theme-cards-hover, color-mix(in srgb, var(--text) 10%, var(--glass-card)));
+  background: color-mix(in srgb, var(--text) 10%, var(--glass-card));
 }
 .tile-value {
   font-size: 1.8rem;
   font-weight: 600;
 }
-.tile-sub {
-  font-size: 0.78rem;
-  color: var(--muted);
-}
-.attention {
-  display: grid;
-  gap: 0.4rem;
-  padding: 0;
-  list-style: none;
-}
-.attention li {
-  display: flex;
-  justify-content: space-between;
-  gap: 1rem;
-}
+
 .section-head {
   display: flex;
   align-items: center;
@@ -559,164 +524,6 @@ a.tile:hover {
   text-decoration: none;
 }
 
-/* ----- Plugins ----- */
-.card.plugin-off {
-  opacity: 0.62;
-}
-.card.plugin-off:hover {
-  opacity: 0.9;
-}
-.plugin-about {
-  margin: 0 0 0.4rem;
-  font-size: 0.82rem;
-  line-height: 1.35;
-  color: var(--muted);
-}
-.plugin-secret {
-  display: flex;
-  align-items: center;
-  gap: 0.7rem;
-  margin: 0.3rem 0;
-}
-.plugin-manifest h3 {
-  display: flex;
-  align-items: center;
-  gap: 0.5rem;
-  margin: 0 0 0.3rem;
-  color: inherit;
-  font-size: 1.05rem;
-}
-.plugin-manifest h3 svg {
-  width: 20px;
-  height: 20px;
-}
-.plugin-host {
-  min-height: 80px;
-}
-.plugin-frame {
-  display: block;
-  width: 100%;
-  height: 480px;
-  border: 0;
-  background: transparent;
-  color-scheme: normal;
-}
-.plugin-tiles {
-  display: grid;
-  grid-template-columns: repeat(auto-fill, minmax(260px, 1fr));
-  gap: 0.75rem;
-}
-.plugin-tile {
-  border-radius: var(--theme-cards-radius, var(--node-radius, 16px));
-  padding: 0.4rem 0.6rem 0.6rem;
-  background: var(--theme-cards-background, color-mix(in srgb, var(--text) 6%, var(--glass-card)));
-  overflow: hidden;
-}
-.plugin-tile h3 {
-  font-size: 0.85rem;
-  margin: 0.3rem 0;
-}
-
-/* Native collection editors and extension details share the page and card primitives. */
-.catalog-form {
-  max-width: 46rem;
-}
-.resource-description {
-  color: var(--muted);
-  margin: 0;
-  line-height: 1.5;
-  overflow-wrap: anywhere;
-}
-.card .resource-description,
-.card .plugin-about {
-  display: -webkit-box;
-  -webkit-line-clamp: 3;
-  -webkit-box-orient: vertical;
-  overflow: hidden;
-}
-.plugin-title,
-.plugin-meta {
-  display: flex;
-  align-items: center;
-  gap: 1rem;
-}
-.plugin-title > :is(svg, img) {
-  width: 56px;
-  height: 56px;
-  flex: none;
-}
-.plugin-meta {
-  flex-wrap: wrap;
-  color: var(--muted);
-  font-size: 0.85rem;
-  margin: 0 0 1.5rem;
-}
-.content-tabs {
-  display: flex;
-  gap: 1.25rem;
-  border-bottom: 1px solid var(--line);
-  overflow-x: auto;
-}
-.content-tabs a {
-  padding: 0.7rem 0;
-  color: var(--muted);
-  text-decoration: none;
-  white-space: nowrap;
-  border-bottom: 2px solid transparent;
-}
-.content-tabs a[aria-current] {
-  color: var(--text);
-  border-bottom-color: var(--accent);
-}
-.plugin-layout {
-  display: grid;
-  grid-template-columns: minmax(0, 1fr) 210px;
-  gap: 2.5rem;
-  margin-top: 1.5rem;
-}
-.plugin-readme {
-  min-width: 0;
-  line-height: 1.65;
-  overflow-wrap: anywhere;
-}
-.plugin-readme > :first-child {
-  margin-top: 0;
-}
-.plugin-readme pre {
-  overflow: auto;
-}
-.plugin-facts {
-  min-width: 0;
-  font-size: 0.85rem;
-}
-.plugin-facts h2 {
-  font-size: 1rem;
-}
-.plugin-facts dl {
-  margin: 0;
-}
-.plugin-facts dt {
-  color: var(--muted);
-  margin-top: 1rem;
-}
-.plugin-facts dd {
-  margin: 0.25rem 0 0;
-  overflow-wrap: anywhere;
-}
-@media (max-width: 1000px) {
-  .plugin-layout {
-    grid-template-columns: 1fr;
-    gap: 1rem;
-  }
-  .plugin-facts dl {
-    display: grid;
-    grid-template-columns: minmax(90px, auto) 1fr;
-    gap: 0.6rem 1rem;
-  }
-  .plugin-facts :is(dt, dd) {
-    margin: 0;
-  }
-}
 .welcome-panel {
   padding: 24px;
   margin: 20px 0;
@@ -724,7 +531,210 @@ a.tile:hover {
   border-radius: var(--radius);
   background: var(--field);
 }
-.welcome-panel p { max-width: 62ch; }
-.welcome-panel h2 { margin: 8px 0; }
-.live-status { white-space: nowrap; }
-.storage-context { margin: -6px 0 18px; }
+.welcome-panel p {
+  max-width: 62ch;
+}
+.welcome-panel h2 {
+  margin: 8px 0;
+}
+
+/* ----- Settings groups: a heading and a line of help, then the controls; the same rhythm on every settings page ----- */
+.settings-group {
+  padding: 1.2rem 0;
+  border-top: 1px solid var(--line);
+}
+.settings-group:first-of-type {
+  border-top: 0;
+  padding-top: 0;
+}
+.form-page .settings-group h3 {
+  margin: 0 0 0.25rem;
+  color: var(--text);
+  font-size: 0.95rem;
+}
+.settings-group > p {
+  margin: 0 0 0.8rem;
+}
+.colour-fields {
+  display: grid;
+  grid-template-columns: repeat(4, minmax(0, 1fr));
+  gap: 0.8rem;
+}
+.colour-field {
+  display: flex;
+  flex-direction: column;
+  gap: 0.4rem;
+  font-size: 0.8rem;
+  color: var(--muted);
+}
+.colour-field input[type='color'] {
+  flex: none;
+  width: 100%;
+  height: 2.6rem;
+  padding: 0.2rem;
+}
+.settings-grid {
+  display: grid;
+  grid-template-columns: repeat(auto-fit, minmax(13rem, 1fr));
+  gap: 0.8rem 1rem;
+}
+.toggle-row {
+  display: flex;
+  align-items: flex-start;
+  gap: 0.7rem;
+  padding: 0.45rem 0;
+  cursor: pointer;
+}
+.toggle-row input {
+  margin-top: 0.2rem;
+}
+.toggle-row span {
+  display: grid;
+  gap: 0.1rem;
+}
+@media (max-width: 700px) {
+  .colour-fields {
+    grid-template-columns: repeat(2, minmax(0, 1fr));
+  }
+}
+
+/* ----- Plugin page: header with state and actions, tabs, a column of facts ----- */
+.plugin-hero {
+  display: flex;
+  align-items: flex-start;
+  gap: 1.4rem;
+  padding-bottom: 1.4rem;
+  border-bottom: 1px solid var(--line);
+}
+.plugin-icon {
+  display: grid;
+  flex: none;
+  place-items: center;
+  width: 5.2rem;
+  height: 5.2rem;
+  border-radius: calc(var(--radius) * 1.4);
+  background: linear-gradient(
+    145deg,
+    color-mix(in srgb, var(--accent) 55%, var(--field)),
+    color-mix(in srgb, var(--accent) 18%, var(--field))
+  );
+  color: var(--text);
+}
+.plugin-icon svg {
+  width: 2.4rem;
+  height: 2.4rem;
+}
+.plugin-hero-text {
+  min-width: 0;
+}
+.plugin-hero-text h1 {
+  margin: 0;
+}
+.plugin-hero-text > .muted {
+  margin: 0.3rem 0 0;
+}
+.plugin-meta {
+  display: flex;
+  align-items: center;
+  gap: 0.8rem;
+  margin: 0.7rem 0;
+}
+.plugin-state {
+  padding: 0.12rem 0.6rem;
+  border-radius: 999px;
+  background: var(--field);
+  font-size: 0.75rem;
+  font-weight: 620;
+}
+.plugin-state.running {
+  background: color-mix(in srgb, var(--ok, #2de18a) 20%, transparent);
+  color: var(--ok, #2de18a);
+}
+.plugin-state.failed {
+  background: color-mix(in srgb, var(--bad) 20%, transparent);
+  color: var(--bad);
+}
+.plugin-hero-actions {
+  display: flex;
+  flex-wrap: wrap;
+  align-items: center;
+  gap: 0.5rem;
+}
+.plugin-error {
+  margin: 1rem 0 0;
+}
+.plugin-body {
+  display: grid;
+  grid-template-columns: minmax(0, 1fr) 17rem;
+  gap: 2rem;
+  margin-top: 0.4rem;
+}
+.plugin-tabs {
+  display: flex;
+  gap: 0.2rem;
+  margin-bottom: 1.2rem;
+  border-bottom: 1px solid var(--line);
+}
+.plugin-tabs button {
+  margin-bottom: -1px;
+  padding: 0.7rem 1rem;
+  border: 0;
+  border-bottom: 2px solid transparent;
+  border-radius: 0;
+  background: none;
+  color: var(--muted);
+  font-weight: 600;
+}
+.plugin-tabs button[aria-selected='true'] {
+  border-bottom-color: var(--accent);
+  color: var(--text);
+}
+.plugin-aside {
+  align-self: start;
+  padding: 1rem 1.1rem;
+  border: 1px solid var(--line);
+  border-radius: var(--radius);
+  background: var(--field);
+}
+.plugin-aside h3 {
+  margin: 0 0 0.7rem;
+  font-size: 0.9rem;
+}
+.plugin-aside dl {
+  display: grid;
+  grid-template-columns: auto 1fr;
+  gap: 0.5rem 1rem;
+  margin: 0;
+  font-size: 0.85rem;
+}
+.plugin-aside dt {
+  color: var(--muted);
+}
+.plugin-aside dd {
+  margin: 0;
+  text-align: right;
+  overflow-wrap: anywhere;
+}
+.plugin-routes {
+  display: grid;
+  gap: 0.5rem;
+  margin: 0;
+  padding: 0;
+  list-style: none;
+}
+.plugin-routes li {
+  display: flex;
+  align-items: center;
+  gap: 0.7rem;
+  padding: 0.55rem 0.8rem;
+  border-radius: var(--radius-sm, 10px);
+  background: var(--field);
+}
+@media (max-width: 900px) {
+  .plugin-body {
+    grid-template-columns: minmax(0, 1fr);
+  }
+  .plugin-hero {
+    flex-direction: column;
+  }
+}

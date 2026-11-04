@@ -17,6 +17,7 @@ function onNextFrame(key, work) {
 }
 
 function draw() {
+  if (!W.snapshot || !W.canvas?.isConnected) return;
   const nodes = visibleNodes(),
     container = $('#nodes'),
     alive = new Set(),
@@ -41,8 +42,13 @@ function draw() {
   }
   for (const node of nodes) {
     alive.add(node.id);
+    let definition = W.nodeSignatures.get(node);
+    if (!definition) {
+      const {status, ...data} = node;
+      definition = JSON.stringify(data);
+      W.nodeSignatures.set(node, definition);
+    }
     const signature = JSON.stringify([
-      node,
       W.results.get(node.id) || null,
       shownStatus(node),
       innerNodesOf(node).map(n => W.results.get(n.id) || null),
@@ -59,8 +65,11 @@ function draw() {
     // Typing keeps the node as it is, except when a wire was added or removed: the value controls of
     // connected slots must go (and those of freed slots return) even while a field of the node has focus.
     const ports = JSON.stringify((node.inputs || []).map(p => [p.id, p.connected]));
-    const rewired = element && element.dataset.ports !== ports;
-    if (!element || (element.dataset.signature !== signature && (!typing || rewired))) {
+    const rewired = element && element.renderPorts !== ports;
+    if (
+      !element ||
+      ((element.renderDefinition !== definition || element.renderSignature !== signature) && (!typing || rewired))
+    ) {
       const focusLiteral = element?.contains(focused) ? focused.dataset.literal : null;
       const typed = typing ? {value: focused.value, start: focused.selectionStart, end: focused.selectionEnd} : null;
       const fresh = document.createElement('div');
@@ -72,12 +81,21 @@ function draw() {
           const previous = $(`textarea[data-literal="${CSS.escape(area.dataset.literal)}"]`, element);
           if (previous?.style.height) area.style.height = previous.style.height;
         }
-      next.dataset.signature = signature;
-      next.dataset.ports = ports;
-      if (element) forgetFieldHeights(element);
+      // A redrawn node keeps its glow for now, so that the glow can fade when the state below changes it.
+      if (element?.classList.contains('glow')) next.classList.add('glow');
+      next.renderSignature = signature;
+      next.renderDefinition = definition;
+      next.renderPorts = ports;
+      if (element) {
+        forgetFieldHeights(element);
+        W.nodeObserver?.unobserve(element);
+      }
       element ? element.replaceWith(next) : container.append(next);
       element = next;
       W.elements.set(node.id, element);
+      W.dirtyGeometry.add(node.id);
+      restoreFieldHeights(element, node.id);
+      wireCodeEditors(element);
       W.nodeObserver?.observe(element);
       const refocused = focusLiteral ? $(`[data-literal="${CSS.escape(focusLiteral)}"]`, element) : null;
       refocused?.focus({preventScroll: true});
@@ -87,15 +105,25 @@ function draw() {
         refocused.dispatchEvent(new Event('input'));
       }
     }
-    restoreFieldHeights(element, node.id);
     element.classList.toggle('selected', W.selected.has(node.id));
+    setGlow(element, node);
     const p = W.pos.get(node.id);
-    element.style.transform = `translate(${p.x}px,${p.y}px)`;
+    const transform = `translate(${p.x}px,${p.y}px)`;
+    if (element.renderTransform !== transform) {
+      element.style.transform = transform;
+      element.renderTransform = transform;
+      W.sceneRevision++;
+    }
     const size =
       node.kind === 'complex' ? {width: node.compact_width, height: node.compact_height} : node.position || {};
-    element.style.width = size.width ? size.width + 'px' : '';
-    element.style.minHeight = size.height && !node.folded ? size.height + 'px' : '';
-    if (node.folded) layoutFoldedPorts(element);
+    const width = size.width ? size.width + 'px' : '',
+      height = size.height && !node.folded ? size.height + 'px' : '';
+    if (element.style.width !== width || element.style.minHeight !== height) {
+      element.style.width = width;
+      element.style.minHeight = height;
+      W.dirtyGeometry.add(node.id);
+    }
+    if (node.folded && W.dirtyGeometry.has(node.id)) layoutFoldedPorts(element);
   }
   for (const [id, element] of W.elements)
     if (!alive.has(id)) {
@@ -103,6 +131,8 @@ function draw() {
       W.nodeObserver?.unobserve(element);
       element.remove();
       W.elements.delete(id);
+      forgetSockets(id);
+      W.sceneRevision++;
     }
   // What a collapsed group hides has no element, but it keeps its place: the group moves it, and the group's header sits at its corner.
   for (const id of W.hidden.folded) {
@@ -111,42 +141,57 @@ function draw() {
     const size = node.kind === 'complex' ? {w: node.compact_width, h: node.compact_height} : {w: 240, h: 100};
     W.pos.set(id, {...size, ...(W.pos.get(id) || {}), ...position(node)});
   }
-  measure();
+  measure(false);
   drawFrames();
   drawWires();
   drawMinimap();
-  wireCodeEditors(container);
   drawSelectionTools();
-  $('#canvas-empty').hidden = W.snapshot.nodes.length > 0 || W.snapshot.groups.length > 0;
+  const empty = $('#canvas-empty'),
+    hideEmpty = W.snapshot.nodes.length > 0 || W.snapshot.groups.length > 0;
+  if (empty.hidden !== hideEmpty) empty.hidden = hideEmpty;
 }
 
-function measure() {
-  W.sockets.clear();
+function measure(force = true) {
   for (const [id, element] of W.elements) {
+    if (!force && !W.dirtyGeometry.has(id)) continue;
     const p = W.pos.get(id);
     p.w = element.offsetWidth;
     p.h = element.offsetHeight;
     measureSockets(id, element);
+    W.dirtyGeometry.delete(id);
+    W.sceneRevision++;
   }
 }
 
+function forgetSockets(id) {
+  for (const key of W.socketKeys.get(id) ?? []) W.sockets.delete(key);
+  W.socketKeys.delete(id);
+}
+
 function measureSockets(id, element) {
+  forgetSockets(id);
+  const keys = [];
+  W.socketKeys.set(id, keys);
   const origin = element.getBoundingClientRect(),
     zoom = W.camera?.zoom || 1;
   for (const socket of element.querySelectorAll('.sock')) {
     // A Reroute point is one dot: wires come in and leave from its centre (layout size, so hover scaling does not move them).
     if (element.classList.contains('reroute')) {
-      W.sockets.set(`${id}|${socket.dataset.dir}|${socket.dataset.port}`, {
+      const key = `${id}|${socket.dataset.dir}|${socket.dataset.port}`;
+      keys.push(key);
+      W.sockets.set(key, {
         dx: element.offsetWidth / 2,
         dy: element.offsetHeight / 2,
       });
       continue;
     }
     const r = socket.getBoundingClientRect();
-    W.sockets.set(
-      `${id}|${socket.dataset.dir}|${socket.dataset.port}${socket.dataset.face ? '|' + socket.dataset.face : ''}`,
-      {dx: (r.left + r.width / 2 - origin.left) / zoom, dy: (r.top + r.height / 2 - origin.top) / zoom}
-    );
+    const key = `${id}|${socket.dataset.dir}|${socket.dataset.port}${socket.dataset.face ? '|' + socket.dataset.face : ''}`;
+    keys.push(key);
+    W.sockets.set(key, {
+      dx: (r.left + r.width / 2 - origin.left) / zoom,
+      dy: (r.top + r.height / 2 - origin.top) / zoom,
+    });
   }
 }
 function measureFrames() {
@@ -197,9 +242,20 @@ function layoutFoldedPorts(element) {
   }
 }
 
+/** The states of a node at work: it glows in them (`setGlow`). */
+const WORKING = ['running', 'sleeping'];
+
 /** The state a node shows: while the run is paused, a node that was running shows paused (it finishes, nothing new starts). */
 function shownStatus(node) {
   return ['running', 'sleeping', 'waiting'].includes(node.status) && W.runPaused ? 'paused' : node.status;
+}
+
+/** The node the flow is on glows: while it is at work, and for a moment after a pass that was too short to see (`holdGlow`). */
+function setGlow(element, node) {
+  const glow = WORKING.includes(shownStatus(node)) || (W.glowUntil.get(node.id) ?? 0) > performance.now();
+  if (element.classList.contains('glow') === glow) return;
+  getComputedStyle(element).boxShadow; // settle the old look first: the change then fades instead of jumping
+  element.classList.toggle('glow', glow);
 }
 
 function nodeHTML(node) {
@@ -343,15 +399,28 @@ const portTitle = p => (isAny(p.type) ? p.name : `${p.name}: ${typeLabel(p.type)
 
 /** The type a wire carries; a Reroute point has no type of its own, so it takes the one of the wire feeding it. */
 function edgeType(edge) {
+  const cache = canvasGraphCache(),
+    key = edge.source + '|' + edge.source_port;
+  cache.edgeTypes ??= new Map();
+  if (cache.edgeTypes.has(key)) return cache.edgeTypes.get(key);
+  if (!cache.feeders) {
+    cache.feeders = new Map();
+    for (const connection of W.snapshot.edges)
+      if (!cache.feeders.has(connection.target)) cache.feeders.set(connection.target, connection);
+  }
+  let type = '';
   for (let hops = 0; hops < 64; hops++) {
     const source = W.nodes.get(edge.source);
-    if (source?.node_type !== 'reroute')
-      return (source?.outputs || []).find(p => p.id === edge.source_port)?.type || '';
-    const feeder = W.snapshot.edges.find(e => e.target === source.id);
-    if (!feeder) return '';
+    if (source?.node_type !== 'reroute') {
+      type = (source?.outputs || []).find(p => p.id === edge.source_port)?.type || '';
+      break;
+    }
+    const feeder = cache.feeders.get(source.id);
+    if (!feeder) break;
     edge = feeder;
   }
-  return '';
+  cache.edgeTypes.set(key, type);
+  return type;
 }
 /** The colour of a port type for the minimap: the one the type has (none for no type). */
 const typeColorOf = type => TYPE_COLORS.get(typeRefs(type)[0]) ?? '';
@@ -420,8 +489,11 @@ function widgetsHTML(node) {
 /** The Custom nodes inside a Library node placed on the canvas: what they display() shows on the placed node. */
 function innerNodesOf(node) {
   if (node.kind !== 'complex' || !node.source) return [];
+  if (W.innerNodeCache.has(node)) return W.innerNodeCache.get(node);
   const inside = new Set(node.members);
-  return W.snapshot.nodes.filter(n => inside.has(n.id));
+  const result = W.snapshot.nodes.filter(n => inside.has(n.id));
+  W.innerNodeCache.set(node, result);
+  return result;
 }
 
 /** An Event node: the combobox that chooses the event it fires (its operation). */
@@ -445,13 +517,16 @@ function inlineHTML(node) {
 const FOLDED_GROUP_WIDTH = 240,
   FOLDED_GROUP_HEIGHT = 40;
 function drawFrames() {
+  if (!W.snapshot || !W.canvas?.isConnected) return;
   const html = [],
     boxes = new Map();
-  for (const id of [...W.pos.keys()]) if (id.startsWith('frame:')) W.pos.delete(id);
-  const visible = W.snapshot.groups.filter(g => !W.hidden.groups.has(g.id));
+  const cache = canvasGraphCache();
+  const visible = (cache.groups ??= W.snapshot.groups
+    .filter(g => !W.hidden.groups.has(g.id))
+    .sort((a, b) => a.depth - b.depth));
   const rect = p => ({x: p.x, y: p.y, r: p.x + p.w, b: p.y + p.h});
   // Inner groups first, so a group can wrap the frames of the groups inside it.
-  for (const group of [...visible].sort((a, b) => b.depth - a.depth)) {
+  for (const group of [...visible].reverse()) {
     const cx = W.complex.get(group.id),
       content = [];
     if (group.folded && !cx) {
@@ -499,7 +574,7 @@ function drawFrames() {
     box.b = Math.max(box.b, box.y + 64 + Math.max(cx?.inputs?.length || 0, cx?.outputs?.length || 0) * 28);
     boxes.set(group.id, box);
   }
-  for (const group of [...visible].sort((a, b) => a.depth - b.depth)) {
+  for (const group of visible) {
     const box = boxes.get(group.id),
       cx = W.complex.get(group.id);
     // A Complex Node's ports sit on its frame: the same dot takes an outside wire and an inside binding.
@@ -525,7 +600,7 @@ function drawFrames() {
         ? `<span class="switched-off" title="${group.disabled ? 'Disabled' : 'Disabled by its group'}: a run skips everything in it">${icon('power')}</span>`
         : '';
     const collapse =
-      cx && !W.library
+      cx && !(W.library && group.id === W.snapshot.root)
         ? `<button class="icon collapse" data-collapse="${esc(group.id)}" title="Collapse into a node" aria-label="Collapse Complex Node">${icon('chevron')}</button>`
         : '';
     html.push(`<div class="frame ${group.color ? 'colored' : ''} ${cx ? 'complex' : ''} ${folded ? 'folded' : ''} ${off ? 'off' : ''} ${W.library && group.id === W.snapshot.root ? 'root' : ''} ${W.selected.has('frame:' + group.id) ? 'selected' : ''}" data-frame="${esc(group.id)}" data-id="${cx ? 'complex:' : 'group:'}${esc(group.id)}" ${cx ? 'data-complex="true"' : ''} style="transform:translate(${box.x}px,${box.y}px);width:${box.r - box.x}px;height:${box.b - box.y}px;${group.color ? `--node-color:${esc(group.color)};--node-ink:${inkOn(group.color)}` : ''}">
@@ -534,17 +609,57 @@ function drawFrames() {
     W.pos.set('frame:' + group.id, bounds);
     if (cx) W.pos.set('complex:' + group.id, bounds);
   }
-  $('#frames').innerHTML = html.join('');
-  measureFrames();
+  const container = $('#frames'),
+    alive = new Set(),
+    changed = [];
+  for (let i = 0; i < visible.length; i++) {
+    const id = visible[i].id,
+      markup = html[i];
+    alive.add(id);
+    let element = W.frameElements.get(id);
+    if (!element || element.renderMarkup !== markup) {
+      const template = document.createElement('div');
+      template.innerHTML = markup;
+      const next = template.firstElementChild;
+      next.renderMarkup = markup;
+      element ? element.replaceWith(next) : container.append(next);
+      element = next;
+      W.frameElements.set(id, element);
+      changed.push([id, element]);
+      W.sceneRevision++;
+    }
+  }
+  for (const [id, element] of W.frameElements)
+    if (!alive.has(id)) {
+      element.remove();
+      W.frameElements.delete(id);
+      W.pos.delete('frame:' + id);
+      if (!W.elements.has('complex:' + id)) forgetSockets('complex:' + id);
+      W.sceneRevision++;
+    }
+  // Finish DOM writes before measuring only the frames whose geometry changed.
+  for (const [id, element] of changed) if (W.complex.has(id)) measureSockets('complex:' + id, element);
 }
 
 /** Wires as drawn: an end inside a collapsed Complex Node moves to the matching port on that node. */
 function visibleEdges() {
+  const cache = canvasGraphCache();
+  if (cache.edges) return cache.edges;
   const collapsed = W.snapshot.complex.filter(c => c.collapsed).sort((a, b) => a.depth - b.depth);
+  const holders = new Map(),
+    resolved = new Map();
+  for (const cx of collapsed) {
+    if (W.hidden.nodes.has('complex:' + cx.id)) continue;
+    for (const member of cx.members) if (!holders.has(member)) holders.set(member, cx);
+  }
   /** The ports (as text) a port of a node or Complex Node lands on once Complex Nodes are looked through. */
   const terminals = (id, port, direction) => {
+    const key = `${id}|${port}|${direction}`;
+    if (resolved.has(key)) return resolved.get(key);
     try {
-      return Editor.resolveAll(W.nodeMap, id, port, direction).map(t => t.join('|'));
+      const result = Editor.resolveAll(W.nodeMap, id, port, direction).map(t => t.join('|'));
+      resolved.set(key, result);
+      return result;
     } catch {
       return [];
     }
@@ -560,10 +675,7 @@ function visibleEdges() {
     if (barSource && barSource === barTarget) continue;
     if (barSource) next.source = 'frame:' + barSource;
     if (barTarget) next.target = 'frame:' + barTarget;
-    const holder = side =>
-      next[side].startsWith('frame:')
-        ? null
-        : collapsed.find(c => c.members.includes(edge[side]) && !W.hidden.nodes.has('complex:' + c.id));
+    const holder = side => (next[side].startsWith('frame:') ? null : holders.get(edge[side]));
     const inside = {source: holder('source'), target: holder('target')};
     if (inside.source && inside.source === inside.target) continue;
     for (const [side, direction] of [
@@ -583,7 +695,7 @@ function visibleEdges() {
     }
     if (!hidden) result.push(next);
   }
-  return result;
+  return (cache.edges = result);
 }
 
 function socketPoint(id, dir, port, face = '') {
@@ -649,28 +761,54 @@ function roundedPolyline(points, radius) {
 }
 
 function drawWires(preview) {
+  if (!W.snapshot || !W.canvas?.isConnected) return;
   const svg = $('#wires'),
-    paths = [],
+    alive = new Set(),
     issues = new Set((W.snapshot.diagnostics || []).map(d => d.edge_id).filter(Boolean));
-  // Every wire of a selected node (or group) is lit.
   const lit = new Set(W.selected);
   for (const id of W.selected)
     if (id.startsWith('frame:') && W.complex.has(id.slice(6))) lit.add('complex:' + id.slice(6));
+  const put = (key, cls, a, b, attributes) => {
+    alive.add(key);
+    let entry = W.wireElements.get(key);
+    if (!entry) {
+      const make = () => document.createElementNS('http://www.w3.org/2000/svg', 'path');
+      entry = {path: make(), hit: attributes ? make() : null};
+      if (entry.hit) {
+        entry.hit.setAttribute('class', 'hit');
+        for (const [name, value] of Object.entries(attributes)) entry.hit.setAttribute(name, value);
+        svg.append(entry.hit);
+      }
+      svg.append(entry.path);
+      W.wireElements.set(key, entry);
+    }
+    const geometry = [a.x, a.y, b.x, b.y, graphStyle.wire_style, graphStyle.wire_curve].join(',');
+    if (entry.geometry !== geometry) {
+      const d = wirePath(a, b);
+      entry.path.setAttribute('d', d);
+      entry.hit?.setAttribute('d', d);
+      entry.geometry = geometry;
+      W.sceneRevision++;
+    }
+    if (entry.cls !== cls) {
+      entry.path.setAttribute('class', cls);
+      entry.cls = cls;
+    }
+  };
   for (const edge of visibleEdges()) {
     if (!W.pos.has(edge.source) || !W.pos.has(edge.target)) continue;
     const a = socketPoint(edge.source, 'out', edge.source_port),
       b = socketPoint(edge.target, 'in', edge.target_port);
     if (!a || !b) continue;
-    const d = wirePath(a, b);
     let cls = `wire k-${edge.kind} ${typeClass(edgeType(edge.typed_by || edge))}`;
     if (W.nodes.get(edge.source)?.status === 'completed') cls += ' satisfied';
     if (issues.has(edge.id)) cls += ' invalid';
     if (W.edges.has(edge.id)) cls += ' selected';
     else if (lit.has(edge.source) || lit.has(edge.target)) cls += ' related';
-    paths.push(`<path class="hit" data-edge="${esc(edge.id)}" d="${d}"/><path class="${cls}" d="${d}"/>`);
+    put('edge:' + edge.id, cls, a, b, {'data-edge': edge.id});
   }
-  for (const group of W.snapshot.complex.filter(c => !W.hidden.groups.has(c.id))) {
-    if (group.collapsed) continue;
+  for (const group of W.snapshot.complex) {
+    if (group.collapsed || W.hidden.groups.has(group.id)) continue;
     for (const [direction, dir] of [
       ['inputs', 'in'],
       ['outputs', 'out'],
@@ -681,15 +819,26 @@ function drawWires(preview) {
           const a = socketPoint('complex:' + group.id, dir === 'in' ? 'out' : 'in', port.id, 'internal'),
             b = socketPoint(bound.node_id, dir, bound.port_id);
           if (a && b) {
-            const path = dir === 'in' ? wirePath(a, b) : wirePath(b, a);
-            paths.push(
-              `<path class="hit" data-binding-group="${esc(group.id)}" data-binding-direction="${direction}" data-binding-port="${esc(port.id)}" data-binding-node="${esc(bound.node_id)}" data-binding-inner="${esc(bound.port_id)}" d="${path}"/><path class="wire interface-wire ${typeClass(port.type)}${lit.has('complex:' + group.id) || lit.has(bound.node_id) ? ' related' : ''}" d="${path}"/>`
-            );
+            const key = JSON.stringify([group.id, direction, port.id, bound.node_id, bound.port_id]);
+            const cls = `wire interface-wire ${typeClass(port.type)}${lit.has('complex:' + group.id) || lit.has(bound.node_id) ? ' related' : ''}`;
+            put('binding:' + key, cls, dir === 'in' ? a : b, dir === 'in' ? b : a, {
+              'data-binding-group': group.id,
+              'data-binding-direction': direction,
+              'data-binding-port': port.id,
+              'data-binding-node': bound.node_id,
+              'data-binding-inner': bound.port_id,
+            });
           }
         }
   }
-  if (preview) paths.push(`<path class="wire preview" d="${wirePath(preview.a, preview.b)}"/>`);
-  svg.innerHTML = paths.join('');
+  if (preview) put('preview', 'wire preview', preview.a, preview.b, null);
+  for (const [key, entry] of W.wireElements)
+    if (!alive.has(key)) {
+      entry.hit?.remove();
+      entry.path.remove();
+      W.wireElements.delete(key);
+      W.sceneRevision++;
+    }
 }
 
 /** Folds the minimap away (the zoom controls stay) or brings it back; the choice is remembered. */
@@ -706,56 +855,81 @@ function setMinimapHidden(hidden, save = true) {
 }
 
 function drawMinimap() {
-  const canvas = $('#minimap'),
-    ctx = canvas.getContext('2d'),
-    entries = [...W.pos.entries()].filter(([id]) => !id.startsWith('frame:') && W.elements.has(id)),
-    boxes = entries.map(([, p]) => p);
-  ctx.clearRect(0, 0, canvas.width, canvas.height);
+  if (!W.snapshot || !W.canvas?.isConnected) return;
+  const canvas = $('#minimap');
   if ($('.map')?.classList.contains('collapsed')) return;
-  const view = viewRect();
-  if (!boxes.length) return;
-  const x0 = Math.min(...boxes.map(b => b.x)),
-    y0 = Math.min(...boxes.map(b => b.y)),
-    x1 = Math.max(...boxes.map(b => b.x + (b.w || 0))),
-    y1 = Math.max(...boxes.map(b => b.y + (b.h || 0)));
-  const scale = Math.min((canvas.width - 8) / (x1 - x0 || 1), (canvas.height - 8) / (y1 - y0 || 1));
-  const map = W.mapDrag || {x0, y0, scale};
-  W.minimap = map;
-  const style = getComputedStyle(document.documentElement),
-    muted = style.getPropertyValue('--idle').trim() || '#888',
-    accent = style.getPropertyValue('--accent').trim() || '#fb4';
-  // Each box wears its node's colour: the one chosen for it, the accent for notes and Complex Nodes, else neutral.
-  const colorOf = id => {
-    const node = W.nodes.get(id);
-    return node?.color || (node && ['node', 'complex'].includes(node.kind) ? accent : muted);
-  };
-  // Wires first, in the colour of the type they carry.
-  const point = ({x, y}) => [4 + (x - map.x0) * map.scale, 4 + (y - map.y0) * map.scale];
-  ctx.lineWidth = 1.5;
-  ctx.globalAlpha = 0.7;
-  for (const edge of visibleEdges()) {
-    const a = socketPoint(edge.source, 'out', edge.source_port),
-      b = socketPoint(edge.target, 'in', edge.target_port);
-    if (!a || !b || !W.pos.has(edge.source) || !W.pos.has(edge.target)) continue;
-    ctx.strokeStyle = typeColorOf(edgeType(edge)) || muted;
-    ctx.beginPath();
-    ctx.moveTo(...point(a));
-    ctx.lineTo(...point(b));
-    ctx.stroke();
+  if (W.minimapTheme?.style !== graphStyle) {
+    const style = getComputedStyle(document.documentElement);
+    W.minimapTheme = {
+      style: graphStyle,
+      muted: style.getPropertyValue('--idle').trim() || '#888',
+      accent: style.getPropertyValue('--accent').trim() || '#fb4',
+    };
   }
-  ctx.globalAlpha = 0.85;
-  for (const [id, b] of entries) {
-    ctx.fillStyle = colorOf(id);
-    ctx.beginPath();
-    ctx.roundRect(
-      4 + (b.x - map.x0) * map.scale,
-      4 + (b.y - map.y0) * map.scale,
-      Math.max(3, (b.w || 200) * map.scale),
-      Math.max(3, (b.h || 60) * map.scale),
-      2
-    );
-    ctx.fill();
+  const ctx = canvas.getContext('2d'),
+    {muted, accent} = W.minimapTheme;
+  let scene = W.minimapScene;
+  if (
+    !scene ||
+    scene.snapshot !== W.snapshot ||
+    scene.revision !== W.sceneRevision ||
+    scene.drag !== W.mapDrag ||
+    scene.muted !== muted ||
+    scene.accent !== accent
+  ) {
+    const entries = [...W.elements.keys()].map(id => [id, W.pos.get(id)]).filter(([, p]) => p),
+      boxes = entries.map(([, p]) => p);
+    ctx.clearRect(0, 0, canvas.width, canvas.height);
+    if (!boxes.length) {
+      W.minimapScene = null;
+      return;
+    }
+    const x0 = Math.min(...boxes.map(b => b.x)),
+      y0 = Math.min(...boxes.map(b => b.y)),
+      x1 = Math.max(...boxes.map(b => b.x + (b.w || 0))),
+      y1 = Math.max(...boxes.map(b => b.y + (b.h || 0))),
+      scale = Math.min((canvas.width - 8) / (x1 - x0 || 1), (canvas.height - 8) / (y1 - y0 || 1)),
+      map = W.mapDrag || {x0, y0, scale};
+    const layer = scene?.layer ?? document.createElement('canvas');
+    layer.width = canvas.width;
+    layer.height = canvas.height;
+    const ink = layer.getContext('2d'),
+      point = ({x, y}) => [4 + (x - map.x0) * map.scale, 4 + (y - map.y0) * map.scale];
+    ink.lineWidth = 1.5;
+    ink.globalAlpha = 0.7;
+    for (const edge of visibleEdges()) {
+      const a = socketPoint(edge.source, 'out', edge.source_port),
+        b = socketPoint(edge.target, 'in', edge.target_port);
+      if (!a || !b) continue;
+      ink.strokeStyle = typeColorOf(edgeType(edge)) || muted;
+      ink.beginPath();
+      ink.moveTo(...point(a));
+      ink.lineTo(...point(b));
+      ink.stroke();
+    }
+    ink.globalAlpha = 0.85;
+    for (const [id, b] of entries) {
+      const node = W.nodes.get(id);
+      ink.fillStyle = node?.color || (node && ['node', 'complex'].includes(node.kind) ? accent : muted);
+      ink.beginPath();
+      ink.roundRect(...point(b), Math.max(3, (b.w || 200) * map.scale), Math.max(3, (b.h || 60) * map.scale), 2);
+      ink.fill();
+    }
+    scene = W.minimapScene = {
+      snapshot: W.snapshot,
+      revision: W.sceneRevision,
+      drag: W.mapDrag,
+      muted,
+      accent,
+      map,
+      layer,
+    };
   }
+  W.minimap = scene.map;
+  ctx.clearRect(0, 0, canvas.width, canvas.height);
+  ctx.drawImage(scene.layer, 0, 0);
+  const view = viewRect(),
+    map = scene.map;
   ctx.globalAlpha = 1;
   ctx.strokeStyle = accent;
   ctx.lineWidth = 1.5;
@@ -796,8 +970,10 @@ function forgetFieldHeights(element) {
   }
 }
 function restoreFieldHeights(element, nodeId) {
+  const areas = $$('textarea[data-literal]', element);
+  if (!areas.length) return;
   const saved = store.get(fieldHeightsKey(), {});
-  for (const area of $$('textarea[data-literal]', element)) {
+  for (const area of areas) {
     const height = saved[nodeId + '|' + area.dataset.literal];
     if (height && !area.style.height) area.style.height = height + 'px';
     if (!fieldHeightContexts.has(area)) {

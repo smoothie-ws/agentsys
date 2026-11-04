@@ -28,6 +28,9 @@ PAGES['project-settings'] = async (view, route) => {
 };
 
 // ----- application settings -----
+const PALETTE = ['background', 'surface', 'text', 'accent'];
+/** The built-in theme whose four colours these are ('' for a custom palette). */
+const themeOf = style => Object.keys(THEMES).find(name => PALETTE.every(k => THEMES[name][k] === style[k])) ?? '';
 const graphNumber = (name, style) => {
   const [min, max] = GRAPH_RANGES[name];
   return `<input name="${name}" type="number" min="${min}" max="${max}" value="${style[name]}">`;
@@ -36,26 +39,30 @@ PAGES.settings = async (view, route) => {
   const {preferences} = await loadLibrary();
   if (app.route !== route) return;
   const style = {...STYLE_DEFAULTS, ...preferences.style};
-  const theme = selectedTheme(style, preferences);
   view.innerHTML = `<form class="page form-page" id="settings-form">${pageHead({title: 'Settings', actions: '<span id="save-slot"></span>'})}
     <section><h2>Editing</h2>${field('Undo steps per workflow', `<input name="undo_steps" type="number" min="0" max="500" value="${esc(preferences.undo_steps ?? 50)}">`)}
       <label class="check"><input type="checkbox" name="developer_mode" ${preferences.developer_mode ? 'checked' : ''}> Developer mode</label></section>
-    <section class="appearance-section"><h2>Appearance</h2>${field(
-      'Theme',
-      `<select name="theme">${themeOptions(preferences, theme)}</select>`
-    )}
-      <div class="button-row theme-actions"><button type="button" class="ghost" id="save-theme">${icon('plus')}Save theme</button><button type="button" class="ghost" id="import-themes">${icon('download')}Import themes</button><button type="button" class="ghost" id="export-theme">${icon('upload')}Export theme</button><button type="button" class="icon" id="theme-actions-more" data-context-menu aria-label="More theme actions">${icon('dots')}</button></div>
-      <div class="grid4">${['background', 'surface', 'text', 'accent'].map(k => field(k[0].toUpperCase() + k.slice(1), `<input type="color" name="${k}" value="${esc(style[k])}">`)).join('')}</div>
-      <div class="grid2">${field('Text size', `<input name="font_size" type="number" min="12" max="22" value="${style.font_size}">`)}
-      ${field('Font', `<select name="font_family">${options([['system', 'System'], ...['Arial', 'Verdana', 'Georgia', 'Trebuchet MS', 'Courier New'].map(f => [f, f])], style.font_family)}</select>`)}</div>
-      <div class="button-row"><label class="check"><input type="checkbox" name="animations" ${style.animations ? 'checked' : ''}> Animations</label><label class="check"><input type="checkbox" name="effects" ${style.effects ? 'checked' : ''}> Effects</label></div>
-      ${themeEditorHTML(style.components)}
-      <h3>Graph Editor</h3>
-      <div class="grid2">${field('Wire style', `<select name="wire_style">${options(WIRE_STYLES, style.wire_style)}</select>`)}
-      ${field('Wire thickness', graphNumber('wire_width', style))}
-      ${field('Wire curve (Bezier, %)', graphNumber('wire_curve', style))}
-      ${field('Node corner radius', graphNumber('node_radius', style))}
-      ${field('Group corner radius', graphNumber('group_radius', style))}</div></section>
+    <section class="appearance-section"><h2>Appearance</h2>
+      <div class="settings-group"><h3>Theme</h3><p class="muted">Pick a built-in theme, or set the four colours below yourself.</p>
+        <select name="theme" aria-label="Theme"><option value="">Custom</option>${options(
+          Object.keys(THEMES).map(name => [name, name]),
+          themeOf(style)
+        )}</select></div>
+      <div class="settings-group"><h3>Colours</h3><p class="muted">The four colours every other colour is made from.</p>
+        <div class="colour-fields">${PALETTE.map(k => `<label class="colour-field"><input type="color" name="${k}" value="${esc(style[k])}" aria-label="${k}"><span>${k[0].toUpperCase() + k.slice(1)}</span></label>`).join('')}</div></div>
+      <div class="settings-group"><h3>Text</h3>
+        <div class="settings-grid">${field('Text size', `<input name="font_size" type="number" min="12" max="22" value="${style.font_size}">`)}
+        ${field('Font', `<select name="font_family">${options([['system', 'System'], ...['Arial', 'Verdana', 'Georgia', 'Trebuchet MS', 'Courier New'].map(f => [f, f])], style.font_family)}</select>`)}</div></div>
+      <div class="settings-group"><h3>Interface</h3>
+        <label class="toggle-row"><input type="checkbox" name="animations" ${style.animations ? 'checked' : ''}><span><strong>Animations</strong><small class="muted">Panels, pills and menus move instead of jumping.</small></span></label>
+        <label class="toggle-row"><input type="checkbox" name="effects" ${style.effects ? 'checked' : ''}><span><strong>Effects</strong><small class="muted">Blur, glow and connected panels.</small></span></label></div>
+      <div class="settings-group"><h3>Graph editor</h3>
+        <div class="settings-grid">${field('Wire style', `<select name="wire_style">${options(WIRE_STYLES, style.wire_style)}</select>`)}
+        ${field('Wire thickness', graphNumber('wire_width', style))}
+        ${field('Wire curve (Bezier, %)', graphNumber('wire_curve', style))}
+        ${field('Node corner radius', graphNumber('node_radius', style))}
+        ${field('Group corner radius', graphNumber('group_radius', style))}</div></div>
+    </section>
     <section><h2>Keyboard shortcuts</h2>
       <div class="shortcuts">${Object.entries(SHORTCUT_LABELS)
         .map(
@@ -73,41 +80,30 @@ PAGES.settings = async (view, route) => {
     animations: form.animations.checked,
     effects: form.effects.checked,
     wire_style: form.wire_style.value,
-    components: readThemeParts(form),
     ...Object.fromEntries(
       Object.keys(GRAPH_RANGES).map(k => [
         k,
         clamp(form[k].value.trim() === '' ? GRAPH_DEFAULTS[k] : Math.round(Number(form[k].value)), ...GRAPH_RANGES[k]),
       ])
     ),
-    ...Object.fromEntries(['background', 'surface', 'text', 'accent'].map(k => [k, form[k].value])),
+    ...Object.fromEntries(PALETTE.map(k => [k, form[k].value])),
   });
   // A colour picker reports dozens of changes a second. Each one only marks the page dirty; the page is restyled once per frame, with the
-  // transitions off (hundreds of elements would otherwise start animating towards a colour that is already out of date), and the
-  // previews of the untouched tokens are recomputed once the dragging has settled.
+  // transitions off (hundreds of elements would otherwise start animating towards a colour that is already out of date).
   let frame = 0,
     settle = 0;
   const preview = () => {
     frame = 0;
-    const selected = themeEntries().find(t => t.id === form.theme.value),
-      current = readStyle();
-    if (selected && !sameTheme(current, selected)) form.theme.value = '';
-    try {
-      validateThemeParts(current.components);
-    } catch {
-      return;
-    }
+    const current = readStyle();
+    form.theme.value = themeOf(current);
     setRootData('liveEdit', '');
     applyStyle(current);
     clearTimeout(settle);
-    settle = setTimeout(() => {
-      delete document.documentElement.dataset.liveEdit;
-      refreshThemeParts(form);
-    }, 200);
+    settle = setTimeout(() => delete document.documentElement.dataset.liveEdit, 200);
   };
   form.oninput = event => {
-    const selected = themeEntries().find(t => t.id === form.theme.value);
-    if (event.target.name === 'theme' && selected) fillTheme(form, selected.style);
+    if (event.target.name === 'theme' && THEMES[form.theme.value])
+      for (const k of PALETTE) form[k].value = THEMES[form.theme.value][k];
     frame ||= requestAnimationFrame(preview);
   };
   leaveGuards.push(() => {
@@ -121,7 +117,6 @@ PAGES.settings = async (view, route) => {
       undo_steps: clamp(Math.round(Number(form.undo_steps.value)) || 0, 0, 500),
       developer_mode: form.developer_mode.checked,
       style: readStyle(),
-      theme: form.theme.value,
       shortcuts,
     }),
     async body => {
@@ -131,8 +126,6 @@ PAGES.settings = async (view, route) => {
       Tabs.render();
     }
   );
-  bindThemeActions(form, save, readStyle);
-  bindThemeEditor(form);
   // Whatever was previewed but could not be saved is dropped when the page is left.
   leaveGuards.push(() => applyStyle(app.preferences.style));
   for (const button of $$('.key', form))
@@ -157,7 +150,7 @@ PAGES.settings = async (view, route) => {
         await save(); // nothing pending may overwrite the defaults afterwards
         app.preferences = await api('settings', {
           method: 'PUT',
-          body: {undo_steps: 50, style: STYLE_DEFAULTS, shortcuts: {}, theme: ''},
+          body: {undo_steps: 50, style: STYLE_DEFAULTS, shortcuts: {}},
         });
         applyStyle(app.preferences.style);
         leaveGuards = [];

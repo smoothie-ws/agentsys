@@ -21,7 +21,11 @@ function mdEmphasis(s) {
     .replace(/~~(?=\S)(.+?\S|\S)~~/g, '<del>$1</del>');
 }
 
-const markdownSlug = text => String(text).toLowerCase().replace(/[^\p{L}\p{N}]+/gu, '-').replace(/^-+|-+$/g, '');
+const markdownSlug = text =>
+  String(text)
+    .toLowerCase()
+    .replace(/[^\p{L}\p{N}]+/gu, '-')
+    .replace(/^-+|-+$/g, '');
 const mdSafeLink = url => /^(https?:\/\/|mailto:)/i.test(url);
 const mdAnchor = (url, inner) => `<a href="${url}" target="_blank" rel="noopener noreferrer">${inner}</a>`;
 
@@ -84,7 +88,12 @@ function mdList(lines, depth) {
       text = task[2];
     }
     const indent = Math.min(...item.rest.filter(l => l.trim()).map(l => l.match(/^\s*/)[0].length), Infinity);
-    const nested = item.rest.length ? mdBlocks(item.rest.map(l => l.slice(Number.isFinite(indent) ? indent : 0)), depth + 1) : '';
+    const nested = item.rest.length
+      ? mdBlocks(
+          item.rest.map(l => l.slice(Number.isFinite(indent) ? indent : 0)),
+          depth + 1
+        )
+      : '';
     return `<li>${mark}${mdInline(text)}${nested}</li>`;
   });
   const tag = ordered ? 'ol' : 'ul';
@@ -108,7 +117,8 @@ function mdBlocks(lines, depth = 0) {
     if (fence) {
       const marker = fence[1][0],
         code = [];
-      for (i++; i < lines.length && !new RegExp(`^\\s{0,3}${marker}{${fence[1].length},}\\s*$`).test(lines[i]); i++) code.push(lines[i]);
+      for (i++; i < lines.length && !new RegExp(`^\\s{0,3}${marker}{${fence[1].length},}\\s*$`).test(lines[i]); i++)
+        code.push(lines[i]);
       i++; // the closing fence
       out.push(`<pre><code>${mdEscape(code.join('\n'))}</code></pre>`);
       continue;
@@ -131,12 +141,20 @@ function mdBlocks(lines, depth = 0) {
       out.push(`<blockquote>${mdBlocks(quoted, depth + 1)}</blockquote>`);
       continue;
     }
-    if (line.includes('|') && i + 1 < lines.length && MD_TABLE_SEPARATOR.test(lines[i + 1]) && lines[i + 1].includes('-')) {
+    if (
+      line.includes('|') &&
+      i + 1 < lines.length &&
+      MD_TABLE_SEPARATOR.test(lines[i + 1]) &&
+      lines[i + 1].includes('-')
+    ) {
       const head = mdCells(line),
-        align = mdCells(lines[i + 1]).map(c => (/^:-+:$/.test(c) ? 'center' : /-:$/.test(c) ? 'right' : /^:-/.test(c) ? 'left' : '')),
+        align = mdCells(lines[i + 1]).map(c =>
+          /^:-+:$/.test(c) ? 'center' : /-:$/.test(c) ? 'right' : /^:-/.test(c) ? 'left' : ''
+        ),
         rows = [];
       for (i += 2; i < lines.length && lines[i].trim() && lines[i].includes('|'); i++) rows.push(mdCells(lines[i]));
-      const cell = (tag, text, n) => `<${tag}${align[n] ? ` style="text-align:${align[n]}"` : ''}>${mdInline(text ?? '')}</${tag}>`;
+      const cell = (tag, text, n) =>
+        `<${tag}${align[n] ? ` style="text-align:${align[n]}"` : ''}>${mdInline(text ?? '')}</${tag}>`;
       out.push(
         `<table><thead><tr>${head.map((c, n) => cell('th', c, n)).join('')}</tr></thead><tbody>${rows
           .map(r => `<tr>${head.map((_, n) => cell('td', r[n], n)).join('')}</tr>`)
@@ -149,11 +167,17 @@ function mdBlocks(lines, depth = 0) {
       while (i < lines.length) {
         const l = lines[i];
         if (l.trim() && (MD_ITEM.test(l) || /^\s/.test(l))) block.push(l);
-        else if (!l.trim() && i + 1 < lines.length && (MD_ITEM.test(lines[i + 1]) || /^\s+\S/.test(lines[i + 1]))) block.push(l);
+        else if (!l.trim() && i + 1 < lines.length && (MD_ITEM.test(lines[i + 1]) || /^\s+\S/.test(lines[i + 1])))
+          block.push(l);
         else break;
         i++;
       }
-      out.push(mdList(block.filter((l, n) => l.trim() || (block[n + 1] ?? '').trim()), depth));
+      out.push(
+        mdList(
+          block.filter((l, n) => l.trim() || (block[n + 1] ?? '').trim()),
+          depth
+        )
+      );
       continue;
     }
     const paragraph = [line];

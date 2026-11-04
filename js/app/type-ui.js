@@ -25,7 +25,9 @@ function paintTypes(types) {
     sheet.id = 'type-colors';
     document.head.append(sheet);
   }
-  sheet.textContent = [...TYPE_COLORS].map(([id, color]) => `.t-r${id}{--tc:${color}}`).join('');
+  const rules = [...TYPE_COLORS].map(([id, color]) => `.t-r${id}{--tc:${color}}`).join('');
+  // Identical type rules must not invalidate layout across the whole canvas.
+  if (sheet.textContent !== rules) sheet.textContent = rules;
 }
 
 const typeLabel = (type, table = W.types ?? NO_TYPES) => table.label(type);
@@ -33,18 +35,26 @@ const typeLabel = (type, table = W.types ?? NO_TYPES) => table.label(type);
 /** The options of a type selector: any, the Library's types and the workflow's own, and a way to make a new one. */
 function typeOptionsHTML(selected, types, {create = true, skip = null, signal = false} = {}) {
   const mine = types.filter(t => t.id !== skip),
-    group = (label, items) => (items.length ? `<optgroup label="${esc(label)}">${options(items, selected)}</optgroup>` : '');
+    group = (label, items) =>
+      items.length ? `<optgroup label="${esc(label)}">${options(items, selected)}</optgroup>` : '';
   return (
     `<option value="any"${isAny(selected) ? ' selected' : ''}>any</option>` +
     (signal ? `<option value="signal"${isSignal(selected) ? ' selected' : ''}>signal</option>` : '') +
-    group('Library', mine.filter(t => t.library).map(t => ['t:' + t.id, t.name])) +
-    group('This workflow', mine.filter(t => !t.library).map(t => ['t:' + t.id, t.name])) +
+    group(
+      'Library',
+      mine.filter(t => t.library).map(t => ['t:' + t.id, t.name])
+    ) +
+    group(
+      'This workflow',
+      mine.filter(t => !t.library).map(t => ['t:' + t.id, t.name])
+    ) +
     (create ? '<option value="__new">New type…</option>' : '')
   );
 }
 
 /** The type of the port an endpoint ({id, port, dir}) names on the canvas (none: no type). */
-const endpointType = e => (W.nodes.get(e.id)?.[e.dir === 'out' ? 'outputs' : 'inputs'] || []).find(p => p.id === e.port)?.type || 'any';
+const endpointType = e =>
+  (W.nodes.get(e.id)?.[e.dir === 'out' ? 'outputs' : 'inputs'] || []).find(p => p.id === e.port)?.type || 'any';
 /** Whether two endpoints (an output and an input, in either order) may be wired; a group's internal face is checked by the server. */
 function endpointsFit(a, b) {
   const [out, input] = a.dir === 'out' ? [a, b] : [b, a];
@@ -60,12 +70,23 @@ const putTypes = async list => {
   return result.types;
 };
 
-const CONTROL_LABELS = {text: 'Text', textarea: 'Long text', code: 'Code', number: 'Number', checkbox: 'Checkbox', select: 'Choice (enum)'};
+const CONTROL_LABELS = {
+  text: 'Text',
+  textarea: 'Long text',
+  code: 'Code',
+  number: 'Number',
+  checkbox: 'Checkbox',
+  select: 'Choice (enum)',
+};
 /** What a type's control is, for its row in a list: `typed in as text`, or the options of an enum. */
 const controlNote = (t, table = W.types ?? NO_TYPES) =>
   [
     t.alias ? `alias of ${table.label(t.alias)}` : '',
-    !t.control ? '' : t.control === 'select' ? `enum: ${t.options.join(' | ')}` : `typed in as ${CONTROL_LABELS[t.control].toLowerCase()}`,
+    !t.control
+      ? ''
+      : t.control === 'select'
+        ? `enum: ${t.options.join(' | ')}`
+        : `typed in as ${CONTROL_LABELS[t.control].toLowerCase()}`,
   ]
     .filter(Boolean)
     .join(', ');
@@ -86,11 +107,18 @@ function typeDialog(current, done) {
     `${field('Name', `<input name="name" maxlength="60" required autofocus value="${esc(current?.name ?? '')}">`)}
      ${field('Color', `<input type="color" name="color" value="${esc(toHex(current?.color || autoTypeColor(id)))}">`)}
      <div class="field" id="type-alias-part"><span>Alias of <small class="muted">(it means the same as that type, so the two fit each other; it keeps its own name, color and control)</small></span>
-       <select name="alias" aria-label="Alias of"><option value="">None</option>${types.filter(t => t.id !== id).map(t => `<option value="t:${t.id}" ${current?.alias === 't:' + t.id ? 'selected' : ''}>${esc(t.name)}</option>`).join('')}</select></div>
+       <select name="alias" aria-label="Alias of"><option value="">None</option>${types
+         .filter(t => t.id !== id)
+         .map(
+           t => `<option value="t:${t.id}" ${current?.alias === 't:' + t.id ? 'selected' : ''}>${esc(t.name)}</option>`
+         )
+         .join('')}</select></div>
      <div class="field" id="type-fields-part"><span>Fields <small class="muted">(none: a named kind, such as Text or Signal)</small></span><div class="type-fields" id="type-fields">${fields.map(fieldRow).join('')}</div>
      <button type="button" class="dashed-action" id="add-type-field">${icon('plus')} Add field</button></div>
      <div class="field" id="type-control-part"><span>Control <small class="muted">(how a free slot of this type is typed in on the node; the value is the default of the slot)</small></span>
-       <select name="control" aria-label="Control"><option value="">None</option>${Object.entries(CONTROL_LABELS).map(([k, v]) => `<option value="${k}" ${current?.control === k ? 'selected' : ''}>${v}</option>`).join('')}</select>
+       <select name="control" aria-label="Control"><option value="">None</option>${Object.entries(CONTROL_LABELS)
+         .map(([k, v]) => `<option value="${k}" ${current?.control === k ? 'selected' : ''}>${v}</option>`)
+         .join('')}</select>
        <textarea name="options" rows="4" id="type-options" placeholder="One option per line" aria-label="Options">${esc((current?.options ?? []).join('\n'))}</textarea></div>`,
     async form => {
       const next = {
@@ -98,13 +126,27 @@ function typeDialog(current, done) {
         ...(current?.library ? {library: true} : {}),
         name: form.elements.name.value.trim(),
         color: form.elements.color.value,
-        fields: form.elements.alias.value ? [] : $$('[data-type-field]', form).map(row => ({name: $('[data-name]', row).value.trim(), type: $('[data-type]', row).value})),
+        fields: form.elements.alias.value
+          ? []
+          : $$('[data-type-field]', form).map(row => ({
+              name: $('[data-name]', row).value.trim(),
+              type: $('[data-type]', row).value,
+            })),
         ...(form.elements.alias.value ? {alias: form.elements.alias.value} : {}),
         ...(form.elements.control.value && (form.elements.alias.value || !$$('[data-type-field]', form).length)
           ? {
               control: form.elements.control.value,
               ...(form.elements.control.value === 'select'
-                ? {options: [...new Set(form.elements.options.value.split('\n').map(o => o.trim()).filter(Boolean))]}
+                ? {
+                    options: [
+                      ...new Set(
+                        form.elements.options.value
+                          .split('\n')
+                          .map(o => o.trim())
+                          .filter(Boolean)
+                      ),
+                    ],
+                  }
                 : {}),
             }
           : {}),

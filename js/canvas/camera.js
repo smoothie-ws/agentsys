@@ -4,13 +4,15 @@
 // ----- camera -----
 function viewRect() {
   const c = W.camera || {x: 0, y: 0, zoom: 1};
-  return {x: c.x, y: c.y, w: W.canvas.clientWidth / c.zoom, h: W.canvas.clientHeight / c.zoom};
+  const size = W.viewportSize ?? (W.viewportSize = {width: W.canvas.clientWidth, height: W.canvas.clientHeight});
+  return {x: c.x, y: c.y, w: size.width / c.zoom, h: size.height / c.zoom};
 }
 function setCamera(x, y, zoom) {
   zoom = Math.min(MAX_ZOOM, Math.max(MIN_ZOOM, zoom));
+  const zoomChanged = W.camera?.zoom !== zoom;
   W.camera = {x, y, zoom};
   W.world.style.transform = `scale(${zoom}) translate(${-x}px,${-y}px)`;
-  W.world.style.setProperty('--sw', `${1.25 / zoom}px`);
+  if (zoomChanged) W.world.style.setProperty('--sw', `${1.25 / zoom}px`);
   // Two nested grid levels crossfade; every fourth point becomes the next level.
   const level = Math.floor(Math.log(1 / zoom) / Math.log(4)),
     spacing = 24 * 4 ** level * zoom;
@@ -19,11 +21,13 @@ function setCamera(x, y, zoom) {
     coarseOpacity = phase;
   const fineRadius = spacing / 24,
     coarseRadius = spacing / 6;
-  W.canvas.style.backgroundImage = `radial-gradient(circle, color-mix(in srgb, var(--theme-canvas-grid, var(--grid-colour)) ${fineOpacity * 100}%, transparent) ${fineRadius}px, transparent ${fineRadius + 0.35}px), radial-gradient(circle, color-mix(in srgb, var(--theme-canvas-grid, var(--grid-colour)) ${coarseOpacity * 100}%, transparent) ${coarseRadius}px, transparent ${coarseRadius + 0.35}px)`;
-  W.canvas.style.backgroundSize = `${spacing}px ${spacing}px, ${spacing * 4}px ${spacing * 4}px`;
+  if (zoomChanged) {
+    W.canvas.style.backgroundImage = `radial-gradient(circle, color-mix(in srgb, var(--theme-canvas-grid, var(--grid-colour)) ${fineOpacity * 100}%, transparent) ${fineRadius}px, transparent ${fineRadius + 0.35}px), radial-gradient(circle, color-mix(in srgb, var(--theme-canvas-grid, var(--grid-colour)) ${coarseOpacity * 100}%, transparent) ${coarseRadius}px, transparent ${coarseRadius + 0.35}px)`;
+    W.canvas.style.backgroundSize = `${spacing}px ${spacing}px, ${spacing * 4}px ${spacing * 4}px`;
+    $('#zoom-level').textContent = Math.round(zoom * 100) + '%';
+  }
   // CSS gradients center each dot in its tile, so offset both levels to the same world origin.
   W.canvas.style.backgroundPosition = `${-x * zoom - spacing / 2}px ${-y * zoom - spacing / 2}px, ${-x * zoom - spacing * 2}px ${-y * zoom - spacing * 2}px`;
-  $('#zoom-level').textContent = Math.round(zoom * 100) + '%';
   onNextFrame('camera', () => {
     drawSelectionTools();
     drawMinimap();

@@ -127,27 +127,26 @@ route(
       const project = await c.project(id),
         editor = new Editor(project, project.workflows[0], doc);
       editor.paste(clone(item.payload.bundle), {x: 0, y: 0}, {preserveIds: true});
-      for (const cx of doc.complex) if (!cx.source) cx.collapsed = false;
       const top = doc.groups.find(g => !g.parent && doc.complex.some(x => x.id === g.id && !x.source));
       if (top) {
+        doc.complex.find(cx => cx.id === top.id).collapsed = false;
         top.name = item.name;
         doc.root = top.id;
         // The saved bundle keeps only node positions; the workspace is the area they cover, with room to grow.
-        const spots = doc.nodes.map(n => doc.layout[n.id]).filter(Boolean),
-          x = Math.min(0, ...spots.map(p => p.x)) - 80,
-          y = Math.min(0, ...spots.map(p => p.y)) - 90;
+        const spots = doc.nodes.map(n => doc.layout[n.id]).filter(Boolean);
         const saved = item.payload.frame,
           x0 = spots.length ? Math.min(...spots.map(p => p.x)) : 0,
           y0 = spots.length ? Math.min(...spots.map(p => p.y)) : 0;
         // The frame comes back as it was left; without a saved one it covers the nodes with room to grow.
-        doc.layout['group:' + top.id] = saved
-          ? {x: x0 + saved.dx, y: y0 + saved.dy, width: Math.max(300, saved.width), height: Math.max(200, saved.height)}
-          : {
-              x,
-              y,
-              width: Math.max(1400, Math.max(0, ...spots.map(p => p.x)) - x + 420),
-              height: Math.max(900, Math.max(0, ...spots.map(p => p.y)) - y + 360),
-            };
+        if (saved)
+          doc.layout['group:' + top.id] = {
+            x: x0 + saved.dx,
+            y: y0 + saved.dy,
+            width: Math.max(300, saved.width),
+            height: Math.max(200, saved.height),
+          };
+        // Without an explicit user-sized frame, let the canvas wrap the visible
+        // composition rather than fitting every hidden descendant in the template.
       }
     }
     c.ctx.set('wf:' + id, doc);

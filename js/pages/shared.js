@@ -2,12 +2,18 @@
 'use strict';
 
 const PAGES = {};
-/** Update only a page's live regions; keep forms, focus and plugin frames mounted. */
+/** Update only a page's live regions; keep forms and focus. */
 function livePage(route, update) {
-  let stopped = false, busy = false, again = false, timer;
+  let stopped = false,
+    busy = false,
+    again = false,
+    timer;
   const run = async () => {
     if (stopped || app.route !== route || document.hidden) return;
-    if (busy) { again = true; return; }
+    if (busy) {
+      again = true;
+      return;
+    }
     busy = true;
     try {
       await update();
@@ -22,15 +28,27 @@ function livePage(route, update) {
       }
     } finally {
       busy = false;
-      if (again && !stopped) { again = false; schedule(); }
+      if (again && !stopped) {
+        again = false;
+        schedule();
+      }
     }
   };
-  const schedule = () => { if (!timer) timer = setTimeout(() => { timer = null; run(); }, 250); };
+  const schedule = () => {
+    if (!timer)
+      timer = setTimeout(() => {
+        timer = null;
+        run();
+      }, 250);
+  };
   const unsubscribe = Backend.subscribe(schedule, {own: true});
   const interval = setInterval(run, 3000);
   document.addEventListener('visibilitychange', schedule);
   app.pageDispose = () => {
-    stopped = true; clearTimeout(timer); clearInterval(interval); unsubscribe();
+    stopped = true;
+    clearTimeout(timer);
+    clearInterval(interval);
+    unsubscribe();
     document.removeEventListener('visibilitychange', schedule);
   };
   return run;
@@ -44,7 +62,6 @@ function pageAutosave(form, read, write) {
   leaveGuards.push(() => leaveAutosave(save));
   return save;
 }
-const statusBadge = status => `<span class="status-badge" data-status="${esc(status)}">${esc(status)}</span>`;
 const COMMON_CAPABILITIES = [
   'graph.read',
   'graph.write',
@@ -57,7 +74,10 @@ const COMMON_CAPABILITIES = [
 function permissionChoices(capabilities, grants, attr = 'data-grant', prefix = 'grant') {
   return `<table class="permission-table"><thead><tr><th scope="col">Permission</th><th scope="col">Allow</th><th scope="col">Disallow</th></tr></thead><tbody>${capabilities.map(cap => `<tr><th scope="row">${esc(cap)}</th><td><label class="permission-choice"><input type="radio" name="${prefix}:${esc(cap)}" value="allow" ${attr}="${esc(cap)}" aria-label="Allow ${esc(cap)}" ${grants.includes(cap) ? 'checked' : ''}></label></td><td><label class="permission-choice"><input type="radio" name="${prefix}:${esc(cap)}" value="disallow" aria-label="Disallow ${esc(cap)}" ${grants.includes(cap) ? '' : 'checked'}></label></td></tr>`).join('')}</tbody></table>`;
 }
-function grantControls(grants = [], {hint = 'Permissions are limited by the parent node.', title = 'Permissions', prefix = 'grant'} = {}) {
+function grantControls(
+  grants = [],
+  {hint = 'Permissions are limited by the parent node.', title = 'Permissions', prefix = 'grant'} = {}
+) {
   const extra = grants.filter(v => !COMMON_CAPABILITIES.includes(v)).join(', ');
   return `<fieldset class="permission-controls" data-grants><legend>${esc(title)}</legend><p class="permission-hint muted">${esc(hint)}</p><div class="permission-fields">${permissionChoices(COMMON_CAPABILITIES, grants, 'data-grant', prefix)}<label class="field"><span>Specific permissions</span><input name="extra_grants" value="${esc(extra)}" placeholder="net.fetch:example.com"></label></div></fieldset>`;
 }
@@ -96,7 +116,9 @@ function showSectionPanel(form, section = sectionOf(app.route)) {
   );
 }
 const actionButton = (menu, label = 'Actions') =>
-  menu ? `<button type="button" class="icon" data-menu="${esc(menu)}" title="${esc(label)}" aria-label="${esc(label)}">${icon('dots')}</button>` : '';
+  menu
+    ? `<button type="button" class="icon" data-menu="${esc(menu)}" title="${esc(label)}" aria-label="${esc(label)}">${icon('dots')}</button>`
+    : '';
 
 /** The common page heading, description and actions. `title` and `sub` are HTML. */
 const pageHead = ({title, sub = '', actions = '', menu = pageMenu()}) =>
@@ -359,19 +381,11 @@ function loadCardPreviews(view, projectId = null) {
 }
 
 async function loadLibrary() {
-  const [settings, sections] = await Promise.all([api('settings'), api('library/sections')]);
+  const settings = await api('settings');
   app.resources = settings.resources;
   app.nodeFolders = settings.node_folders || [];
   app.nodeFolderIcons = settings.node_folder_icons || {};
   app.preferences = settings.preferences;
-  app.librarySections = sections;
-  app.catalogCollections = new Map(
-    await Promise.all(
-      sections
-        .filter(s => s.id !== 'nodes' && s.item)
-        .map(async s => [s.id, await api(`library/sections/${s.id}/items`, {query: {summary: 1}})])
-    )
-  );
   return settings;
 }
 const baseName = path => path.slice(path.lastIndexOf('/') + 1);

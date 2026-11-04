@@ -2,29 +2,40 @@
 'use strict';
 function syncToolbar() {
   if (!W.canvas?.isConnected || !$('#run-summary')) return;
-  $('#run-summary').textContent = W.executionCommand
+  const summary = W.executionCommand
     ? {stop: 'Stopping…', pause: 'Pausing…', resume: 'Resuming…'}[W.executionCommand]
     : W.runPaused
       ? 'Paused'
       : W.running
         ? 'Working'
         : 'Ready';
+  if ($('#run-summary').textContent !== summary) $('#run-summary').textContent = summary;
+  // One button starts the work and, while there is work, stops it; Pause and Resume only make sense while there is work.
   const start = $('#start'),
-    stop = $('#stop'),
     pause = $('#pause');
-  if (start) start.disabled = !W.executionReady || !!W.executionCommand;
-  if (stop) stop.disabled = !W.executionReady || !!W.executionCommand;
+  const active = runActive();
+  const disabled = !W.executionReady || !!W.executionCommand;
+  if (start) {
+    if (start.disabled !== disabled) start.disabled = disabled;
+    if (start.classList.contains('stop') !== active) {
+      start.classList.toggle('stop', active);
+      start.innerHTML = icon(active ? 'stop' : 'play') + `<span>${active ? 'Stop' : 'Run'}</span>`;
+      start.title = active ? 'Stop current work' : `Run the workflow (${shortcutText('run')})`;
+    }
+  }
   if (pause) {
-    pause.disabled = !W.executionReady || !!W.executionCommand;
+    if (pause.hidden === active) pause.hidden = !active;
+    if (pause.disabled !== disabled) pause.disabled = disabled;
     const mode = W.runPaused ? 'Resume' : 'Pause';
-    pause.title = pause.ariaLabel = mode;
+    if (pause.title !== mode) pause.title = mode;
+    if (pause.ariaLabel !== mode) pause.ariaLabel = mode;
     if (pause.dataset.mode !== mode) {
       pause.dataset.mode = mode;
       pause.innerHTML = icon(W.runPaused ? 'play' : 'pause');
     }
   }
-  $('#undo').disabled = !W.history.undo;
-  $('#redo').disabled = !W.history.redo;
+  if ($('#undo').disabled !== !W.history.undo) $('#undo').disabled = !W.history.undo;
+  if ($('#redo').disabled !== !W.history.redo) $('#redo').disabled = !W.history.redo;
   W.canvas.classList.toggle('busy', !!W.running);
   W.canvas.closest('.editor')?.classList.toggle('running', !!W.running);
 }
@@ -53,11 +64,18 @@ function applyExecution(detail) {
   W.executionStatus = detail.status;
   W.running = detail.active_signals > 0;
   W.runPaused = detail.paused;
+  const first = W.runtimeRevision === null; // the first look: what happened before it is not shown
   W.runtimeRevision = detail.revision;
   W.runtimeState = detail.state ?? {};
+  const seen = new Map(W.runStatus); // what the last look showed
   W.runStatus.clear();
   for (const item of detail.nodes ?? []) {
     W.runStatus.set(item.node_id, item.status);
+  }
+  for (const [id, count] of Object.entries(detail.runs ?? {})) {
+    // A pass the last look saw at work glows by its status; one that came and went between two looks is held.
+    if (!first && count > (W.runs.get(id) ?? 0) && !WORKING.includes(seen.get(id))) holdGlow(id);
+    W.runs.set(id, count);
   }
   W.results.clear();
   for (const [id, text] of Object.entries(detail.displays ?? {})) W.results.set(id, {text});
@@ -67,22 +85,70 @@ function applyExecution(detail) {
   syncToolbar();
   draw();
 }
-
+const GLOW_MS = 300; // the least a node glows for a pass: the fade in, a moment lit, the fade out
+/**
+ * The nodes a pass lights: the node, the Complex Nodes around it (a folded one hides what runs inside), and the nodes whose
+ * data it read. Those that only hold or pass data never run, so the nodes that feed them are lit too.
+ */
+function litBy(id) {
+  const found = new Set(),
+    edges = W.snapshot?.edges ?? [];
+  const visit = (x, reads) => {
+    if (found.has(x)) return;
+    found.add(x);
+    for (const c of W.complex.values()) if (c.members.includes(x)) visit('complex:' + c.id, reads);
+    // What a node read comes from the nodes wired to its data inputs; those that ran themselves stop the chain.
+    if (reads === 0 || !W.runs.has(x))
+      for (const e of edges) if (e.target === x && !isSignal(edgeType(e.typed_by || e))) visit(e.source, reads + 1);
+  };
+  visit(id, 0);
+  return found;
+}
+/** A node that had a pass glows for at least GLOW_MS, however short the pass was. */
+function holdGlow(id) {
+  const lit = [...litBy(id)],
+    until = performance.now() + GLOW_MS;
+  for (const x of lit) W.glowUntil.set(x, Math.max(until, W.glowUntil.get(x) ?? 0));
+  setTimeout(() => {
+    for (const x of lit) if (W.nodes.get(x) && W.elements.get(x)) setGlow(W.elements.get(x), W.nodes.get(x));
+  }, GLOW_MS + 20);
+}
 const executionVisible = session => !!session && session === W.executionSession && session.canvas.isConnected;
 async function followExecution(detail, session = W.executionSession) {
   if (!executionVisible(session)) return;
   applyExecution(detail);
-  const token = (session.poll = {});
-  while (executionVisible(session) && session.poll === token) {
-    await new Promise(resolve => setTimeout(resolve, 150));
-    if (!executionVisible(session) || session.poll !== token) return;
-    if (W.executionCommand) continue;
-    const revision = session.revision;
-    const current = await api('projects/' + session.project + '/execution', {query: {workflow_id: session.workflow}});
-    if (!executionVisible(session) || session.poll !== token) return;
-    if (revision !== session.revision || W.executionCommand) continue;
-    if (current.revision !== W.runtimeRevision) applyExecution(current);
-  }
+  // The runtime is saved at every change, and every save is announced: no polling. A change that arrives while the last
+  // one is being fetched is not lost, the fetch just runs once more.
+  const key = `workflows/${session.workflow}/runtime`;
+  let fetching = false,
+    again = false;
+  session.pull = async () => {
+    if (!executionVisible(session)) return session.unfollow();
+    if (fetching) return (again = true);
+    fetching = true;
+    try {
+      do {
+        again = false;
+        const revision = session.revision;
+        const current = await api('projects/' + session.project + '/execution', {
+          query: {workflow_id: session.workflow},
+        });
+        if (!executionVisible(session)) return session.unfollow();
+        // While a Stop, Pause or Resume is under way its own answer is applied; what it changes is announced after.
+        if (revision === session.revision && !W.executionCommand && current.revision !== W.runtimeRevision)
+          applyExecution(current);
+      } while (again);
+    } finally {
+      fetching = false;
+    }
+  };
+  session.unfollow?.();
+  const unsubscribe = Backend.subscribe(keys => keys.includes(key) && session.pull().catch(fail), {commits: true});
+  session.unfollow = () => {
+    unsubscribe();
+    session.unfollow = session.pull = null;
+  };
+  session.pull().catch(fail); // what changed since the answer we started from
 }
 async function runAction() {
   const session = W.executionSession;
@@ -94,11 +160,13 @@ async function runAction() {
     return api('projects/' + session.project + '/execution', {method: 'POST', body: {workflow_id: session.workflow}});
   })();
   session.starts.add(request);
+  syncToolbar();
   try {
     const detail = await request;
     if (executionVisible(session) && revision === session.revision && !W.executionCommand) applyExecution(detail);
   } finally {
     session.starts.delete(request);
+    syncToolbar();
   }
 }
 async function controlRun(action) {
@@ -122,9 +190,14 @@ async function controlRun(action) {
       W.executionCommand = null;
       session.revision++;
       syncToolbar();
+      session.pull?.().catch(fail); // what was announced meanwhile was left out
     }
   }
 }
+/** There is work to stop: running, paused, or a Run request that has not been answered yet. */
+const runActive = () => !!W.running || !!W.runPaused || !!W.executionSession?.starts.size;
+/** Run, or Stop when there is work to stop. */
+const toggleRun = () => (runActive() ? stopRun() : runAction());
 const stopRun = () => controlRun('stop'),
   pauseRun = () => controlRun(W.runPaused ? 'resume' : 'pause');
 async function flushNodeEdits() {
@@ -132,31 +205,4 @@ async function flushNodeEdits() {
   await W.flushInline?.();
   await Inspector.flushConnections?.();
   await Inspector.pending?.();
-}
-
-async function showExecutionHistory() {
-  const project = W.project,
-    workflow = W.workflow;
-  const path = `projects/${project}/execution`;
-  const [dispatches, trace] = await Promise.all([
-    api(path + '/dispatches', {query: {workflow_id: workflow}}),
-    api(path + '/trace', {query: {workflow_id: workflow, limit: 300}}),
-  ]);
-  if (W.project !== project || W.workflow !== workflow) return;
-  dialog(
-    'Execution history',
-    `<p class="muted small">Retained diagnostic events. Values and request bodies are excluded.</p><h3>Dispatches</h3>${
-      dispatches
-        .slice(-30)
-        .reverse()
-        .map(r => `<p class="small"><code>${esc(r.dispatch_id)}</code> · ${esc(r.status)}</p>`)
-        .join('') || '<p>No dispatches yet.</p>'
-    }<h3>Events</h3><div style="max-height:45vh;overflow:auto">${trace.events.map(e => `<p class="small">${esc(new Date(e.at).toLocaleTimeString())} · ${esc(e.type)}${e.node_id ? ` · <button type="button" class="link" data-trace-node="${esc(e.node_id)}">${esc(nodeLabel(W.nodes.get(e.node_id) ?? {}) || e.node_id)}</button>` : ''}</p>`).join('') || '<p>No events retained.</p>'}</div>`,
-    null
-  );
-  for (const button of $$('[data-trace-node]', $('#modal-body')))
-    button.onclick = () => {
-      $('#modal').close();
-      reveal(button.dataset.traceNode);
-    };
 }

@@ -279,8 +279,9 @@ function buildSnapshot(project, workflow, doc, structure = false) {
     .map(c => {
       const g = byId.get(c.id),
         inner = groups.filter(o => o.id !== g.id && wrapped.has(o.id) && isInside(byId, o, g.id));
-      // Outside a Library editor every Complex Node is an ordinary node; inside one, only the node being built can be opened.
-      const locked = !String(project.id).startsWith('lib-') || !!c.source;
+      // Linked Library instances keep their definition ownership. Inline compositions
+      // belong to this workflow and can be opened and edited with the existing controls.
+      const locked = !!c.source;
       return {
         id: c.id,
         group_id: c.id,

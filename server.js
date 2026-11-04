@@ -10,6 +10,7 @@ const http = require('http'),
   path = require('path'),
   crypto = require('crypto');
 const {loadBackend} = require('./headless');
+const {createPluginHost} = require('./plugin-host');
 const TextGraph = require('./js/storage/format');
 
 const ROOT = __dirname;
@@ -38,6 +39,15 @@ const FIXED = {
   node_folders: 'library/node_folders.json',
   library_types: 'library/types.json',
 };
+/** The sidecar script files a stored graph refers to (`{$script: 'scripts/x.js'}` values anywhere inside it). */
+const SCRIPT_PATH = /^scripts\/[A-Za-z0-9_-]+\.js$/;
+const scriptRefs = (value, out = []) => {
+  if (value && typeof value === 'object') {
+    if (typeof value.$script === 'string') out.push(value.$script);
+    for (const child of Object.values(value)) scriptRefs(child, out);
+  }
+  return out;
+};
 const VALID_KEY = /^(?!.*(?:^|\/)\.\.?($|\/))[A-Za-z0-9:._/-]{1,500}$/;
 const storagePath = key => key.split('/').map(encodeURIComponent).join('/');
 const fileOf = key => {
@@ -53,10 +63,7 @@ const keyOf = file => {
   const rel = file.split(path.sep).map(decodeURIComponent).join('/');
   const sidecar = /^(.*)\.files\/(?:layout\.json|scripts\/[A-Za-z0-9_-]+\.js)$/.exec(rel);
   if (sidecar) return keyOf(sidecar[1] + '.json');
-  if (
-    (/^(secrets|plugins|library\/(?:sections|credentials))\//.test(rel) && rel.endsWith('.json')) ||
-    /^workflows\/[^/]+\/.+\.json$/.test(rel)
-  )
+  if ((/^(secrets|plugins)\//.test(rel) && rel.endsWith('.json')) || /^workflows\/[^/]+\/.+\.json$/.test(rel))
     return rel.slice(0, -5);
   for (const [key, f] of Object.entries(FIXED)) if (f === rel) return key;
   let m = /^library\/editors\/(.+)\.json$/.exec(rel);
@@ -223,28 +230,27 @@ function createServer(options = {}) {
         'graph.json': JSON.stringify(value),
         'layout.json': fs.readFileSync(path.join(folder, 'layout.json'), 'utf8'),
       };
-      const scripts = new Set();
-      const scan = v => {
-        if (!v || typeof v !== 'object') return;
-        if (v.$script) scripts.add(v.$script);
-        for (const child of Object.values(v)) scan(child);
-      };
-      scan(value.value);
+      const scripts = new Set(scriptRefs(value.value));
       for (const name of scripts) {
-        if (!/^scripts\/[A-Za-z0-9_-]+\.js$/.test(name)) throw new Error('Invalid script path');
+        if (!SCRIPT_PATH.test(name)) throw new Error('Invalid script path');
         files[name] = fs.readFileSync(path.join(folder, ...name.split('/')), 'utf8');
       }
       value = TextGraph.decode({format: TextGraph.FORMAT, files});
     }
     return value;
   }
+  const madeDirs = new Set(); // directories this process created or found: no mkdir per file written
   function atomicText(file, text) {
     try {
       if (fs.readFileSync(file, 'utf8') === text) return;
     } catch (error) {
       if (error.code !== 'ENOENT') throw error;
     }
-    fs.mkdirSync(path.dirname(file), {recursive: true});
+    const dir = path.dirname(file);
+    if (!madeDirs.has(dir)) {
+      fs.mkdirSync(dir, {recursive: true});
+      madeDirs.add(dir);
+    }
     const tmp = `${file}.tmp-${process.pid}`;
     fs.writeFileSync(tmp, text);
     // On Windows another program (antivirus, indexer, sync, editor) may hold the target for a moment, and rename then fails with
@@ -288,13 +294,7 @@ function createServer(options = {}) {
         folder = file.replace(/\.json$/, '.files');
       let previous = [];
       try {
-        const before = JSON.parse(fs.readFileSync(file, 'utf8'));
-        const scan = v => {
-          if (!v || typeof v !== 'object') return;
-          if (v.$script) previous.push(v.$script);
-          Object.values(v).forEach(scan);
-        };
-        scan(before.value);
+        previous = scriptRefs(JSON.parse(fs.readFileSync(file, 'utf8')).value);
       } catch (error) {
         if (error.code !== 'ENOENT') throw error;
       }
@@ -302,7 +302,7 @@ function createServer(options = {}) {
         if (name !== 'graph.json') atomicText(path.join(folder, ...name.split('/')), text);
       atomicText(file, packet.files['graph.json']);
       for (const name of previous)
-        if (!Object.hasOwn(packet.files, name) && /^scripts\/[A-Za-z0-9_-]+\.js$/.test(name)) {
+        if (!Object.hasOwn(packet.files, name) && SCRIPT_PATH.test(name)) {
           try {
             fs.unlinkSync(path.join(folder, ...name.split('/')));
           } catch (error) {
@@ -314,19 +314,16 @@ function createServer(options = {}) {
     atomicText(file, JSON.stringify(value, null, 2) + '\n');
   }
   function removeKey(key) {
+    madeDirs.clear();
     const file = abs(key),
       folder = file.replace(/\.json$/, '.files');
     if (!path.resolve(folder).startsWith(path.resolve(DATA) + path.sep)) throw new Error('Unsafe storage path');
     if (key === 'resources' || key.startsWith('wf:')) {
       try {
-        const graph = JSON.parse(fs.readFileSync(file, 'utf8')),
-          files = ['layout.json'];
-        const scan = v => {
-          if (!v || typeof v !== 'object') return;
-          if (typeof v.$script === 'string' && /^scripts\/[A-Za-z0-9_-]+\.js$/.test(v.$script)) files.push(v.$script);
-          Object.values(v).forEach(scan);
-        };
-        scan(graph.value);
+        const files = [
+          'layout.json',
+          ...scriptRefs(JSON.parse(fs.readFileSync(file, 'utf8')).value).filter(n => SCRIPT_PATH.test(n)),
+        ];
         for (const name of files) {
           try {
             fs.unlinkSync(path.join(folder, ...name.split('/')));
@@ -358,18 +355,10 @@ function createServer(options = {}) {
     for (const k of remove) removeKey(k);
     fs.unlinkSync(transactionFile);
   }
-  function commitKeys({set = {}, remove = [], if_versions = {}}) {
+  function commitKeys({set = {}, remove = []}) {
     const keys = [...Object.keys(set), ...remove];
-    if (![...keys, ...Object.keys(if_versions)].every(k => VALID_KEY.test(k))) throw new Error('Invalid storage key');
+    if (!keys.every(k => VALID_KEY.test(k))) throw new Error('Invalid storage key');
     if (fs.existsSync(transactionFile)) applyTransaction(JSON.parse(fs.readFileSync(transactionFile, 'utf8')));
-    for (const [key, version] of Object.entries(if_versions)) {
-      if (!Number.isSafeInteger(version) || version < 0) throw new Error('Invalid storage version');
-      if ((readKey(key)?.version ?? 0) !== version)
-        throw Object.assign(new Error('Stored version changed; read again and retry.'), {
-          status: 409,
-          code: 'conflict',
-        });
-    }
     atomicText(transactionFile, JSON.stringify({set, remove}));
     const transactionFd = fs.openSync(transactionFile, 'r+');
     try {
@@ -398,16 +387,16 @@ function createServer(options = {}) {
           recordCommit({set, remove});
           broadcast([...Object.keys(set), ...remove], 'api'); // open pages reload what the API changed
         },
-        compareAndSet(key, version, value) {
-          commitKeys({set: {[key]: value}, if_versions: {[key]: version}});
-          recordCommit({set: {[key]: value}, remove: []});
-          broadcast([key], 'api');
-        },
       },
     });
   } catch (error) {
     backendError = error;
   }
+  // Plugins (see plugin-host.js) run in this process, next to the backend they extend.
+  const plugins = backend
+    ? createPluginHost({dir: options.pluginsDir || process.env.PLUGINS_DIR || path.join(ROOT, 'plugins'), backend})
+    : null;
+  if (backend) backend.context.PLUGIN_HOST = plugins;
 
   // Files are watched by comparing stamps: a page open gets the news within a second, and the backend forgets what it
   // had cached of a file that was edited on disk. With no page open the tree is looked at every few seconds only.
@@ -475,17 +464,7 @@ function createServer(options = {}) {
         return sendJSON(res, 400, {error: 'bad body'});
       const keys = [...Object.keys(set), ...remove];
       if (!keys.every(k => VALID_KEY.test(k))) return sendJSON(res, 400, {error: 'bad key'});
-      try {
-        if (
-          body.if_versions !== undefined &&
-          (typeof body.if_versions !== 'object' || body.if_versions === null || Array.isArray(body.if_versions))
-        )
-          return sendJSON(res, 400, {error: 'bad versions'});
-        commitKeys({set, remove, if_versions: body.if_versions});
-      } catch (error) {
-        if (error.status === 409) return sendJSON(res, 409, {error: 'conflict'});
-        throw error;
-      }
+      commitKeys({set, remove});
       // Only what this request touched can have changed, so the whole tree need not be walked again.
       recordCommit({set, remove});
       backend?.DB.changed(keys); // the API's cache must not outlive what the page wrote
@@ -566,7 +545,7 @@ function createServer(options = {}) {
   }
   function handleStatic(req, res, url, editor = false) {
     let rel = decodeURIComponent(url.pathname);
-    const pageRoute = editor && (!path.extname(rel) || /^\/(?:p|library|resources|plugins)\//.test(rel));
+    const pageRoute = editor && (!path.extname(rel) || /^\/(?:p|library)\//.test(rel));
     if (rel.endsWith('/')) rel += 'index.html';
     let file = path.join(ROOT, rel);
     // Windows resolves directory names case-insensitively and ignores trailing dots/spaces.
@@ -584,12 +563,12 @@ function createServer(options = {}) {
       /(^|[\\/])\.|node_modules|\0/.test(rel)
     )
       return send(res, 404, 'Not found', 'text/plain');
-    // A page of the editor (/editor/p/…, /editor/settings): no such file, so the editor opens and shows it.
-    if (pageRoute && !fs.existsSync(file)) file = path.join(ROOT, 'index.html');
+    // A page of the editor (/editor/p/…, /editor/settings, /editor/plugins): no such file (a folder is not one), so the editor opens and shows it.
+    if (pageRoute && !(fs.statSync(file, {throwIfNoEntry: false})?.isFile() ?? false))
+      file = path.join(ROOT, 'index.html');
     // Serve only public assets, never arbitrary files from the checkout.
     const publicPath = path.relative(ROOT, file).split(path.sep).join('/');
-    if (!/^(?:index\.html$|(?:js|css|docs|examples|plugins)\/)/.test(publicPath))
-      return send(res, 404, 'Not found', 'text/plain');
+    if (!/^(?:index\.html$|(?:js|css|docs)\/)/.test(publicPath)) return send(res, 404, 'Not found', 'text/plain');
     fs.readFile(file, (err, data) => {
       if (err) return send(res, 404, 'Not found', 'text/plain');
       // The page names its files without a leading path; under /editor/ (at any depth) they are found there.
@@ -633,7 +612,7 @@ function createServer(options = {}) {
     host: HOST,
     /** Resolves with the base URL once listening (port 0 picks a free one). */
     async listen(port = 8080) {
-      if (backend) await backend.Backend.request('POST', 'plugins/builtin', {body: {}});
+      await plugins?.load();
       return new Promise((resolve, reject) => {
         server.once('error', reject);
         server.listen(port, HOST, () => {
@@ -646,10 +625,11 @@ function createServer(options = {}) {
     async close() {
       closing = true;
       clearInterval(watcher);
+      await plugins?.stopAll();
       await backend?.Backend.shutdownExecutions();
       for (const res of clients) res.end();
       clients.clear();
-      await backend?.Backend.shutdownPlugins();
+
       server.closeAllConnections?.();
       return new Promise(resolve => server.close(() => resolve()));
     },

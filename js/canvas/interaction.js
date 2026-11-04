@@ -14,8 +14,7 @@ function wireCanvas() {
   });
   $('#undo').onclick = () => undo(false);
   $('#redo').onclick = () => undo(true);
-  $('#start')?.addEventListener('click', () => runAction().catch(fail));
-  $('#stop')?.addEventListener('click', () => stopRun().catch(fail));
+  $('#start')?.addEventListener('click', () => toggleRun().catch(fail));
   $('#pause')?.addEventListener('click', () => pauseRun().catch(fail));
   $('#zoom-in').onclick = () =>
     zoomAt(
@@ -306,7 +305,7 @@ function wireCanvas() {
       fit: () => fit(W.selected.size ? W.selected : undefined),
       zoomIn: () => $('#zoom-in').click(),
       zoomOut: () => $('#zoom-out').click(),
-      run: () => (W.library ? undefined : runAction()),
+      run: () => (W.library ? undefined : toggleRun()),
       undo: () => undo(false),
       redo: () => undo(true),
       togglePanel: () => Inspector.toggle(),
@@ -337,6 +336,8 @@ function wireCanvas() {
     document.removeEventListener('keydown', globalKeys);
   });
   const observer = new ResizeObserver(() => {
+    if (canvas !== W.canvas || !canvas.isConnected) return;
+    W.viewportSize = {width: canvas.clientWidth, height: canvas.clientHeight};
     if (!W.snapshot) return;
     measure();
     measureFrames();
@@ -344,11 +345,13 @@ function wireCanvas() {
     drawMinimap();
   });
   observer.observe(canvas);
-  W.nodeObserver = new ResizeObserver(() => {
+  W.nodeObserver = new ResizeObserver(entries => {
+    if (canvas !== W.canvas || !canvas.isConnected) return;
+    for (const {target} of entries) if (target.isConnected) W.dirtyGeometry.add(target.dataset.id);
     if (W.drag || !W.snapshot) return;
     cancelAnimationFrame(W.measureFrame);
     W.measureFrame = requestAnimationFrame(() => {
-      measure();
+      measure(false);
       drawFrames();
       drawWires();
       drawMinimap();
@@ -419,6 +422,7 @@ function startNodeDrag(event, id) {
         Object.assign(W.pos.get(n), {x: Math.round(o.x + dx), y: Math.round(o.y + dy)});
         W.elements.get(n)?.style.setProperty('transform', `translate(${W.pos.get(n).x}px,${W.pos.get(n).y}px)`); // a member of a collapsed group has no element
       }
+      W.sceneRevision++;
       // Dropping on the zone at the top takes the nodes out of their group; dropping on a frame puts them in.
       zone.classList.toggle('show', leavable.length > 0);
       if (leavable.length) placeZone(zone, leavable[0]);
@@ -542,16 +546,23 @@ function wireUnder(id) {
     cx = p.x + p.w / 2,
     cy = p.y + Math.min(p.h, 90) / 2;
   let best = null;
-  const edges = new Map(W.snapshot.edges.map(x => [x.id, x]));
-  for (const el of $$('#wires path.hit[data-edge]')) {
-    const edge = edges.get(el.dataset.edge);
-    if (!edge || edge.source === id || edge.target === id || !insertPorts(node, edge)) continue;
-    const length = el.getTotalLength();
-    for (let at = 0; at <= length; at += 12) {
-      const q = el.getPointAtLength(at);
-      if (q.x < box.x0 || q.x > box.x1 || q.y < box.y0 || q.y > box.y1) continue;
-      const d = Math.hypot(q.x - cx, q.y - cy);
-      if (!best || d < best.d) best = {d, edge};
+  for (const edge of visibleEdges()) {
+    if (edge.source === id || edge.target === id) continue;
+    // The wire's own points (as drawn), measured in plain arithmetic: no layout query per wire and sample.
+    const a = socketPoint(edge.source, 'out', edge.source_port),
+      b = socketPoint(edge.target, 'in', edge.target_port);
+    if (!a || !b || !insertPorts(node, edge)) continue;
+    const points = edgePoints(a, b);
+    for (let i = 1; i < points.length; i++) {
+      const [u, v] = [points[i - 1], points[i]],
+        steps = Math.max(1, Math.ceil(Math.hypot(v.x - u.x, v.y - u.y) / 12));
+      for (let k = 0; k <= steps; k++) {
+        const x = u.x + ((v.x - u.x) * k) / steps,
+          y = u.y + ((v.y - u.y) * k) / steps;
+        if (x < box.x0 || x > box.x1 || y < box.y0 || y > box.y1) continue;
+        const d = Math.hypot(x - cx, y - cy);
+        if (!best || d < best.d) best = {d, edge};
+      }
     }
   }
   return best?.edge ?? null;
@@ -743,6 +754,7 @@ function startFrameDrag(event, groupId) {
         Object.assign(W.pos.get(n), {x: Math.round(o.x + dx), y: Math.round(o.y + dy)});
         W.elements.get(n)?.style.setProperty('transform', `translate(${W.pos.get(n).x}px,${W.pos.get(n).y}px)`); // a member of a collapsed group has no element
       }
+      W.sceneRevision++;
       zone.classList.toggle('show', leavable);
       if (leavable) placeZone(zone, item);
       removing = leavable && overZone(zone, e);

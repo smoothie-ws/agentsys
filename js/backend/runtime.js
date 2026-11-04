@@ -414,6 +414,7 @@ class Call {
       if (doc.root) new Editor({id: 'lib-' + id}, {id}, doc).adoptIntoRoot();
       const after = JSON.stringify(stateOf(doc));
       if (after === before) continue;
+      this.docs.get(id).presentationOnly = semanticKey(JSON.parse(before)) === semanticKey(stateOf(doc));
       await this.collectHooks(project, id, doc, before);
       doc.cursor = (doc.cursor || 0) + 1;
       if (id.startsWith('lib-')) await this.syncLibraryNode(id, doc);
@@ -454,26 +455,28 @@ const Backend = {
     );
     const call = new Call(method, body ?? {}, query ?? {}, edit);
     call.scriptContext = scriptContext;
-    assertExecutionCurrent(scriptContext);
-    if (scriptContext?.execution) {
-      const entry = GRAPH_RUNTIMES.get(scriptContext.execution.workflow_id);
-      if (entry) traceExecution(entry, scriptContext.execution, 'api.call', {method, route: found.pattern});
-    }
-    if (scriptContext?.signal?.aborted) throw bad('Execution stopped');
+    // Stop aborts the signal of a Script: its API calls neither start nor save after that.
+    const running = () => {
+      if (scriptContext?.signal?.aborted) throw bad('Execution stopped');
+    };
+    running();
     if (found.unlocked) return found.handler(call, params);
     const result = await exclusive(async () => {
-      assertExecutionCurrent(scriptContext);
-      if (scriptContext?.signal?.aborted) throw bad('Execution stopped');
+      running();
       const result = await found.handler(call, params);
       if (method !== 'GET') await call.finish(found.pattern.split('/')[2] || found.pattern.split('/')[0]);
       // A read that found something to bring up to date (a copy of a Library node, a type) stores it.
       if (method === 'GET' && call.refreshed) for (const {doc} of call.docs.values()) doc.types = ownTypes(doc.types);
-      assertExecutionCurrent(scriptContext);
+      running();
       if (method !== 'GET' || call.refreshed) await call.ctx.commit();
-      for (const [id, {doc, project}] of call.docs) {
-        const types = [...(await call.libraryTypes()), ...ownTypes(doc.types)];
-        syncRuntimeGraph(id, buildSnapshot({id: project}, {id, name: ''}, {...doc, types}, false));
-      }
+      // The live interpreter follows a document only when it changed in a way it can observe (not a move or a colour),
+      // and only if one is running for it.
+      if (method !== 'GET' || call.refreshed)
+        for (const [id, {doc, project, presentationOnly}] of call.docs) {
+          if (presentationOnly || !GRAPH_RUNTIMES.has(id)) continue;
+          const types = [...(await call.libraryTypes()), ...ownTypes(doc.types)];
+          syncRuntimeGraph(id, buildSnapshot({id: project}, {id, name: ''}, {...doc, types}, false));
+        }
       return result;
     });
     if (call.libraryTouched) {
@@ -492,11 +495,6 @@ const Backend = {
     }
     // Event handlers run after the edit is saved and the writer lock is free.
     runHooks(call.hookEvents);
-    if (call.pluginLifecycle) await call.pluginLifecycle();
-    if (call.pluginResult) {
-      const record = ((await DB.get(PLUGIN_INDEX)) ?? []).find(p => p.id === call.pluginResult);
-      if (record) return pluginSummary(record, nodeCount((await DB.get('resources')) ?? [], record.id));
-    }
     return result;
   },
   /** Called with a log entry whenever hook code (on_placed, on_deleted, on_input_connected, on_widget) fails. Returns the function that stops listening. */
@@ -513,9 +511,6 @@ const Backend = {
   },
   async shutdownExecutions() {
     await Promise.all([...GRAPH_RUNTIMES.keys()].map(stopGraph));
-  },
-  async shutdownPlugins() {
-    await Promise.all([...PLUGIN_HOSTS.keys()].map(stopPluginRuntime));
   },
   get persistent() {
     return DB.persistent;
@@ -547,7 +542,7 @@ const Backend = {
             400: {description: 'Invalid request'},
             404: {description: 'Not found'},
             403: {description: 'Permission denied'},
-            409: {description: 'Version conflict, execution budget exceeded, or explicit recovery required'},
+            409: {description: 'The workflow changed since it was read'},
           },
           'x-needs': r.needs[method],
         };

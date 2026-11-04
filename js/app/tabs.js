@@ -25,8 +25,8 @@ const Tabs = {
           .filter(Boolean)
           .join(':'),
         api: 'api',
+        plugins: ['plugins', route.id].filter(Boolean).join(':'),
         'not-found': 'missing',
-        plugins: ['plugins', route.id, route.view].filter(Boolean).join(':'),
       }[route.page] || 'home'
     );
   },

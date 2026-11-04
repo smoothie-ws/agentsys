@@ -1,16 +1,15 @@
-# Architecture decisions
+# Design decisions
 
 1. A workflow is a live graph with one runtime and persistent JSON values. Run sends ordinary signals to enabled `on_run` Events.
-2. Nodes are interpreted as reached. Graph edits update subsequent invocations, input rereads and emissions. An invocation already executing retains its current function.
+2. Nodes are interpreted as reached. Graph edits update subsequent invocations, input rereads and emissions. An invocation already executing keeps its current function.
 3. Script and Event are the behavior primitives. Library graphs compose them into Custom Nodes, branches, loops, delays and previews.
-4. Signals control work; data wires provide JSON values. Fan-out is concurrent, and an awaited emission joins its branches. Dispatches have separate ownership of their child work.
-5. Script has signal input `in`, code input `script` and completion output `out`. Success emits `out` automatically. Named signal outputs use `node.output.name.emit(options?)`; names are exact.
-6. `context.state` is shared durable JSON. Run, Pause, Stop, navigation and restart preserve it. Port values and previews are also durable. JavaScript globals are host-local memory.
-7. Pause gates code starts and continuations. Stop interrupts host work and preserves data. Restart restores data without resuming JavaScript stacks or external operations.
-8. Ordinary execution has no configured depth, concurrency, time or result-size quotas. Controlled runs can opt into inherited admission/time budgets; diagnostics have bounded retention. Valid structure, JSON data and permission checks remain requirements.
-9. Each workflow's JavaScript host is isolated. Script calls are checked against current enclosing-instance grants and project policy. Library defaults initialize new instances only. Code written through APIs is quarantined.
-10. The core provides general graph, resource, storage and UI mechanisms. Domain schemas, AI and integrations belong to executable plugins.
-11. Plugin metadata describes loading and permissions. `activate(context)` registers behavior and owns its cleanup. Plugins use isolated hosts and sandboxed views.
-12. Import/export and duplication carry graph JSON state and values. Editor undo history covers definitions, not runtime state or external side effects.
-13. Durable operation boundaries use explicit versioned checkpoints and retry policies. A restart marks unfinished work interrupted and never reconstructs JavaScript stacks or automatically replays external effects. High-level orchestration lives in a universal SDK library.
-14. Independent JSON areas and operation metadata share the application's storage/CAS boundary. They supplement shared `context.state`; they do not transact arbitrary JavaScript or replace latest-value ports. Structured traces contain metadata only.
+4. Signals control work; data wires provide JSON values. Fan-out is concurrent, an awaited emission joins its branches, and a signal call owns the work it started.
+5. Script has signal input `in`, code input `script` and completion output `out`. Success emits `out`. Named signal outputs use `node.output.name.emit(options?)`; names are exact.
+6. `context.state` is shared durable JSON. Run, Pause, Stop, navigation and restart preserve it, and so do port values and previews. JavaScript globals are host-local memory.
+7. Pause gates code starts and continuations. Stop interrupts host work and keeps data. A restart restores data without resuming JavaScript stacks or external effects.
+8. Execution has no depth, concurrency, time or result-size quotas. Valid structure, JSON data and permission checks always apply. Stop ends runaway code.
+9. Each workflow's JavaScript host is isolated. Script calls are checked against the enclosing instances' grants and the project policy. Library defaults only initialize new instances. Code written through the API is quarantined.
+10. Import/export and duplication carry graph JSON state and values. Undo covers definitions, not runtime state or external effects.
+11. Inline Custom Node compositions without a Library source belong to their workflow and can be expanded, collapsed and edited through the checked graph API. Linked Library instances are edited in the Library.
+12. Graph self-modification is a general capability (the checked API and the Graph nodes), not a feature of any one algorithm. The core contains no domain schemas, schedulers or controllers.
+13. Extensions are plugins in the manner of Substance Painter: a folder with `main.js`, `start(api)` and `stop()`, trusted and unsandboxed, loaded by the server. The core has no domain features; a plugin adds them through the same API the editor uses.

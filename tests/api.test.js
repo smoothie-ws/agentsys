@@ -56,8 +56,6 @@ test('Custom is the only node type besides Reroute', async () => {
   const app = createApp(),
     p = await newProject(app);
   await rejects(p.node('script'), /supported node type/);
-  const types = (await app.api('GET', `projects/${p.id}/node-types`)).definitions;
-  assert.deepEqual(Object.keys(types).sort(), ['custom', 'reroute']);
   await rejects(app.api('POST', `projects/${p.id}/nodes`, {...p.workflow, text: 'Note'}), /not found/);
 });
 

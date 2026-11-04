@@ -38,7 +38,8 @@ const controlOf = t => ({
 const refsOf = t => [...t.fields.flatMap(f => typeRefs(f.type)), ...typeRefs(t.alias)];
 /** Whether `value` is something the control of a type can hold. */
 function fitsControl(value, {control, options}) {
-  if (control === 'text' || control === 'textarea' || control === 'code') return typeof value === 'string' && value.length <= MAX_TEXT;
+  if (control === 'text' || control === 'textarea' || control === 'code')
+    return typeof value === 'string' && value.length <= MAX_TEXT;
   if (control === 'number') return typeof value === 'number' && Number.isFinite(value);
   if (control === 'checkbox') return typeof value === 'boolean';
   if (control === 'select') return typeof value === 'string' && (options || []).includes(value);
@@ -128,11 +129,17 @@ function unifyTypes(library, own) {
     libIds = new Set(library.map(t => t.id));
   let rest = ownTypes(own).map(t => ({...t})),
     changed = false;
-  const shape = (t, map) => JSON.stringify([(t.fields || []).map(f => ({name: f.name, type: renameTypeRefs(f.type, map)})), controlOf({...t, alias: t.alias && renameTypeRefs(t.alias, map)})]);
+  const shape = (t, map) =>
+    JSON.stringify([
+      (t.fields || []).map(f => ({name: f.name, type: renameTypeRefs(f.type, map)})),
+      controlOf({...t, alias: t.alias && renameTypeRefs(t.alias, map)}),
+    ]);
   for (let more = true; more; ) {
     more = false;
     for (const x of rest) {
-      const twin = library.find(y => y.name.toLowerCase() === x.name.toLowerCase() && shape(y, new Map()) === shape(x, absorbed));
+      const twin = library.find(
+        y => y.name.toLowerCase() === x.name.toLowerCase() && shape(y, new Map()) === shape(x, absorbed)
+      );
       if (!twin && !libIds.has(x.id)) continue;
       if (twin) absorbed.set(x.id, twin.id);
       rest = rest.filter(y => y !== x);
@@ -165,7 +172,9 @@ function checkTypes(list) {
   for (const t of list) {
     if (
       !isObject(t) ||
-      Object.keys(t).some(k => !['id', 'name', 'color', 'fields', 'library', 'control', 'options', 'alias'].includes(k)) ||
+      Object.keys(t).some(
+        k => !['id', 'name', 'color', 'fields', 'library', 'control', 'options', 'alias'].includes(k)
+      ) ||
       typeof t.id !== 'string' ||
       !/^[0-9a-f]{32}$/.test(t.id) ||
       ids.has(t.id) ||
@@ -181,8 +190,10 @@ function checkTypes(list) {
     if ('alias' in t && !(typeof t.alias === 'string' && TYPE_REF.test(t.alias)))
       throw bad(`The alias of ${t.name} is another type of the document`);
     if (t.alias && (t.fields || []).length) throw bad(`${t.name} is an alias: it has no fields of its own`);
-    if ('control' in t && !CONTROLS.includes(t.control)) throw bad(`The control of ${t.name} is one of ${CONTROLS.join(', ')}`);
-    if (t.control && (t.fields || []).length) throw bad(`${t.name} has fields: only a type without fields can have a control`);
+    if ('control' in t && !CONTROLS.includes(t.control))
+      throw bad(`The control of ${t.name} is one of ${CONTROLS.join(', ')}`);
+    if (t.control && (t.fields || []).length)
+      throw bad(`${t.name} has fields: only a type without fields can have a control`);
     if (t.control === 'select') {
       if (!Array.isArray(t.options) || !t.options.length || t.options.length > MAX_OPTIONS)
         throw bad(`${t.name} needs 1 to ${MAX_OPTIONS} options`);
@@ -191,7 +202,8 @@ function checkTypes(list) {
     } else if ('options' in t) throw bad('Only a type with the select control has options');
     ids.add(t.id);
     names.add(t.name.toLowerCase());
-    if (!Array.isArray(t.fields) || t.fields.length > MAX_FIELDS) throw bad(`A type has at most ${MAX_FIELDS} fields: ${t.name}`);
+    if (!Array.isArray(t.fields) || t.fields.length > MAX_FIELDS)
+      throw bad(`A type has at most ${MAX_FIELDS} fields: ${t.name}`);
     const fields = new Set();
     for (const f of t.fields) {
       if (

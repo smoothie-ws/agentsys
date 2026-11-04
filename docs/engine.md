@@ -14,7 +14,7 @@ Changing a saved Library definition refreshes its live placed instances. Disable
 
 Data wires supply values when an input is read. Pure values and Reroutes compute on read. Running nodes and Custom Node scopes retain their latest JSON output values. Values crossing a node boundary are JSON copies, so changing a received object does not change another node's data.
 
-Signals carry control, not a data payload. An output signals all connected receivers concurrently. `await node.output.name.emit(options?)` waits for the work started by that emission. An unawaited emission still registers its child work with the dispatch that started it. Separate dispatches do not wait for each other; a nested API evaluation cannot wait on its own caller.
+Signals carry control, not a data payload. An output signals all connected receivers concurrently. `await node.output.name.emit(options?)` waits for the work started by that emission. An unawaited emission still belongs to the signal call that started it. Separate signal calls do not wait for each other; a nested API evaluation cannot wait on its own caller.
 
 Every Script has a concrete `out` signal output. It emits automatically once after successful completion, including `return`. Errors and flow cancellation do not emit it. Calling `node.output.out.emit()` manually sends an additional signal; it does not suppress automatic completion. A Custom Node may publish the Script's completion port by binding a signal output to it. The name `out` in a Script's output API is reserved for this completion signal.
 
@@ -33,7 +33,7 @@ Script executes JavaScript when signalled. Event fires its signal outputs for it
 
 Custom Nodes compose these primitives and provide input/output scopes. Nested instances retain their own scopes and enclosing permission chain. Library events and Run use the same live runtime and shared `context.state`.
 
-Editor events dispatch independently. A paused workflow does not block events in another workflow. Event diagnostics belong to that dispatch; retained errors from earlier work remain visible on the graph without marking a successful later event as failed.
+Editor events dispatch independently. A paused workflow does not block events in another workflow. Retained errors from earlier work remain visible on the graph without marking a successful later event as failed.
 
 An `on_read` scope caches computed outputs until its data dependencies or graph definition change. Dependencies are brought up to date before computing the scope. A changed shared JSON context also invalidates read caches. Data-dependency cycles and cyclic interface/group bindings are invalid graph structure.
 
@@ -49,12 +49,12 @@ Output assignments publish values immediately. Emissions, API calls, delays and 
 
 Pause prevents new node code and continuations after an awaited emission or `node.sleep` from starting. The pause request is accepted immediately; synchronous code already executing is not frozen. Run while paused queues its ordinary signals. Resume releases the gate. Timer time can elapse while paused; continuation waits for Resume.
 
-`node.flow.break()` and `continue()` end the current Script and reach the nearest emission whose `handles` includes that control. `cancel()` cancels the current wave. `abort()` cancels currently dispatched graph flow. Code can inspect `node.cancelled`. An emission's `{failFast: true}` cancels further work in that wave after a branch error.
+`node.flow.break()` and `continue()` end the current Script and reach the nearest emission whose `handles` includes that control. `cancel()` cancels the current wave. `abort()` cancels everything the current signal call started. Code can inspect `node.cancelled`. An emission's `{failFast: true}` cancels further work in that wave after a branch error.
 
 Stop terminates the host and aborts its outstanding checked network operations. It preserves acknowledged JSON state, outputs and previews. A later signal creates a host initialized from those values. External actions already completed are not reversed. Application restart restores data but does not reconstruct pending JavaScript calls, timers or requests.
 
 ## Resource behavior
 
-Ordinary execution has no configured Script timeout, chain-depth, concurrency, result-size or total-result quota. Infinite synchronous code can occupy the host until Stop terminates it. Controlled API dispatches may opt into inherited budgets; a host-side watchdog can stop synchronous code. Hardware, JavaScript and storage/transport behavior still determine what can be represented. Permissions and graph/JSON validity remain enforced.
+Ordinary execution has no configured Script timeout, chain-depth, concurrency, result-size or total-result quota. Infinite synchronous code can occupy the host until Stop terminates it. Hardware, JavaScript and storage/transport behavior still determine what can be represented. Permissions and graph/JSON validity remain enforced.
 
-Each invocation exposes causal identity through `context.execution`. Read computations inherit their caller's dispatch; concurrent dispatches remain separate. Independent JSON areas, checkpoints and traces are described in [Durable execution](durable-execution.md). Removing a node or replacing/stopping its host fences late state/API/output writes. Hard cancellation acts on the workflow's shared Worker; it can stop other dispatches in that host.
+Removing a node or stopping its host rejects its late state and API writes. Stop acts on the workflow's shared Worker, so it ends every signal call of that workflow.

@@ -183,7 +183,6 @@ const creationActions = folder =>
       ]
     : [];
 /** Menu of the Library itself, and the "+" of its second panel. */
-const libraryActions = () => [];
 const nodesActions = () => [
   ...creationActions(''),
   ['Import…', () => importFiles(), {icon: 'download'}],
@@ -329,24 +328,21 @@ const notFound = (what, href, back) =>
 
 /** The Library: its sections as cards (one: Nodes). */
 function libraryOverview(view) {
-  view.innerHTML = `<div class="page">${pageHead({title: 'Library', sub: 'Reusable resources.'})}<div class="cards">${(
-    app.librarySections ?? []
-  )
-    .filter(s => !s.parent)
-    .map(catalogSectionCard)
-    .join('')}${pluginPages('library')
-    .filter(({page}) => !page.parent)
-    .map(({plugin, page}) =>
-      card({
-        href: pluginHref(plugin.id, page.id),
-        glyph: page.icon,
-        title: page.title,
-        preview: `<p class="resource-description">${esc(plugin.manifest.description)}</p>`,
-        previewClass: 'card-note',
-        menu: 'plugin:' + plugin.id,
-      })
-    )
-    .join('')}</div></div>`;
+  const rows = [
+    ...app.nodeFolders.filter(f => !parentPath(f)).map(f => [(app.nodeFolderIcons || {})[f] || 'folder', baseName(f)]),
+    ...app.resources.filter(r => !r.payload.folder).map(r => [resourceIcon(r), r.name]),
+  ];
+  view.innerHTML = `<div class="page">${pageHead({title: 'Library', sub: 'Reusable resources.'})}<div class="cards">${card(
+    {
+      href: NODES_PATH,
+      glyph: 'complex',
+      title: 'Nodes',
+      preview: cardList(rows),
+      previewClass: 'card-note',
+      facts: 'Reusable Custom Nodes',
+      menu: 'nodes:',
+    }
+  )}</div></div>`;
 }
 
 /** The Nodes section, or one group of it: its groups and nodes as cards. */
@@ -383,7 +379,6 @@ PAGES.resources = async (view, route) => {
   await loadLibrary();
   if (app.route !== route) return;
   if (!route.section) return libraryOverview(view);
-  if (route.section !== 'nodes') return catalogPage(view, route);
   if (!route.id) return libraryList(view, route);
   if (!developerMode() || !app.resources.some(r => r.id === route.id)) return go('/library', true);
   await openNodeEditor(route.id, '', true).catch(fail); // a node opens as a graph

@@ -41,7 +41,6 @@ test('only any is built in: no other type exists until the document defines it',
   const app = createApp(),
     p = await project(app);
   assert.deepEqual((await p.snapshot()).types, []);
-  assert.equal((await app.api('GET', 'projects/' + p.id + '/node-types')).types, undefined);
   await rejects(p.node({outputs: [{id: 'o', name: 'o', type: 'text'}]}), /type/);
   const anyNode = await p.node({outputs: [{id: 'o', name: 'o', type: 'any'}]}); // the built-in
   assert.equal(anyNode.id.startsWith('record:'), true);

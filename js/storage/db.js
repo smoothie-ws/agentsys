@@ -31,7 +31,7 @@ const DB = (() => {
     API = '/__data',
     cache = new Map(),
     listeners = new Set(),
-    committed = new Set(), // plugin events also observe writes made by this backend
+    committed = new Set(), // listeners also observe writes made by this backend
     announced = new Set(), // the listeners that also hear about writes made here by hooks
     client = uid(),
     // The headless server (headless.js) hands in its own file store; browsers never define it.
@@ -86,10 +86,8 @@ const DB = (() => {
       headers: {'Content-Type': 'application/json', 'X-AgentSys': '1', 'X-Client': client},
       body: JSON.stringify(body),
     });
-    if (response.status === 409) throw new ApiError('conflict', 'Stored version changed; read again and retry.', 409);
     if (!response.ok) throw new Error('The data folder could not be written.');
   };
-  let casQueue = Promise.resolve();
   const ready = (async () => {
     if (external) return;
     idb = await openIdb();
@@ -132,46 +130,6 @@ const DB = (() => {
       } else if (idb) value = await transaction('readonly', store => store.get(key));
       cache.set(key, value);
       return value;
-    },
-    /** Atomic version check plus durable write. Envelopes carry a monotonically increasing version. */
-    compareAndSet(key, version, value) {
-      const work = casQueue.then(async () => {
-        await ready;
-        const conflict = () => new ApiError('conflict', 'Stored version changed; read again and retry.', 409);
-        try {
-          if (external?.compareAndSet) await external.compareAndSet(key, version, value);
-          else if (files) await post({set: {[key]: value}, if_versions: {[key]: version}});
-          else if (idb)
-            await new Promise((resolve, reject) => {
-              const tx = idb.transaction(STORE, 'readwrite'),
-                store = tx.objectStore(STORE);
-              let stale = false;
-              const read = store.get(key);
-              read.onsuccess = () => {
-                if ((read.result?.version ?? 0) !== version) {
-                  stale = true;
-                  tx.abort();
-                } else store.put(value, key);
-              };
-              tx.oncomplete = resolve;
-              tx.onerror = tx.onabort = () => reject(stale ? conflict() : tx.error || Error('Database write failed'));
-            });
-          else {
-            // A custom store without CAS is safe within one backend, like ordinary API mutations.
-            const current = external ? await external.get(key) : cache.get(key);
-            if ((current?.version ?? 0) !== version) throw conflict();
-            if (external) await external.commit({set: {[key]: value}, remove: []});
-          }
-        } catch (error) {
-          cache.delete(key);
-          throw error;
-        }
-        cache.set(key, value);
-        if (!files) channel?.postMessage({keys: [key]});
-        for (const listener of committed) listener([key]);
-      });
-      casQueue = work.catch(() => {});
-      return work;
     },
     /** Writes several keys at once; an undefined value deletes the key. */
     async commit(changes) {

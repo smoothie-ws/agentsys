@@ -568,7 +568,7 @@ class Editor {
       if (!existing && !library) throw bad('Complex Nodes are built in the Library editor');
       if (
         existing &&
-        (!library || existing.source) &&
+        existing.source &&
         (body.wrap === false || body.interface || body.arbitrary || body.collapsed === false)
       )
         throw bad('This Complex Node comes from the Library. Edit it there.');
@@ -1322,23 +1322,7 @@ class Editor {
     }
     for (const next of existing) if (next.parent && !existing.some(g => g.id === next.parent)) next.parent = null;
     this.groups(existing, true);
-    // Complex Nodes: older clipboards kept the interface on the group itself.
-    const wrappers = [
-      ...(bundle.complex ?? []),
-      ...bundleGroups
-        .filter(
-          g =>
-            !(bundle.complex ?? []).some(c => c.id === g.id) &&
-            (g.interface?.inputs?.length || g.interface?.outputs?.length || g.collapsed)
-        )
-        .map(g => ({
-          id: g.id,
-          interface: g.interface,
-          collapsed: g.collapsed,
-          compact_width: g.compact_width,
-          compact_height: g.compact_height,
-        })),
-    ].filter(c => isObject(c) && fresh.has(c.id));
+    const wrappers = (bundle.complex ?? []).filter(c => isObject(c) && fresh.has(c.id));
     for (const c of wrappers) mapping.set('complex:' + c.id, 'complex:' + fresh.get(c.id));
     for (const c of wrappers) {
       const iface = {inputs: [], outputs: [], ...clone(c.interface || {})};

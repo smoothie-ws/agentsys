@@ -173,24 +173,11 @@ async function destinations() {
   const found = [
     {label: 'Dashboard', hint: 'Page', href: '/'},
     {label: 'Projects', hint: 'Page', href: '/projects'},
-    {label: 'Plugins', hint: 'Page', href: '/plugins'},
     {label: 'Library', hint: 'Page', href: '/library'},
     {label: 'API', hint: 'Page', href: '/api'},
+    {label: 'Plugins', hint: 'Page', href: '/plugins'},
     {label: 'Settings', hint: 'Page', href: '/settings'},
   ];
-  for (const p of app.plugins || []) {
-    found.push({label: p.manifest.name, hint: p.enabled ? 'Plugin' : 'Plugin · disabled', href: pluginHref(p.id)});
-    if (!p.enabled) continue;
-    for (const x of pluginContributions(p).pages)
-      found.push({label: x.title, hint: `Plugin · ${p.manifest.name}`, href: pluginHref(p.id, x.id)});
-    for (const x of pluginContributions(p).commands)
-      found.push({
-        label: x.title,
-        hint: `Command · ${p.manifest.name}`,
-        href: x.page ? pluginHref(p.id, x.page) : x.path,
-        ...(x.handler ? {command: {plugin: p.id, id: x.id}} : {}),
-      });
-  }
   const list = await api('projects'); // fresh: a project made a moment ago by a script is not in the sidebar's list yet
   const projects = await Promise.all(list.map(p => api(`projects/${p.id}`).catch(() => null)));
   for (const data of projects.filter(Boolean)) {
@@ -203,19 +190,6 @@ async function destinations() {
     found.push({label: r.name, hint: 'Library · Node', href: resourceHref(r)});
   for (const path of library.node_folders || [])
     found.push({label: baseName(path), hint: 'Library · Nodes group', href: folderHref(path)});
-  for (const section of app.librarySections ?? []) {
-    if (section.id === 'nodes') continue;
-    found.push({label: section.title, hint: 'Library', href: catalogHref(section.id)});
-    const data = collectionSnapshot(section.id);
-    for (const path of data.folders)
-      found.push({label: baseName(path), hint: 'Library · ' + section.title, href: catalogHref(section.id, path)});
-    for (const item of data.items)
-      found.push({
-        label: item.name,
-        hint: 'Library · ' + section.title,
-        href: catalogHref(section.id, item.folder, item.id),
-      });
-  }
   return found;
 }
 
@@ -240,9 +214,7 @@ function openSearch() {
     const found = q ? await api('search/nodes', {query: {q: text, limit: 50}}) : {nodes: []};
     if (mine !== sequence || !input.isConnected) return;
     results.innerHTML =
-      (go_.length
-        ? `<h3>Go to</h3>${go_.map((d, i) => (d.command ? `<a href="#" data-command="${i}"><strong>${esc(d.label)}</strong><span class="muted small">${esc(d.hint)}</span></a>` : link(d.href, d.label, d.hint))).join('')}`
-        : '') +
+      (go_.length ? `<h3>Go to</h3>${go_.map(d => link(d.href, d.label, d.hint)).join('')}` : '') +
         (found.nodes.some(n => developerMode() || !n.project_id.startsWith('lib-'))
           ? `<h3>Nodes</h3>${found.nodes
               .filter(n => developerMode() || !n.project_id.startsWith('lib-'))
@@ -255,12 +227,6 @@ function openSearch() {
               )
               .join('')}`
           : '') || '<p class="muted">Nothing matches.</p>';
-    for (const element of $$('[data-command]', results))
-      element.onclick = event => {
-        event.preventDefault();
-        const command = go_[Number(element.dataset.command)].command;
-        executePluginCommand(command.plugin, command.id).catch(fail);
-      };
   };
   input.oninput = () => {
     sequence++; // invalidate the previous request immediately, including during the debounce
@@ -300,7 +266,6 @@ async function boot() {
   if (!Backend.persistent)
     setTimeout(() => toast('Storage is unavailable here. Changes will be lost when you close this tab.', true), 500);
   await api('library/builtin', {method: 'POST', body: {}}).catch(() => {}); // the built-in nodes join the Library
-  if (DB.mode !== 'files') await api('plugins/builtin', {method: 'POST', body: {}});
   await Promise.all([loadLibrary(), loadProjects(), loadPlugins()]);
   await render();
 }
@@ -309,11 +274,7 @@ Backend.subscribe(keys => {
     loadProjects().catch(() => {});
     for (const key of navOpen) if (key.startsWith('p:')) loadProjectWorkflows(key.slice(2), true);
   }
-  if (keys.includes('plugins/index'))
-    Promise.all([loadPlugins(), loadLibrary()])
-      .then(renderSidebar)
-      .catch(() => {});
-  if (keys.some(k => k === 'resources' || k.startsWith('node_folder') || k.startsWith('library/sections/')))
+  if (keys.some(k => k === 'resources' || k.startsWith('node_folder')))
     loadLibrary()
       .then(renderSidebar)
       .catch(() => {});

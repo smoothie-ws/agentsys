@@ -7,9 +7,8 @@ const names = async app => (await app.api('GET', 'resources')).map(r => r.name);
 
 test('Execute passes the checked API, context and intrinsics into its nested Script', async t => {
   const app = createApp({scripts: 'worker'});
-  t.after(() => app.Backend.shutdownPlugins());
+  t.after(() => app.Backend.shutdownExecutions());
   await app.api('POST', 'library/builtin', {});
-  await app.api('POST', 'plugins/builtin', {});
   const project = await app.api('POST', 'projects', {name: 'Execute bridge'});
   const item = (await app.api('GET', 'resources')).find(r => r.name === 'Execute');
   await app.api('PUT', 'resources/' + item.id, {
@@ -19,9 +18,8 @@ test('Execute passes the checked API, context and intrinsics into its nested Scr
   const copy = await app.api('POST', `projects/${project.id}/custom-nodes/${item.id}`, {point: {x: 0, y: 0}});
   const wrapper = 'complex:' + copy.roots[0];
   const code = `const nodes=await agentsys('GET','resources');
-    const {items}=await agentsys('GET','library/sections/ai.providers/items');
     node.display('Execute API works');
-    return {nodes:nodes.length,providers:items.length,project:context.project_id,year:new Date(0).getUTCFullYear(),rounded:Math.round(1.7)};`;
+    return {nodes:nodes.length,project:context.project_id,year:new Date(0).getUTCFullYear(),rounded:Math.round(1.7)};`;
   await app.api('PUT', `projects/${project.id}/input-values`, {node_id: wrapper, values: {pr97li: code}});
   const snapshot = await app.api('GET', `projects/${project.id}/workflow`);
   const script = snapshot.nodes.find(
@@ -31,7 +29,6 @@ test('Execute passes the checked API, context and intrinsics into its nested Scr
   assert.equal(result.status, 'idle', JSON.stringify(result.errors));
   assert.deepEqual(result.outputs[script.id].pxltyf, {
     nodes: (await names(app)).length,
-    providers: 0,
     project: project.id,
     year: 1970,
     rounded: 2,
@@ -85,4 +82,17 @@ test('built-in nodes: a Library that already has a node of that name gets no sec
   const result = await b.api('POST', 'library/builtin', {});
   assert.equal(result.added.includes('Bool'), false);
   assert.equal((await names(b)).filter(n => n === 'Bool').length, 1);
+});
+
+test('every built-in node places with valid defaults and permissions', async () => {
+  const app = createApp(),
+    p = await app.api('POST', 'projects', {name: 'Built-in checks'});
+  await app.api('POST', 'library/builtin', {});
+  const items = await app.api('GET', 'resources');
+  assert.ok(items.length > 20);
+  for (const item of items) {
+    assert.ok(Array.isArray(item.payload.grants), item.name);
+    const placed = await app.api('POST', `projects/${p.id}/custom-nodes/${item.id}`, {point: {x: 0, y: 0}});
+    assert.equal(placed.roots.length, 1, item.name);
+  }
 });

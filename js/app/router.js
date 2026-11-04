@@ -3,16 +3,14 @@
 
 // ----- routing -----
 // Pages: / (the dashboard), /projects, /api, /settings, /p/{project}, /p/{project}/settings, /p/{project}/w/{workflow},
-// /plugins (the installed plugins), /plugins/{id} (one plugin) and /plugins/{id}/{page} (a page it adds),
+// /plugins (the plugins as cards) and /plugins/{id} (one plugin),
 // /library (the Library: its sections as cards), /library/nodes[?folder=…] (the Nodes section: nodes and groups as cards)
 // and /library/nodes/{id} (one node).
 // Served by server.js the editor is at /editor/ and these are real paths (/editor/p/…). Opened any other way (a static server,
 // a file) there is no server to answer them, so they live in the URL hash (#/p/…). `urlOf` makes the address of a page for either.
 const PATH_BASE = '/editor';
 const pathMode = /^\/editor(\/|$)/.test(location.pathname);
-const canonicalPath = path => path.replace(/^\/resources(?=[/?]|$)/, '/library');
 const urlOf = path => {
-  path = canonicalPath(path);
   return pathMode ? PATH_BASE + (path === '/' ? '/' : path) : '#' + path;
 };
 /** The page now, as `path?query`. */
@@ -21,9 +19,6 @@ const routeTarget = () =>
 const routePath = () => routeTarget().split('?')[0] || '/';
 const routeQuery = () => new URLSearchParams(routeTarget().split('?')[1] || '');
 const routeURL = () => urlOf(routeTarget());
-// An address with the old hash form (/editor/#/p/…) becomes the path.
-if (pathMode && location.hash.startsWith('#/')) history.replaceState({}, '', urlOf(location.hash.slice(1)));
-if (canonicalPath(routeTarget()) !== routeTarget()) history.replaceState({}, '', urlOf(routeTarget()));
 function parseRoute(path = routePath(), query = routeQuery()) {
   let parts;
   try {
@@ -39,12 +34,11 @@ function parseRoute(path = routePath(), query = routeQuery()) {
     return {page: 'not-found'};
   }
   const page =
-    {projects: 'projects', settings: 'settings', library: 'resources', resources: 'resources', api: 'api', plugins: 'plugins'}[
-      parts[0]
-    ] || 'not-found';
-  if (page === 'plugins') return parts.length <= 3 ? {page, id: parts[1], view: parts[2]} : {page: 'not-found'};
+    {projects: 'projects', settings: 'settings', library: 'resources', api: 'api', plugins: 'plugins'}[parts[0]] ||
+    'not-found';
+  if (page === 'plugins') return parts.length <= 2 ? {page, id: parts[1]} : {page: 'not-found'};
   if (page !== 'resources') return parts.length === 1 ? {page} : {page: 'not-found'};
-  if (parts.length > 3) return {page: 'not-found'};
+  if (parts.length > 3 || (parts[1] && parts[1] !== 'nodes')) return {page: 'not-found'};
   return parts[1] ? {page, section: parts[1], id: parts[2], folder: query.get('folder') ?? undefined} : {page};
 }
 /** A deterministic way out of a deep link, including one opened without browser history. */
@@ -58,36 +52,15 @@ function parentPage(route) {
       ? ['Projects', '/projects']
       : ['Project', `/p/${encodeURIComponent(route.project)}`];
   if (route.page === 'resources' && route.section) {
-    if (route.section !== 'nodes') {
-      const section = catalogDefinition(route.section);
-      if (route.id) return [section?.title ?? 'Collection', catalogHref(route.section, route.folder)];
-      if (route.folder)
-        return [
-          parentPath(route.folder) ? baseName(parentPath(route.folder)) : (section?.title ?? 'Collection'),
-          catalogHref(route.section, parentPath(route.folder)),
-        ];
-      const parent = catalogDefinition(section?.parent);
-      return parent ? [parent.title, catalogHref(parent.id)] : ['Library', '/library'];
-    }
-    if (route.folder)
+    if (route.folder && !route.id)
       return [
         parentPath(route.folder) ? baseName(parentPath(route.folder)) : 'Nodes',
         folderHref(parentPath(route.folder)),
       ];
     return ['Library', '/library'];
   }
-  if (route.page === 'plugins' && route.view) {
-    const plugin = pluginById(route.id),
-      page = pluginContributions(plugin).pages.find(p => p.id === route.view);
-    if (page?.parent)
-      return [
-        pluginContributions(plugin).pages.find(p => p.id === page.parent).title,
-        pluginHref(route.id, page.parent),
-      ];
-    if (page?.section === 'library') return ['Library', '/library'];
-    return [plugin?.manifest.name || 'Plugin', pluginHref(route.id)];
-  }
-  return route.page === 'plugins' && route.id ? ['Plugins', '/plugins'] : ['Dashboard', '/'];
+  if (route.page === 'plugins' && route.id) return ['Plugins', '/plugins'];
+  return ['Dashboard', '/'];
 }
 let navigationRevision = 0,
   renderRevision = 0;
@@ -114,7 +87,6 @@ function leaveView() {
   return leavingView;
 }
 async function render() {
-  if (canonicalPath(routeTarget()) !== routeTarget()) history.replaceState({}, '', urlOf(routeTarget()));
   const revision = ++renderRevision;
   const requested = parseRoute();
   if (
@@ -139,7 +111,6 @@ async function render() {
   const route = (app.route = parseRoute());
   app.pageSave = null;
   closePopup();
-  endPluginFrame(); // a plugin page that was open stops listening
   document.body.dataset.page = route.page;
   view.className = 'view-' + route.page;
   try {

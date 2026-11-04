@@ -6,7 +6,9 @@ const path = require('node:path');
 const vm = require('node:vm');
 
 const root = path.join(__dirname, '..');
-const scripts = [...fs.readFileSync(path.join(root, 'index.html'), 'utf8').matchAll(/<script[^>]*\ssrc="([^"]+)"/g)].map(m => m[1].split('?')[0]);
+const scripts = [
+  ...fs.readFileSync(path.join(root, 'index.html'), 'utf8').matchAll(/<script[^>]*\ssrc="([^"]+)"/g),
+].map(m => m[1].split('?')[0]);
 
 test('every script listed in index.html parses', () => {
   assert.ok(scripts.length > 10);

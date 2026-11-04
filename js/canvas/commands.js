@@ -269,18 +269,20 @@ function renameGroup(id = primarySelection()?.group?.id) {
   if (!group) return;
   const title =
     $(`.frame[data-frame="${CSS.escape(id)}"] .title`) || $(`.node[data-id="complex:${CSS.escape(id)}"] .title`);
-  inlineRename(title, group.name, async name => {
-    await saveGroups(
-      W.snapshot.groups.map(g => ({
-        id: g.id,
-        name: g.id === group.id ? name : g.name,
-        members: g.members,
-        parent: g.parent,
-        position: g.position,
-      }))
-    );
-    await reload();
-  });
+  inlineRename(title, group.name, name => saveGroupName(group.id, name));
+}
+/** Gives a group a new name (a group is kept as a list with the others, so the whole list is saved). */
+async function saveGroupName(id, name) {
+  await saveGroups(
+    W.snapshot.groups.map(g => ({
+      id: g.id,
+      name: g.id === id ? name : g.name,
+      members: g.members,
+      parent: g.parent,
+      position: g.position,
+    }))
+  );
+  await reload();
 }
 
 /** Opens a Library node in its graph editor (the only place where a Complex Node can be changed). */

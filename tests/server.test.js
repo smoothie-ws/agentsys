@@ -124,10 +124,6 @@ test('a request writes only what it changed: a default that was only read is not
     walk(dataDir);
     for (const junk of ['other/triggers.json', 'other/node_disabled_folders.json'])
       assert.ok(!files.includes(junk), `${junk} holds only a default and is not written`);
-    assert.ok(
-      JSON.parse(fs.readFileSync(path.join(dataDir, 'other/node_folder_icons.json'), 'utf8')).AI,
-      'the installed plugin has a real AI group icon'
-    );
     for (const file of files.filter(f => f.endsWith('.json')))
       assert.notEqual(
         fs.readFileSync(path.join(dataDir, file), 'utf8').trim(),
@@ -431,8 +427,6 @@ test('the app is at /editor/ (/ goes there) and everything it loads is under /ed
       'settings/',
       'projects/',
       'library',
-      'library/nodes',
-      'library/ai.providers/provider.example',
       'p/lib-builtin.delay/w/lib-builtin.delay/',
     ]) {
       const response = await fetch(url + '/editor/' + page);
@@ -440,9 +434,6 @@ test('the app is at /editor/ (/ goes there) and everything it loads is under /ed
       assert.match(response.headers.get('content-type'), /text\/html/, page);
       assert.match(await response.text(), /id="brand"/, page);
     }
-    const plugins = (await call(url, 'GET', 'plugins')).body.plugins;
-    assert.ok(plugins.some(p => p.id === 'ai' && p.enabled));
-    assert.ok(fs.existsSync(path.join(app.dataDir, 'plugins', 'ai', 'package.json')));
   });
 });
 

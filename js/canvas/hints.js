@@ -44,7 +44,10 @@ function setHintMode(mode, detail = {}) {
 }
 
 const hintItem = (keys, label, on = false) =>
-  `<span class="hint${on ? ' on' : ''}">${[].concat(keys).map(k => `<kbd>${esc(k)}</kbd>`).join('')}<span>${esc(label)}</span></span>`;
+  `<span class="hint${on ? ' on' : ''}">${[]
+    .concat(keys)
+    .map(k => `<kbd>${esc(k)}</kbd>`)
+    .join('')}<span>${esc(label)}</span></span>`;
 
 /** The hints for the current mode and selection: [[keys, label, highlighted?], ...]. */
 function hintList() {
@@ -55,7 +58,13 @@ function hintList() {
     case 'node':
       return [
         ['Drag', 'Move'],
-        ['Ctrl', detail.carried ? `Moving ${plural(detail.carried, 'node')} downstream too` : 'Hold at the start to move the nodes it feeds too', !!detail.carried],
+        [
+          'Ctrl',
+          detail.carried
+            ? `Moving ${plural(detail.carried, 'node')} downstream too`
+            : 'Hold at the start to move the nodes it feeds too',
+          !!detail.carried,
+        ],
         snap,
         ['Drop on a group', 'Put in it'],
         ['Drop on a wire', 'Insert'],
@@ -66,15 +75,37 @@ function hintList() {
       return [['Drag', 'Resize'], snap];
   }
   const items = [];
-  if (W.edges.size) return [[key('delete'), 'Disconnect'], ['Click', 'Select another'], [key('cancel'), 'Deselect']];
+  if (W.edges.size)
+    return [
+      [key('delete'), 'Disconnect'],
+      ['Click', 'Select another'],
+      [key('cancel'), 'Deselect'],
+    ];
   if (W.selected.size) {
-    items.push(['Drag', 'Move'], ['Ctrl+Drag', 'Move with the nodes it feeds'], [key('multiSelect') + '+Click', 'Add to selection']);
-    items.push([key('copy'), 'Copy'], [key('delete'), 'Delete'], [key('group'), 'Group'], [key('dissolve'), 'Dissolve'], [key('disable'), 'Disable'], [key('fold'), 'Collapse']);
+    items.push(
+      ['Drag', 'Move'],
+      ['Ctrl+Drag', 'Move with the nodes it feeds'],
+      [key('multiSelect') + '+Click', 'Add to selection']
+    );
+    items.push(
+      [key('copy'), 'Copy'],
+      [key('delete'), 'Delete'],
+      [key('group'), 'Group'],
+      [key('dissolve'), 'Dissolve'],
+      [key('disable'), 'Disable'],
+      [key('fold'), 'Collapse']
+    );
     if (selectedFrames().length) items.push([key('renameGroup'), 'Rename']);
     items.push(snap, [key('fit'), 'Fit selection']);
     return items;
   }
-  items.push(['Drag', 'Pan'], ['Wheel', 'Zoom'], [key('marquee'), 'Box select'], [key('selectAll'), 'Select all'], ['Right click', 'Add / menu']);
+  items.push(
+    ['Drag', 'Pan'],
+    ['Wheel', 'Zoom'],
+    [key('marquee'), 'Box select'],
+    [key('selectAll'), 'Select all'],
+    ['Right click', 'Add / menu']
+  );
   if (!W.library) items.push([key('run'), 'Run']);
   items.push([key('undo'), 'Undo'], snap, [key('fit'), 'Fit'], [key('togglePanel'), 'Panel']);
   return items;
@@ -83,7 +114,11 @@ function hintList() {
 function updateHints() {
   const list = $('#hint-list');
   if (!list) return;
-  list.innerHTML = W.hintsShown ? hintList().map(([keys, label, on]) => hintItem(keys, label, on)).join('') : '';
+  list.innerHTML = W.hintsShown
+    ? hintList()
+        .map(([keys, label, on]) => hintItem(keys, label, on))
+        .join('')
+    : '';
   fitHints();
 }
 

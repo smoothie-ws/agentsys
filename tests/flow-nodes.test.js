@@ -1,12 +1,12 @@
 'use strict';
-// The loop and flow-control Library nodes of examples/flow-nodes.json (For, For each, While, Break, Continue, Variable), imported the way the
-// Library imports them and run on the real engine. Run with:  node --test
+// The built-in loop and flow-control Library nodes (For, For each, While, Break, Continue, Variable), placed from the Library and run on the
+// real engine. Run with:  node --test
 const test = require('node:test');
 const assert = require('node:assert/strict');
 const {createApp, nodes, fn} = require('./harness');
-const entries = require('../js/storage/format').decode(require('../examples/flow-nodes.json'));
 
 async function project(app) {
+  await app.api('POST', 'library/builtin');
   const {id} = await app.api('POST', 'projects', {name: 'Flow'}),
     q = {workflow_id: id};
   app.context.log = [];
@@ -20,10 +20,9 @@ async function project(app) {
         ...q,
         add: [{source: from, source_port: port, target: to, target_port: target}],
       }),
-    /** A node of examples/flow-nodes.json, placed: answers the ID of its Library node. */
+    /** A built-in node, placed: answers the ID of the placed node. */
     put: async name => {
-      const entry = entries.find(e => e.name === name);
-      const item = await app.api('POST', 'resources', {name, payload: {...entry.payload, folder: ''}});
+      const item = (await app.api('GET', 'resources')).find(r => r.name === name);
       const placed = await app.api('POST', `projects/${id}/custom-nodes/${item.id}`, {...q, point: {x: 0, y: 0}});
       return 'complex:' + placed.roots[0];
     },

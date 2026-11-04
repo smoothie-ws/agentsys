@@ -8,6 +8,7 @@ let navJoinedKey = null;
 const applyNavJoined = (on, layoutKey = '') => {
   const switched = document.body.classList.contains('nav-joined') !== on;
   document.body.classList.toggle('nav-joined', on);
+  document.documentElement.classList.toggle('nav-joined-root', on);
   if (!switched && layoutKey === navJoinedKey) return; // a colour change leaves every row where it was: no layout pass for it
   navJoinedKey = layoutKey;
   requestAnimationFrame(() => placePills(true, true));
@@ -17,12 +18,6 @@ const applyNavJoined = (on, layoutKey = '') => {
 function sectionOf(route) {
   if (route.project?.startsWith('lib-')) return 'library'; // a Custom Node is edited as a workflow
   if (route.project || route.page === 'projects') return 'projects';
-  if (
-    route.page === 'plugins' &&
-    route.view &&
-    pluginContributions(pluginById(route.id)).pages.some(x => x.id === route.view && x.section === 'library')
-  )
-    return 'library'; // a page a plugin puts into the Library
   return {resources: 'library', plugins: 'plugins', settings: 'settings', api: 'home'}[route.page] || 'home';
 }
 const SECTION_TITLES = {
@@ -74,6 +69,7 @@ const navOpen = new Set();
  * makes it a group with a chevron and a branch that unfolds; `menu` is what its "⋯" opens (see menuItems);
  * `drag`/`drop` make it a Custom Node that can be moved, or a place it can be moved to.
  */
+const holdsActive = (n, active) => !!n.children?.some(c => c.key === active || holdsActive(c, active));
 function navRow(n, active) {
   const group = n.children !== undefined,
     open = group && (n.open ?? navOpen.has(n.key)),
@@ -85,7 +81,7 @@ function navRow(n, active) {
   }${n.href ? `<a href="${esc(n.href)}" data-link title="${esc(n.label)}" ${here ? 'aria-current="page"' : ''}>${icon(n.icon)}<span>${esc(n.label)}</span></a>` : `<div class="subnav-static">${icon(n.icon)}<span>${esc(n.label)}</span></div>`}${n.menu ? `<button type="button" class="icon subnav-menu" data-menu="${esc(n.menu)}" aria-label="Actions of ${esc(n.label)}">${icon('dots')}</button>` : ''}</div>`;
   if (!group) return row;
   const kids = n.children ? n.children.map(c => navRow(c, active)).join('') : '';
-  return `<div class="subnav-group ${open ? 'open' : ''}" data-group="${esc(n.key)}">${row}<div class="subnav-branch"><div>${kids || `<p class="muted small">${n.children ? 'Nothing here yet.' : '…'}</p>`}</div></div></div>`;
+  return `<div class="subnav-group ${open ? 'open' : ''}${holdsActive(n, active) ? ' on-path' : ''}" data-group="${esc(n.key)}">${row}<div class="subnav-branch"><div>${kids || `<p class="muted small">${n.children ? 'Nothing here yet.' : '…'}</p>`}</div></div></div>`;
 }
 
 /** Opens or closes a group; its branch slides, and the highlight follows the rows below it while they move. */
@@ -209,62 +205,36 @@ const NAV_TREES = {
       }),
     ],
   }),
+  plugins: route => ({
+    active: route.id ? 'pl:' + route.id : 'overview:plugins',
+    rows: () =>
+      (app.plugins || []).map(p => ({
+        key: 'pl:' + p.id,
+        label: p.title,
+        icon: 'plug',
+        href: '/plugins/' + encodeURIComponent(p.id),
+        menu: 'plugin:' + p.id,
+      })),
+  }),
   library: route => {
-    const nodeId = route.project?.startsWith('lib-')
-      ? route.project.slice(4)
-      : route.section === 'nodes'
-        ? route.id
-        : null;
+    const nodeId = route.project?.startsWith('lib-') ? route.project.slice(4) : route.id;
     return {
-      active:
-        pluginActiveKey(route) ||
-        (nodeId
-          ? 'r:' + nodeId
-          : route.section === 'nodes'
-            ? route.folder
-              ? folderKey(route.folder)
-              : 's:nodes'
-            : route.id
-              ? `ci:${route.section}:${route.id}`
-              : route.folder
-                ? `cf:${route.section}:${route.folder}`
-                : route.section
-                  ? 'cs:' + route.section
-                  : 'overview:library'),
-      rows: () => [...catalogLibraryRows(), ...pluginSectionRows('library')],
+      active: nodeId
+        ? 'r:' + nodeId
+        : route.section
+          ? route.folder
+            ? folderKey(route.folder)
+            : 's:nodes'
+          : 'overview:library',
+      rows: () => [
+        {key: 's:nodes', label: 'Nodes', icon: 'complex', href: NODES_PATH, menu: 'nodes:', children: folderRows('')},
+      ],
     };
   },
-  plugins: route => ({
-    active: pluginActiveKey(route) || 'overview:plugins',
-    rows: () => [
-      ...(app.plugins || []).map(p => ({
-        key: 'pl:' + p.id,
-        label: p.manifest.name,
-        icon: pluginIcon(p),
-        href: pluginHref(p.id),
-        menu: 'plugin:' + p.id,
-        ...(p.enabled && pluginSectionRows('plugins', p.id).length
-          ? {children: pluginSectionRows('plugins', p.id)}
-          : {}),
-      })),
-    ],
-  }),
 };
 function pageMenu(route = app.route || {}) {
   if (route.page === 'resources')
-    return !route.section
-      ? ''
-      : route.section === 'nodes'
-        ? route.id
-          ? 'resource:' + route.id
-          : route.folder
-            ? 'folder:' + route.folder
-            : 'nodes:'
-        : route.id
-          ? catalogItemMenu(route.section, route.id)
-          : route.folder
-            ? catalogFolderMenu(route.section, route.folder)
-            : catalogSectionMenu(route.section);
+    return route.id ? 'resource:' + route.id : route.folder ? 'folder:' + route.folder : 'nodes:';
   if (route.page === 'plugins' && route.id) return 'plugin:' + route.id;
   if (route.project) return route.workflow ? `workflow:${route.project}:${route.workflow}` : 'project:' + route.project;
   return route.page === 'home' ? '' : 'section:' + route.page;
@@ -283,13 +253,6 @@ function renderSubnav(route) {
   shownSection = section;
   shownTarget = target;
   if (!tree) return Subnav.set(section, {title: SECTION_TITLES[section] || 'Navigation'});
-  const override = app.pluginNavigation;
-  if (override?.route === route)
-    return Subnav.set(section, {
-      title: override.title,
-      actions: actionButton('plugin:' + override.plugin, 'Section actions'),
-      body: `<nav class="subnav-tree">${override.items.map(item => navRow({key: 'pg:' + override.plugin + ':' + item.page, label: item.title, icon: item.icon, href: pluginHref(override.plugin, item.page), menu: 'plugin:' + override.plugin}, pluginActiveKey(route))).join('')}</nav>`,
-    });
   if (changed && section === 'projects' && route.project) navOpen.add('p:' + route.project);
   const rows = tree.rows();
   Subnav.set(section, {
@@ -501,44 +464,25 @@ async function resolveMenuItems(spec, owner) {
         (await api(`projects/${projectId}`)).workflows.find(w => w.id === workflowId);
     return workflow && workflowActions(projectId, workflow, title);
   }
-  if (type === 'plugin') {
-    const plugin = pluginById(arg);
-    return plugin && pluginActions(plugin);
-  }
-  if (type === 'plugin-template') {
-    const [id, key] = arg.split(':'),
-      plugin = pluginById(id),
-      template = pluginContributions(plugin).templates.find(t => t.id === key);
-    return template && templateActions(plugin, template);
-  }
   if (type === 'section') return sectionActions(arg);
-  if (type === 'library') return libraryActions();
   if (type === 'nodes') return nodesActions();
-  if (type === 'catalog-section') return catalogSectionActions(catalogDefinition(arg));
-  if (type === 'catalog-folder' || type === 'catalog-item') {
-    const split = arg.indexOf(':');
-    const section = catalogDefinition(arg.slice(0, split));
-    const value = arg.slice(split + 1);
-    return type === 'catalog-folder'
-      ? catalogFolderActions(section, decodeURIComponent(value))
-      : catalogItemActions(section, value);
-  }
   if (type === 'resource')
     return resourceActions(
       app.resources.find(r => r.id === arg),
       title
     );
   if (type === 'folder') return folderActions(arg, title);
+  if (type === 'plugin') return pluginActions((app.plugins || []).find(p => p.id === arg));
 }
 
 function sectionActions(section) {
-  if (section === 'library') return libraryActions();
+  if (section === 'library') return nodesActions();
   if (section === 'projects')
     return [
       ['New project', newProjectDialog, {icon: 'plus'}],
       ['Import project', importProjects, {icon: 'download'}],
     ];
-  if (section === 'plugins') return [['Import plugin', importPlugin, {icon: 'download'}]];
+  if (section === 'plugins') return [['Reload plugins', reloadPlugins, {icon: 'refresh'}]];
   if (section === 'settings')
     return [['Restore defaults', () => app.restoreSettings?.(), {icon: 'refresh', disabled: !app.restoreSettings}]];
   if (section === 'api')

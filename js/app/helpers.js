@@ -8,7 +8,8 @@ const esc = value =>
     /[&<>"']/g,
     c => ({'&': '&amp;', '<': '&lt;', '>': '&gt;', '"': '&quot;', "'": '&#39;'})[c]
   );
-const isUploadedIcon = value => /^(?:data:image\/png;base64,[a-z0-9+/]+=*|data:image\/svg\+xml,%3C.*)$/i.test(value || '');
+const isUploadedIcon = value =>
+  /^(?:data:image\/png;base64,[a-z0-9+/]+=*|data:image\/svg\+xml,%3C.*)$/i.test(value || '');
 const icon = name =>
   isUploadedIcon(name)
     ? `<img class="custom-icon" src="${esc(name)}" alt="" aria-hidden="true">`
@@ -166,7 +167,7 @@ function drag(event, move, end) {
   addEventListener('pointercancel', onUp);
 }
 
-/** Reusable JSON file exchange for Library, projects, workflows and themes. */
+/** Reusable JSON file exchange for Library, projects, workflows. */
 function pickFiles({multiple = true, accept = '.json,application/json'} = {}) {
   return new Promise(resolve => {
     const input = document.createElement('input');

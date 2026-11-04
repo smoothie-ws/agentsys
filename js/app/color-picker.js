@@ -38,7 +38,12 @@ function colorPicker(anchor, {color: current, alpha: withOpacity = true, none = 
     menu.classList.add('in-dialog');
   }
   menu.classList.toggle('no-alpha', !withOpacity);
-  menu.innerHTML = `<div class="color-picker"><div class="color-options">${SWATCHES.filter(color => color || none).map(color => `<button class="swatch" data-node-color="${color || ''}" style="${color ? `background:${color}` : ''}" title="${color || 'Default'}" aria-label="${color || 'Default color'}"></button>`).join('')}</div>
+  menu.innerHTML = `<div class="color-picker"><div class="color-options">${SWATCHES.filter(color => color || none)
+    .map(
+      color =>
+        `<button class="swatch" data-node-color="${color || ''}" style="${color ? `background:${color}` : ''}" title="${color || 'Default'}" aria-label="${color || 'Default color'}"></button>`
+    )
+    .join('')}</div>
     <div class="sv" tabindex="0" aria-label="Saturation and brightness"><i class="sv-dot"></i></div>
     <input type="range" class="hue" min="0" max="360" step="1" aria-label="Hue">
     <label class="opacity-value"><span>Opacity</span><span class="opacity-percent"><input class="alpha-number" type="number" min="0" max="100" step="1" aria-label="Opacity percentage"><span>%</span></span></label>

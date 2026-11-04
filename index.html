@@ -15,7 +15,6 @@
   <link rel="stylesheet" href="css/overlays.css">
   <link rel="stylesheet" href="css/canvas.css">
   <link rel="stylesheet" href="css/inspector.css">
-  <link rel="stylesheet" href="css/theme-components.css">
   <link rel="stylesheet" href="css/mobile.css">
   <script defer src="js/storage/db.js"></script>
   <script defer src="js/storage/format.js"></script>
@@ -33,20 +32,15 @@
   <script defer src="js/backend/runtime.js"></script>
   <script defer src="js/backend/routes-app.js"></script>
   <script defer src="js/backend/routes-projects.js"></script>
-  <script defer src="js/backend/execution-store.js"></script>
   <script defer src="js/backend/execution.js"></script>
   <script defer src="js/backend/routes-workflow.js"></script>
   <script defer src="js/backend/routes-library.js"></script>
   <script defer src="js/backend/routes-permissions.js"></script>
   <script defer src="js/backend/routes-exchange.js"></script>
-  <script defer src="js/backend/plugin-api.js"></script>
-  <script defer src="js/backend/plugins.js"></script>
-  <script defer src="js/backend/library-catalog.js"></script>
-  <script defer src="js/backend/plugin-runtime.js"></script>
-  <script defer src="js/backend/builtin-plugins.js"></script>
-  <script defer src="js/backend/routes-plugins.js"></script>
   <script defer src="js/backend/routes-notifications.js"></script>
+  <script defer src="js/backend/routes-plugins.js"></script>
   <script defer src="js/backend/builtin-nodes.js"></script>
+  <script defer src="js/backend/graph-nodes.js"></script>
   <script defer src="js/backend/routes-builtin.js"></script>
   <script defer src="js/app/helpers.js"></script>
   <script defer src="js/app/markdown.js"></script>
@@ -64,12 +58,9 @@
   <script defer src="js/app/mobile.js"></script>
   <script defer src="js/pages/shared.js"></script>
   <script defer src="js/pages/projects.js"></script>
-  <script defer src="js/pages/themes.js"></script>
-  <script defer src="js/pages/theme-editor.js"></script>
   <script defer src="js/pages/settings.js"></script>
-  <script defer src="js/pages/library.js"></script>
-  <script defer src="js/pages/catalog.js"></script>
   <script defer src="js/pages/plugins.js"></script>
+  <script defer src="js/pages/library.js"></script>
   <script defer src="js/pages/api.js"></script>
   <script defer src="js/pages/home.js"></script>
   <script defer src="js/canvas/page.js"></script>
@@ -100,13 +91,14 @@
     <symbol id="i-redo" viewBox="0 0 24 24"><path d="m15 14 5-5-5-5"/><path d="M20 9H10a6 6 0 0 0 0 12h3"/></symbol>
     <symbol id="i-fit" viewBox="0 0 24 24"><path d="M4 9V4h5M20 9V4h-5M4 15v5h5M20 15v5h-5"/></symbol>
     <symbol id="i-search" viewBox="0 0 24 24"><circle cx="10.5" cy="10.5" r="6.5"/><path d="m16 16 5 5"/></symbol>
+    <symbol id="i-plug" viewBox="0 0 24 24"><path d="M8 3v5m8-5v5M6 8h12v4a6 6 0 0 1-12 0zM12 18v4"/></symbol>
+    <symbol id="i-bell" viewBox="0 0 24 24"><path d="M6 9a6 6 0 0 1 12 0c0 6 2 7 2 8H4c0-1 2-2 2-8zM10 20a2 2 0 0 0 4 0"/></symbol>
     <symbol id="i-settings" viewBox="0 0 24 24"><path d="m9.5 3-.6 2.3-1.4.8-2.3-.6-2.5 4.3 1.7 1.7v1.6l-1.7 1.7 2.5 4.3 2.3-.6 1.4.8.6 2.3h5l.6-2.3 1.4-.8 2.3.6 2.5-4.3-1.7-1.7v-1.6l1.7-1.7-2.5-4.3-2.3.6-1.4-.8L14.5 3z"/><circle cx="12" cy="12" r="3"/></symbol>
     <symbol id="i-palette" viewBox="0 0 24 24"><path d="M12 3a9 9 0 1 0 0 18h1a2 2 0 0 0 1-3.7 1.4 1.4 0 0 1 .7-2.6H17a4 4 0 0 0 4-4C21 6.4 17 3 12 3Z"/><circle cx="7.5" cy="10" r=".7"/><circle cx="11" cy="7" r=".7"/><circle cx="15.5" cy="8" r=".7"/></symbol>
     <symbol id="i-power" viewBox="0 0 24 24"><path d="M12 3v8M6.6 6.6a8 8 0 1 0 10.8 0"/></symbol>
 <symbol id="i-magnet" viewBox="0 0 24 24"><path d="M6 3v8a6 6 0 0 0 12 0V3M6 8h4M14 8h4"/></symbol>
     <symbol id="i-keyboard" viewBox="0 0 24 24"><rect x="2" y="5" width="20" height="14" rx="2"/><path d="M6 9h1m3 0h1m3 0h1m3 0h1M6 12h1m3 0h1m3 0h1m3 0h1M7 16h10"/></symbol>
     <symbol id="i-server" viewBox="0 0 24 24"><rect x="3" y="3" width="18" height="7" rx="2"/><rect x="3" y="14" width="18" height="7" rx="2"/><path d="M7 6.5h.01M7 17.5h.01M12 6.5h5M12 17.5h5"/></symbol>
-    <symbol id="i-plug" viewBox="0 0 24 24"><path d="M8 3v5m8-5v5M6 8h12v4a6 6 0 0 1-12 0zM12 18v4"/></symbol>
     <symbol id="i-spark" viewBox="0 0 24 24"><path d="m12 3 2.5 6.5L21 12l-6.5 2.5L12 21l-2.5-6.5L3 12l6.5-2.5z"/></symbol>
     <symbol id="i-terminal" viewBox="0 0 24 24"><rect x="3" y="4" width="18" height="16" rx="2"/><path d="m7 8 4 4-4 4m6 0h4"/></symbol>
     <symbol id="i-user" viewBox="0 0 24 24"><circle cx="12" cy="8" r="4"/><path d="M4 21v-2a8 8 0 0 1 16 0v2"/></symbol>
@@ -152,7 +144,6 @@
     <symbol id="i-filter" viewBox="0 0 24 24"><path d="M3 5h18l-7 8v6l-4 2v-8z"/></symbol>
     <symbol id="i-key" viewBox="0 0 24 24"><circle cx="8" cy="15" r="4"/><path d="m11 12 9-9M16 7l3 3"/></symbol>
     <symbol id="i-lock" viewBox="0 0 24 24"><rect x="5" y="11" width="14" height="10" rx="2"/><path d="M8 11V8a4 4 0 0 1 8 0v3"/></symbol>
-    <symbol id="i-bell" viewBox="0 0 24 24"><path d="M6 9a6 6 0 0 1 12 0c0 6 2 7 2 8H4c0-1 2-2 2-8zM10 20a2 2 0 0 0 4 0"/></symbol>
     <symbol id="i-chart" viewBox="0 0 24 24"><path d="M4 20V4M4 20h16M8 16v-5M13 16V7M18 16v-8"/></symbol>
     <symbol id="i-cloud" viewBox="0 0 24 24"><path d="M7 18a4 4 0 0 1-.5-8A6 6 0 0 1 18 9a4.5 4.5 0 0 1 0 9z"/></symbol>
     <symbol id="i-flag" viewBox="0 0 24 24"><path d="M5 21V4M5 5h12l-2 4 2 4H5"/></symbol>

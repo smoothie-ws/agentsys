@@ -1,7 +1,7 @@
 'use strict';
 // Regenerates js/backend/builtin-nodes.js (the built-in Library catalog) from the Library of a running server:
 //   node tools/export-builtin.js http://127.0.0.1:8080 [AGENTSYS_TOKEN]
-// Every Library node of that server becomes a built-in node. Review the diff, then commit.
+// The built-in nodes of that server's Library are written back. Review the diff, then commit.
 const fs = require('node:fs');
 const path = require('node:path');
 
@@ -12,7 +12,8 @@ const [base = 'http://127.0.0.1:8080', token] = process.argv.slice(2);
   });
   if (!response.ok) throw new Error(`GET /api/resources answered ${response.status}`);
   const nodes = (await response.json())
-    .filter(r => !r.id.startsWith('plugin.')) // a plugin's nodes come with the plugin
+    // Only the built-in nodes of this file: not a plugin's or the person's own, and not the Graph and Data nodes (graph-nodes.js).
+    .filter(r => r.id.startsWith('builtin.') && !['Graph', 'Data'].includes(r.payload.folder))
     .map(r => ({name: r.name, payload: r.payload}))
     .sort((a, b) => a.name.localeCompare(b.name, undefined, {sensitivity: 'base'}));
   const file = path.join(__dirname, '..', 'js', 'backend', 'builtin-nodes.js');

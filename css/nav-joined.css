@@ -1,17 +1,21 @@
 /* Connected navigation: the open item of a panel flows into the next panel, like a folder tab (three tones: sidebar < second panel < content).
    Everything here is scoped to `body.nav-joined`; Settings > Appearance > Effects switches the class, so removing the class (or this file) restores the plain look. */
 body.nav-joined {
-  --j-1: var(--theme-panels-sidebar, color-mix(in srgb, var(--surface) 30%, var(--background))); /* sidebar */
-  --j-2: var(--theme-panels-secondary, color-mix(in srgb, var(--surface) 55%, var(--background))); /* second panel */
-  --j-3: var(--theme-panels-content, var(--background)); /* content: the same colour as without this file */
+  --j-1: color-mix(in srgb, var(--surface) 30%, var(--background)); /* sidebar */
+  --j-2: color-mix(in srgb, var(--surface) 55%, var(--background)); /* second panel */
+  --j-3: var(--background); /* content: the same colour as without this file */
   --tail: 150px; /* width of the seam inside the next panel */
   --seam: 8%; /* how strongly the seam starts in the accent colour: quiet, it should be felt more than seen */
-  --join-r: var(--theme-panels-radius, 21px);
+  --join-r: 21px;
   --edge-line: color-mix(in srgb, var(--text) 13%, transparent); /* the thin line between two panels */
   /* the same palette for everything that floats (menus, dialogs, toolbar, minimap) and the same accent-tinted hover */
-  --float: color-mix(in srgb, var(--j-2) 60%, transparent); /* glass again: the blur of the menu / dialog shows through */
+  --float: color-mix(
+    in srgb,
+    var(--j-2) 60%,
+    transparent
+  ); /* glass again: the blur of the menu / dialog shows through */
   /* the panels are translucent glass; over the plain background they compose to exactly --j-1 / --j-2, so the pill and the seam still match them */
-  --glass-2: var(--theme-panels-secondary, color-mix(in srgb, var(--surface) 55%, transparent));
+  --glass-2: color-mix(in srgb, var(--surface) 55%, transparent);
   --hover: color-mix(in srgb, var(--accent) 12%, color-mix(in srgb, var(--text) 9%, transparent));
   --join-sidebar: color-mix(in srgb, var(--accent) var(--seam), var(--j-2)); /* seam on the second panel */
   --join-subnav: color-mix(in srgb, var(--accent) var(--seam), var(--j-3)); /* seam on the content */
@@ -45,7 +49,7 @@ body.nav-joined {
   padding-right: 0;
 }
 /* The glow of the open row reaches past the window's edge, and so does the sidebar's 8px clip margin: nothing of it may make the page itself scroll. */
-html:has(body.nav-joined) {
+html.nav-joined-root {
   overflow: hidden;
 }
 /* The list scrolls inside its own box; its right padding is where the open row reaches the edge, its top padding holds the upper curve. */
@@ -74,26 +78,26 @@ body.nav-joined #mobile-secondary > .nav-pill {
   --ramp-pill: linear-gradient(
     var(--dir),
     var(--pill-own) 0,
-    color-mix(in srgb, var(--pill-own) 100%, var(--join)) calc(100% - min(var(--len), 100%) * 1),
-    color-mix(in srgb, var(--pill-own) 99.4%, var(--join)) calc(100% - min(var(--len), 100%) * 0.95),
-    color-mix(in srgb, var(--pill-own) 97.6%, var(--join)) calc(100% - min(var(--len), 100%) * 0.9),
-    color-mix(in srgb, var(--pill-own) 94.6%, var(--join)) calc(100% - min(var(--len), 100%) * 0.85),
-    color-mix(in srgb, var(--pill-own) 90.5%, var(--join)) calc(100% - min(var(--len), 100%) * 0.8),
-    color-mix(in srgb, var(--pill-own) 85.4%, var(--join)) calc(100% - min(var(--len), 100%) * 0.75),
-    color-mix(in srgb, var(--pill-own) 79.4%, var(--join)) calc(100% - min(var(--len), 100%) * 0.7),
-    color-mix(in srgb, var(--pill-own) 72.7%, var(--join)) calc(100% - min(var(--len), 100%) * 0.65),
-    color-mix(in srgb, var(--pill-own) 65.5%, var(--join)) calc(100% - min(var(--len), 100%) * 0.6),
-    color-mix(in srgb, var(--pill-own) 57.8%, var(--join)) calc(100% - min(var(--len), 100%) * 0.55),
-    color-mix(in srgb, var(--pill-own) 50%, var(--join)) calc(100% - min(var(--len), 100%) * 0.5),
-    color-mix(in srgb, var(--pill-own) 42.2%, var(--join)) calc(100% - min(var(--len), 100%) * 0.45),
-    color-mix(in srgb, var(--pill-own) 34.5%, var(--join)) calc(100% - min(var(--len), 100%) * 0.4),
-    color-mix(in srgb, var(--pill-own) 27.3%, var(--join)) calc(100% - min(var(--len), 100%) * 0.35),
-    color-mix(in srgb, var(--pill-own) 20.6%, var(--join)) calc(100% - min(var(--len), 100%) * 0.3),
-    color-mix(in srgb, var(--pill-own) 14.6%, var(--join)) calc(100% - min(var(--len), 100%) * 0.25),
-    color-mix(in srgb, var(--pill-own) 9.5%, var(--join)) calc(100% - min(var(--len), 100%) * 0.2),
-    color-mix(in srgb, var(--pill-own) 5.4%, var(--join)) calc(100% - min(var(--len), 100%) * 0.15),
-    color-mix(in srgb, var(--pill-own) 2.4%, var(--join)) calc(100% - min(var(--len), 100%) * 0.1),
-    color-mix(in srgb, var(--pill-own) 0.6%, var(--join)) calc(100% - min(var(--len), 100%) * 0.05),
+    color-mix(in srgb, var(--pill-own) 100%, var(--join)) 0%,
+    color-mix(in srgb, var(--pill-own) 99.4%, var(--join)) 5%,
+    color-mix(in srgb, var(--pill-own) 97.6%, var(--join)) 10%,
+    color-mix(in srgb, var(--pill-own) 94.6%, var(--join)) 15%,
+    color-mix(in srgb, var(--pill-own) 90.5%, var(--join)) 20%,
+    color-mix(in srgb, var(--pill-own) 85.4%, var(--join)) 25%,
+    color-mix(in srgb, var(--pill-own) 79.4%, var(--join)) 30%,
+    color-mix(in srgb, var(--pill-own) 72.7%, var(--join)) 35%,
+    color-mix(in srgb, var(--pill-own) 65.5%, var(--join)) 40%,
+    color-mix(in srgb, var(--pill-own) 57.8%, var(--join)) 45%,
+    color-mix(in srgb, var(--pill-own) 50%, var(--join)) 50%,
+    color-mix(in srgb, var(--pill-own) 42.2%, var(--join)) 55%,
+    color-mix(in srgb, var(--pill-own) 34.5%, var(--join)) 60%,
+    color-mix(in srgb, var(--pill-own) 27.3%, var(--join)) 65%,
+    color-mix(in srgb, var(--pill-own) 20.6%, var(--join)) 70%,
+    color-mix(in srgb, var(--pill-own) 14.6%, var(--join)) 75%,
+    color-mix(in srgb, var(--pill-own) 9.5%, var(--join)) 80%,
+    color-mix(in srgb, var(--pill-own) 5.4%, var(--join)) 85%,
+    color-mix(in srgb, var(--pill-own) 2.4%, var(--join)) 90%,
+    color-mix(in srgb, var(--pill-own) 0.6%, var(--join)) 95%,
     var(--join) 100%
   );
   --ramp-seam: linear-gradient(
@@ -130,7 +134,7 @@ body.nav-joined #mobile-secondary > .nav-pill {
   z-index: 0;
   display: block;
   height: var(--h, 0);
-  border-radius: var(--theme-navigation-radius, 15px) 0 0 var(--theme-navigation-radius, 15px);
+  border-radius: var(--nav-radius) 0 0 var(--nav-radius);
   transform: translateY(var(--y, 0));
   opacity: 1;
   pointer-events: none;
@@ -139,8 +143,7 @@ body.nav-joined #mobile-secondary > .nav-pill {
     height var(--slow) var(--ease),
     opacity var(--base) var(--ease);
   --dir: 90deg;
-  --len: 212px; /* the fade has this length whatever the width of the row: its start does not travel when the panel is resized */
-  --pill-own: var(--theme-navigation-selected, color-mix(in srgb, var(--accent) 26%, var(--own)));
+  --pill-own: color-mix(in srgb, var(--accent) 26%, var(--own));
   background: var(--dither), var(--ramp-pill);
 }
 .nav-joined .nav-pill.off {
@@ -186,7 +189,8 @@ body.nav-joined #mobile-secondary > .nav-pill {
   position: relative;
   z-index: 1;
 }
-.nav-joined :is(.brand.active, .sidebar-top a.active, .sidebar-footer a.active, .subnav-row.active, .subnav-row.active:hover) {
+.nav-joined
+  :is(.brand.active, .sidebar-top a.active, .sidebar-footer a.active, .subnav-row.active, .subnav-row.active:hover) {
   background: transparent;
 }
 .nav-joined .subnav-row.active {
@@ -261,23 +265,43 @@ body.nav-joined #mobile-secondary > .nav-pill {
   width: var(--join-r);
   pointer-events: none;
   background:
-    radial-gradient(circle at 100% 100%, transparent calc(var(--panel-top-r) - 1.8px), var(--edge-line) calc(var(--panel-top-r) - 1.8px), var(--edge-line) calc(var(--panel-top-r) - 0.8px), var(--corner) calc(var(--panel-top-r) - 0.8px)) top left / var(--panel-top-r) var(--panel-top-r) no-repeat,
-    radial-gradient(circle at 100% 0, transparent calc(var(--panel-bottom-r) - 1.8px), var(--edge-line) calc(var(--panel-bottom-r) - 1.8px), var(--edge-line) calc(var(--panel-bottom-r) - 0.8px), var(--corner) calc(var(--panel-bottom-r) - 0.8px)) bottom left / var(--panel-bottom-r) var(--panel-bottom-r) no-repeat,
-    linear-gradient(90deg, var(--edge-line) 1px, transparent 1px) 0 var(--panel-top-r) / 100% calc(100% - var(--panel-top-r) - var(--panel-bottom-r)) no-repeat;
+    radial-gradient(
+        circle at 100% 100%,
+        transparent calc(var(--panel-top-r) - 1.8px),
+        var(--edge-line) calc(var(--panel-top-r) - 1.8px),
+        var(--edge-line) calc(var(--panel-top-r) - 0.8px),
+        var(--corner) calc(var(--panel-top-r) - 0.8px)
+      )
+      top left / var(--panel-top-r) var(--panel-top-r) no-repeat,
+    radial-gradient(
+        circle at 100% 0,
+        transparent calc(var(--panel-bottom-r) - 1.8px),
+        var(--edge-line) calc(var(--panel-bottom-r) - 1.8px),
+        var(--edge-line) calc(var(--panel-bottom-r) - 0.8px),
+        var(--corner) calc(var(--panel-bottom-r) - 0.8px)
+      )
+      bottom left / var(--panel-bottom-r) var(--panel-bottom-r) no-repeat,
+    linear-gradient(90deg, var(--edge-line) 1px, transparent 1px) 0 var(--panel-top-r) / 100%
+      calc(100% - var(--panel-top-r) - var(--panel-bottom-r)) no-repeat;
 }
 
 /* One family: the rest of the shell speaks the same accent language as the open row (hover, tabs, the Properties panel). */
 .nav-joined .sidebar-top a:hover:not(.active),
 .nav-joined .sidebar-footer a:hover:not(.active),
 .nav-joined .subnav-row:hover:not(.active) {
-  background: var(--theme-navigation-hover, color-mix(in srgb, var(--accent) 9%, transparent));
+  background: color-mix(in srgb, var(--accent) 9%, transparent);
 }
 .nav-joined .tab:hover:not(.active) {
-  background: var(--theme-navigation-hover, color-mix(in srgb, var(--accent) 9%, transparent));
+  background: color-mix(in srgb, var(--accent) 9%, transparent);
 }
 .nav-joined .tab.active,
 .nav-joined .tab.active:hover {
-  background: var(--dither), linear-gradient(90deg, color-mix(in srgb, var(--accent) 26%, var(--j-3)), color-mix(in srgb, var(--accent) 9%, var(--j-3)));
+  background: var(--dither),
+    linear-gradient(
+      90deg,
+      color-mix(in srgb, var(--accent) 26%, var(--j-3)),
+      color-mix(in srgb, var(--accent) 9%, var(--j-3))
+    );
 }
 /* The Properties panel is docked like the left ones, mirrored: icon rail (sidebar tone) on the right, panel (second-panel tone) to its left;
    the open icon flows left into the panel through its own pill, and the panel's right edge carries the seam. */
@@ -291,12 +315,12 @@ body.nav-joined #mobile-secondary > .nav-pill {
   overflow: clip;
 }
 /* Folded to the icon rail, the panel is exactly the rail wide: no empty column of the panel tone between it and the canvas. */
-.nav-joined .editor:has(.side[data-collapsed='true']) {
+.nav-joined .editor[data-side-collapsed='true'] {
   grid-template-columns: minmax(0, 1fr) 56px;
 }
 @media (max-width: 900px) {
   .nav-joined .editor,
-  .nav-joined .editor:has(.side[data-collapsed='true']) {
+  .nav-joined .editor[data-side-collapsed='true'] {
     grid-template-columns: minmax(0, 1fr) 56px;
   }
 }
@@ -305,14 +329,16 @@ body.nav-joined #mobile-secondary > .nav-pill {
 }
 .nav-joined .side-tabs {
   position: relative;
-  padding-top: calc(2 * var(--join-r) + 0.15rem); /* leave room for both the panel corner and the first tab's joining curve */
+  padding-top: calc(
+    2 * var(--join-r) + 0.15rem
+  ); /* leave room for both the panel corner and the first tab's joining curve */
   background: none;
 }
 .nav-joined .side-content {
   isolation: isolate;
   position: relative;
   border-radius: var(--join-r);
-  background: var(--dither), var(--theme-panels-inspector, var(--glass-2));
+  background: var(--dither), var(--glass-2);
 }
 .nav-joined .side-content > .nav-seam {
   z-index: -1;
@@ -326,9 +352,9 @@ body.nav-joined #mobile-secondary > .nav-pill {
 .nav-joined .side-tabs .nav-pill {
   left: 0;
   right: var(--edge);
-  border-radius: 0 var(--theme-navigation-radius, 15px) var(--theme-navigation-radius, 15px) 0;
+  border-radius: 0 var(--nav-radius) var(--nav-radius) 0;
   --dir: 270deg;
-  --pill-own: var(--theme-navigation-selected, color-mix(in srgb, var(--accent) 26%, var(--own)));
+  --pill-own: color-mix(in srgb, var(--accent) 26%, var(--own));
   background: var(--dither), var(--ramp-pill);
 }
 .nav-joined .side-tabs .nav-pill::before,
@@ -340,7 +366,11 @@ body.nav-joined #mobile-secondary > .nav-pill {
   background: radial-gradient(circle at 100% 0, transparent calc(var(--curve-r) - 0.8px), var(--join) var(--curve-r));
 }
 .nav-joined .side-tabs .nav-pill::after {
-  background: radial-gradient(circle at 100% 100%, transparent calc(var(--curve-r) - 0.8px), var(--join) var(--curve-r));
+  background: radial-gradient(
+    circle at 100% 100%,
+    transparent calc(var(--curve-r) - 0.8px),
+    var(--join) var(--curve-r)
+  );
 }
 .nav-joined .side-tabs button {
   position: relative;
@@ -351,7 +381,7 @@ body.nav-joined #mobile-secondary > .nav-pill {
   background: transparent;
 }
 .nav-joined .side-tabs button:hover:not(.active) {
-  background: var(--theme-navigation-hover, color-mix(in srgb, var(--accent) 9%, transparent));
+  background: color-mix(in srgb, var(--accent) 9%, transparent);
 }
 
 /* Effects off: everything solid and flat again (the glass tones fall back to the opaque ones). */

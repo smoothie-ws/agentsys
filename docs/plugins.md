@@ -1,90 +1,71 @@
-﻿# Plugins
+# Plugins
 
-Plugins extend the application through executable packages. A module exports `activate(context)` and optionally `deactivate()`. The manifest describes metadata and loading requirements; registration and behavior live in code.
+Plugins work the way Substance Painter's do: a plugin is a folder, the application finds it at start-up, calls `start` when it loads and `stop` when it is turned off. There is no manifest, no package format and no sandbox. A plugin is trusted code that runs in the server process with the same rights as the server.
 
-## Package
-
-Import a JSON package from the Plugins menu:
-
-```json
-{
-  "format": "agentsys.plugin/2",
-  "manifest": {
-    "id": "example",
-    "name": "Example",
-    "version": "1.0.0",
-    "engine": ">=2",
-    "authors": [{"name": "Example author"}],
-    "main": "main.js",
-    "permissions": [],
-    "dependencies": {}
-  },
-  "files": {"main.js": "exports.activate = context => {};"}
-}
+```
+plugins/
+  hello/
+    main.js
 ```
 
-JavaScript modules use CommonJS. Relative packaged JavaScript and JSON modules are supported and cached. TypeScript compiles to CommonJS JavaScript with the declarations in [sdk/plugin.d.ts](../sdk/plugin.d.ts). Direct DOM, network, filesystem and Node module access are unavailable in the plugin host. Custom views use sandboxed HTML files.
-
-## Registration API
-
-The context supplies `app`, `id`, dependency metadata, `subscriptions.add(disposable)` and `onReady(callback)`.
-
-| Namespace           | Operations                                                                                       |
-| ------------------- | ------------------------------------------------------------------------------------------------ |
-| `app.library`       | Register sections, typed JSON collections and node catalogs; list/create/update/delete own items |
-| `app.commands`      | Register function handlers and execute owned commands                                            |
-| `app.endpoints`     | Register request handlers with method lists                                                      |
-| `app.views`         | Register packaged HTML pages and Dashboard tiles                                                 |
-| `app.templates`     | Register exported project templates                                                              |
-| `app.events`        | Subscribe to workspace, Library, settings and private-storage changes                            |
-| `app.timers`        | Owned timeout/interval callbacks                                                                 |
-| `app.settings`      | Register fields and read/write validated settings                                                |
-| `app.storage`       | Private bounded JSON store with compare-and-set versions                                         |
-| `app.secrets`       | Obtain a granted credential placeholder without reading its value                                |
-| `app.navigation`    | Return a navigation effect from a user command                                                   |
-| `app.notifications` | Post through the checked notifications API                                                       |
-| `app.workflows`     | Read/edit graphs, signal workflows and inspect their live runtime                                |
-
-`app.request(method,path,body,query)` provides other checked application operations. Lifecycle handlers stage registrations, validate them and publish them atomically. Failed activation clears partial registrations and displays its error. Each enabled plugin has an isolated Worker retaining callback closures. Disable/update/removal calls cleanup and terminates owned work. Stable collection IDs keep resource data across disable/re-enable.
-
-`app.workflows` also exposes `stop`, `dispatch`, `trace`, `getScope` and `setScope`. Durable checkpoint routes use ordinary `app.request` with `run.read`/`run.start`; see [Durable execution](durable-execution.md). A package can include the universal `sdk/operations.js` CommonJS library for callback orchestration. Nested checked endpoint calls retain their originating execution identity, inherited budgets and Stop signal. Plugin storage and checkpoint writes queued after callback cancellation are rejected. None of these interfaces expose internal server state.
-
-An endpoint may declare `permissions` required from a calling Script, for example `{permissions:['library.read']}`. Without a declaration it remains unavailable to Scripts. `net.fetch:{host}` resolves the host from the request body's URL. These checks do not replace the plugin's own API grants. Optional `timeout` sets a bounded callback budget (100–300000 ms). Calls made from an execution propagate Stop to the plugin's outstanding checked network operations.
-
-## Node catalogs
-
-`app.library.registerNodeCatalog(file)` seeds missing nodes into the ordinary Library data, like built-in nodes. Their graphs, names, groups, icons and default permissions can be edited normally in Developer mode. Placed copies inherit the saved defaults; plugin host grants are separate.
-
-The installation remembers which catalog nodes it has already added. Reactivation and updates preserve user edits and deletions, adding only new catalog entries. Disabling or uninstalling a plugin leaves these nodes in the Library. Graphs calling that plugin's endpoints require the plugin to be enabled.
-
-## Collections
+`main.js` is a CommonJS module:
 
 ```js
-exports.activate = ({app}) => {
-  const group = app.library.registerSection({id: 'tools', title: 'Tools'});
-  app.library.registerCollection({
-    id: 'notes',
-    title: 'Notes',
-    parent: group,
-    item: {name: 'Note', format: 'json', fields: [{key: 'body', label: 'Text', type: 'textarea'}]},
-  });
+exports.title = 'Hello';                       // optional, shown on the Plugins page
+exports.description = 'What it does.';         // optional
+
+exports.start = api => {                       // required
+  api.library.addScriptNode({name: 'Hello', folder: 'Plugins', inputs: ['name'], outputs: ['greeting'],
+    code: "node.output.greeting = 'Hello, ' + (node.input.name || 'world') + '!';"});
+  api.route('GET', 'greet', ({query}) => ({text: 'Hello, ' + (query.name || 'world')}));
 };
+
+exports.stop = () => {};                       // optional: undo what `start` did outside the api
 ```
 
-The application owns generic cards, folders, forms, CRUD and credential storage. The plugin owns its resource schema. Field types are `text`, `textarea`, `number`, `boolean`, `select`, `json`, `secret` and `list`; fields can specify defaults, help, required/unique values, JSON object/array shape and text ID/URL formats. A read-only `list` declares an `endpoint`: on opening an item or saving changes the host calls that POST endpoint with `{item_id}` and displays its `{items:[{id,label}]}` result. Lists are not saved as resource values. Actions name registered plugin endpoints. There are no domain-specific formats in the core.
+`plugins/hello` is a working example. `start` may be `async`. If it throws, the plugin stays stopped and the Plugins page shows the error; other plugins are not affected.
 
-Own item routes live at `library/sections/{plugin}.{collection}/items`. Secrets are stored separately, omitted from exports and represented by presence flags. Omitted secret fields preserve saved credentials; an empty secret removes one.
+## The api object
 
-The owning plugin's isolated host may read a saved credential with `app.library.getSecret(collection, itemId, fieldKey)`. Only its registered collections and secret fields are accessible. Ordinary resource CRUD and the page bridge have no credential-read operation; plugin authors must keep credentials out of handler results and logs. Network requests still require an explicit network grant.
+| Member | Does |
+| --- | --- |
+| `api.id` | the folder name |
+| `api.log(...)` | writes a line to the server's error output, prefixed with the id |
+| `api.request(method, path, body, query)` | calls the application API, the one the editor and Scripts use (`projects`, `resources`, `projects/{id}/typed-nodes`, ...). Not permission-checked: the plugin is trusted. |
+| `api.on('change', keys => {})` | called with the stored keys that changed. Returns the function that stops listening. |
+| `api.route(method, name, handler)` | answers `/api/plugins/{id}/{name}`. `handler({body, query, signal, caller})` returns JSON (it may be `async`). `signal` aborts when the calling run is stopped; `caller` is `{project_id, workflow_id, node_id}` of the calling Script. |
+| `api.notify({title, body, level, href})` | adds a message to the notification list (the bell at the top right); `level` is `info`, `success`, `warn` or `error`, `href` a page of the app |
+| `api.settings.get()` | the plugin's settings (below), saved values over the defaults |
+| `api.data.get()`, `api.data.set(value)` | private JSON the plugin keeps between runs |
+| `api.secret(name)` | the value of a stored secret (`PUT secrets/{name}`); the Secrets API itself never returns values |
+| `api.library.addScriptNode(spec)` | adds a node made of one Script to the Library unless a node of that name exists. `spec`: `{name, inputs, outputs, code, description, folder, icon, grants}`; ports are names or `{id, name, type}`. |
+| `api.library.add({name, payload})` | adds any Library node (a full graph payload) unless a node of that name exists |
 
-## Permissions and lifecycle
+## Settings
 
-Rights are requested in `manifest.permissions` and intersected with current installation grants on each call. Own collections, settings and private storage need no global Library permission. Cross-application operations use normal capability checks. Plugin management is never available to plugin code.
+`exports.settings = [{key, label, type, default, options, help}]` gives the plugin a form on its page, saved by itself. Types: `text`, `textarea`, `password`, `number`, `boolean`, `select` (with `options`). A password is stored on the server and never sent back to the page: the field shows only that one is saved, an empty field keeps it, and the page can clear it. The plugin reads the values with `api.settings.get()`. A malformed schema stops the plugin and shows the error.
 
-Dependency ranges support exact versions, `*`, `>=`, `^` and `~`. Dependencies activate first; missing/incompatible dependencies and cycles prevent enabling. Disable or removal is refused while enabled dependents require the plugin. Callback timeouts terminate a blocked host and clear registrations.
+Whatever a plugin registers with `on` and `route` is removed when it stops. Library nodes it added stay, like any Library node the person may edit or delete.
 
-Commands are available in Ctrl+K and at `POST plugins/{id}/commands/{command}`. Views receive `window.agentsys` with the checked request bridge, owned commands, settings, data and endpoint calls. Views cannot access the host DOM or network directly.
+## Turning plugins on and off
 
-## Bundled plugin
+The Plugins page (sidebar) shows every folder that has a `main.js` as a card, like the Library. A card opens the plugin's page: its state and any error, the routes it answers and its `README.md` if the folder has one. The card's menu turns the plugin on or off; the page menu has Reload plugins. Reload stops all plugins, scans the folder again and starts the enabled ones, so new, removed and edited plugins take effect without restarting the server. A plugin that is switched off stays off after a restart. The API behind the page:
 
-`plugins/ai` registers AI / Providers plus the AI node group (Provider, Model, Ask). Its module, schemas and graph scripts own model discovery and text requests; the core does not interpret models or provider options. Rebuild the distributable and node catalog with `npm run build:plugins`. Bundled updates preserve Provider data and disabled state. User-installed replacements are not overwritten.
+| Call | Does |
+| --- | --- |
+| `GET plugins` | `[{id, title, description, enabled, running, error}]` |
+| `GET plugins/{id}` | the same plus `routes`, `readme` and `settings` (with values; a password only as `set`) |
+| `PUT plugins/{id}` `{enabled}` | turns one on or off |
+| `PUT plugins/{id}/settings` `{values}` | saves settings (the name `settings` is reserved) |
+| `POST plugins/reload` | reloads the folder |
+| `GET/POST/PUT/DELETE plugins/{id}/{name}` | a route a plugin registered |
+
+`PLUGINS_DIR` selects another folder (default: `plugins/` beside `server.js`).
+
+## Scripts and plugins
+
+A Script can call a plugin's route with `await agentsys('GET', 'plugins/hello/greet', undefined, {name: 'Ann'})`. That needs the `plugins.call` permission on the node and in the project policy, like every other checked call. Listing and switching plugins is administrative and not available to Scripts.
+
+Plugins need the server. In a browser without the server there is no plugin host and the list is empty.
+
+To build an LLM controller on top of a plugin like this, see [building an LLM controller from nodes](llm-controller.md).

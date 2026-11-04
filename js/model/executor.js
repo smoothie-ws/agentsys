@@ -3,12 +3,11 @@
 function createGraphInterpreter(document, saved, env) {
   const {AsyncFunction, displayText, emit, call, gate} = env;
   let view = createGraphView(document, {context: env.context});
-  let graphRevision = document.graph_revision ?? null;
   const generations = new Map(),
     readScope = ctx => Object.assign(new Map(), {ctx});
   const nodes = {get: id => view.get(id)};
   let sequence = 0;
-  const identityKey = (ctx, kind) => `${ctx.execution?.dispatch_id ?? 'local'}:${kind}:${++sequence}`;
+  const nextKey = () => 'i' + ++sequence;
   const latest = new Map(); // node id -> Map(port id -> {v: value} | {j: json text of an object}): what a running node left last
   const versions = new Map(), // node id -> how many times its latest result has changed
     signatures = new Map(), // node id -> its latest result as text, to see whether a new one is different
@@ -28,18 +27,13 @@ function createGraphInterpreter(document, saved, env) {
    *  the emit that started the Script that emitted). A cancelled wave (and every wave below it) starts nothing new; what already runs finishes.
    *  `handles` are the control signals ("break", "continue") that the emit which opened the wave answers; `control` says which one arrived;
    *  `failFast`: the first failure inside the wave cancels it. */
-  const newWave = (parent, {handles = [], failFast = false} = {}, key = 'run') => {
-    const wave = {
-      key,
-      parent,
-      cancelled: false,
-      control: null,
-      handles: new Set(handles),
-      failFast,
-    };
-    return wave;
-  };
-  let runWave = newWave(null); // every wave is below it: cancelling it stops the whole run (node.flow.abort())
+  const newWave = (parent, {handles = [], failFast = false} = {}) => ({
+    parent,
+    cancelled: false,
+    control: null,
+    handles: new Set(handles),
+    failFast,
+  });
   const cancelledWave = wave => {
     for (let w = wave; w; w = w.parent) if (w.cancelled) return true;
     return false;
@@ -76,29 +70,28 @@ function createGraphInterpreter(document, saved, env) {
         return item;
       })
     );
-  const watchState = (value, guard, identity, proxies = new WeakMap()) => {
+  const watchState = (value, guard, proxies = new WeakMap()) => {
     if (value === null || typeof value !== 'object') return value;
     if (proxies.has(value)) return proxies.get(value);
+    const changed = () => {
+      stateRevision++;
+      tick++;
+      emit({ev: 'state', state: stateCopy(state)});
+    };
     const proxy = new Proxy(value, {
-      get: (target, name) => watchState(Reflect.get(target, name), guard, identity, proxies),
+      get: (target, name) => watchState(Reflect.get(target, name), guard, proxies),
       set(target, name, value) {
         guard();
         if (typeof name !== 'string' || ['__proto__', 'prototype', 'constructor'].includes(name))
           throw plain('Invalid state key');
         Reflect.set(target, name, stateCopy(value));
-        stateRevision++;
-        tick++;
-        emit({ev: 'state', state: stateCopy(state)});
-        emit({ev: 'state.changed', ...identity});
+        changed();
         return true;
       },
       deleteProperty(target, name) {
         guard();
         Reflect.deleteProperty(target, name);
-        stateRevision++;
-        tick++;
-        emit({ev: 'state', state: stateCopy(state)});
-        emit({ev: 'state.changed', ...identity});
+        changed();
         return true;
       },
       defineProperty() {
@@ -277,18 +270,16 @@ function createGraphInterpreter(document, saved, env) {
         for (const id of dependencies(scope)) st.seen.set(id, versions.get(id) ?? 0);
         st.error = null;
         const via = new Set([...path].filter(x => typeof x === 'string' && x.startsWith(SCOPE)));
-        st.key = `${ctx?.execution?.dispatch_id ?? 'read'}:read:${scope}:${tick}:${++sequence}`;
         const work = new Set();
         const outcomes = await Promise.allSettled(
           (readNodes.get(scope) ?? []).map(id =>
             track(
               run(id, {
                 ...ctx,
-                parent: ctx?.key ?? ctx?.parent_invocation_id ?? null,
                 work,
                 via,
-                key: `${st.key}:${id}`,
-                wave: newWave(runWave, {}, `${st.key}:${id}`),
+                key: nextKey(),
+                wave: newWave(ctx?.wave ?? ctx?.batch?.wave ?? null),
               }),
               work
             )
@@ -300,7 +291,6 @@ function createGraphInterpreter(document, saved, env) {
       }
       st.contextAt = stateRevision;
       st.done = !st.error;
-      if (st.done) st.key = null;
     } catch (error) {
       // A scope it reads failed: this one fails with the same error, and is computed again when read again.
       st.error = error;
@@ -313,23 +303,9 @@ function createGraphInterpreter(document, saved, env) {
 
   /** A signal leaves the output `port` of a node: every node it is wired to runs, at the same time. Answers when they and what they
    *  started have finished; throws the first error (in the order of the wires). */
-  const fire = (node, port, ctx) =>
-    fireTo(nodes.get(node.id)?.targets?.[port.id] || [], {...ctx, invocation: ctx.key, port_id: port.id});
+  const fire = (node, port, ctx) => fireTo(nodes.get(node.id)?.targets?.[port.id] || [], ctx);
   async function fireTo(ids, ctx) {
-    if (!ids.length) return;
-    const signalId = identityKey(ctx, 'signal');
-    emit({
-      ev: 'signal.sent',
-      ...identityOf(ctx),
-      graph_revision: graphRevision,
-      signal_id: signalId,
-      port_id: ctx.port_id,
-    });
-    const outcomes = await Promise.allSettled(
-      ids.map(id =>
-        trigger(id, {...ctx, signal_id: signalId, parent: ctx.invocation ?? ctx.key, key: identityKey(ctx, 'invoke')})
-      )
-    );
+    const outcomes = await Promise.allSettled(ids.map(id => trigger(id, {...ctx, key: nextKey()})));
     const bad = outcomes.find(o => o.status === 'rejected');
     if (bad) throw bad.reason;
   }
@@ -337,7 +313,6 @@ function createGraphInterpreter(document, saved, env) {
   function trigger(id, ctx) {
     const node = nodes.get(id);
     if (!node || (!node.running && !node.error)) return Promise.resolve();
-    emit({ev: 'signal.received', ...identityOf(ctx, id), graph_revision: graphRevision, signal_id: ctx.signal_id});
     if (cancelledWave(ctx.wave)) {
       emit({ev: 'skip', id, label: node?.label});
       return Promise.resolve();
@@ -349,14 +324,6 @@ function createGraphInterpreter(document, saved, env) {
     work.add(entry);
     return promise;
   };
-  const identityOf = (ctx, id) => ({
-    ...ctx.execution,
-    node_id: id ?? ctx.node_id,
-    run_id: ctx.execution?.run_id,
-    invocation_id: ctx.key,
-    parent_invocation_id: ctx.parent ?? ctx.execution?.parent_invocation_id ?? null,
-    graph_revision: ctx.graph_revision ?? graphRevision,
-  });
   /** The execution of a running node (a Script or an event node). Answers when it and what its signals started have finished. */
   async function run(id, ctx) {
     if (cancelledWave(ctx.wave)) {
@@ -368,21 +335,18 @@ function createGraphInterpreter(document, saved, env) {
       for (const port of node.outputs.filter(p => p.signal)) await fire(node, port, ctx);
   }
   async function execute(id, ctx) {
-    ctx.node_id = id;
     let node = nodes.get(id);
     const generation = generations.get(id) ?? 0;
     const valid = () => !env.closed?.() && nodes.get(id) && (generations.get(id) ?? 0) === generation;
-    const controlled = Object.keys(ctx.execution?.policy ?? {}).length > 0;
     const guard = (requireOpen = true) => {
       if (!valid()) {
         ctx.batch.cancelled = true;
         throw control('cancel');
       }
-      if (closed && (requireOpen || controlled)) throw control('cancel');
+      if (closed && requireOpen) throw control('cancel');
     };
     const announce = event => {
-      if (valid())
-        emit({...event, ...identityOf(ctx, id), prefix: node?.prefix, invocation: ctx.key, wave_path: ctx.wave.key});
+      if (valid()) emit({...event, prefix: node?.prefix, invocation: ctx.key});
     };
     const started = Date.now();
     let announced = false,
@@ -405,12 +369,10 @@ function createGraphInterpreter(document, saved, env) {
       );
       await enter();
       if (view !== readingView) return execute(id, ctx);
-      ctx.graph_revision = graphRevision;
       if (cancelledWave(ctx.wave)) {
         announce({ev: 'skip', id});
         return false;
       }
-      if (ctx.execution?.policy && Object.keys(ctx.execution.policy).length) await env.admit(identityOf(ctx, id));
       guard();
       announced = true;
       announce({ev: 'start', id: node.id, label: node.label});
@@ -432,7 +394,7 @@ function createGraphInterpreter(document, saved, env) {
         const agentsys = async (method, route, body, query) => {
           guard(false);
           commit(node, output);
-          const result = await call(node.id, identityOf(ctx, id), method, route, body, query);
+          const result = await call(node.id, method, route, body, query);
           guard(false);
           return result;
         };
@@ -447,8 +409,7 @@ function createGraphInterpreter(document, saved, env) {
         const context = Object.freeze({
           ...publicContext,
           event,
-          execution: Object.freeze(identityOf(ctx, id)),
-          state: watchState(state, () => guard(false), identityOf(ctx, id)),
+          state: watchState(state, () => guard(false)),
         });
         const codeInput = node.inputs.find(p => p.code);
         const code = codeInput ? values.get(codeInput.id) : '';
@@ -477,18 +438,14 @@ function createGraphInterpreter(document, saved, env) {
                 : `This Script has no signal output: “${name}”`
             );
           commit(node, output);
-
           announce({ev: 'pause', id: node.id, reason: 'signal'});
-
-          const childKey = identityKey(ctx, 'emit');
-          const wave = newWave(ctx.wave, {handles, failFast: options?.failFast === true}, childKey);
+          const wave = newWave(ctx.wave, {handles, failFast: options?.failFast === true});
           try {
-            await fireTo(targets, {...ctx, invocation: ctx.key, wave, key: childKey, port_id: name});
+            await fireTo(targets, {...ctx, wave});
           } catch (error) {
             throw plain(error.message);
           } finally {
             await enter();
-
             announce({ev: 'resume', id: node.id});
           }
           return wave.control ?? undefined;
@@ -497,7 +454,7 @@ function createGraphInterpreter(document, saved, env) {
         // do not catch it (a catch must rethrow an error that has `.control`).
         //   break(), continue()  the nearest emit above that handles it takes it: what that emit started stops starting new nodes. Without one, an error.
         //   cancel()             cancels the wave of the emit above (or, in a Script that nothing emitted for, everything started from its root): no error.
-        //   abort()              ends the whole run.
+        //   abort()              cancels everything this signal call started, including its other roots.
         const unwind = what => {
           const below = [];
           for (let w = ctx.wave; w; w = w.parent) {
@@ -517,14 +474,12 @@ function createGraphInterpreter(document, saved, env) {
           continue: () => unwind('continue'),
           cancel: () => {
             ctx.batch.cancelled = true;
-            announce({ev: 'cancel', id, reason: 'flow'});
             ctx.wave.cancelled = true;
             throw control('cancel');
           },
           abort: () => {
             ctx.batch.cancelled = true;
-            announce({ev: 'cancel', id, reason: 'flow'});
-            runWave.cancelled = true;
+            ctx.batch.wave.cancelled = true;
             throw control('abort');
           },
         });
@@ -539,10 +494,7 @@ function createGraphInterpreter(document, saved, env) {
           const p = nodes.get(node.id)?.inputs.find(q => q.wrapper && q.name === name);
           if (!p) throw plain(`This node has no input “${name}”`);
           guard();
-          const scope = readScope(ctx);
-          scope.consumer = ctx.key;
-          scope.input = p.id;
-          const entry = await inputEntry(p, scope, new Set([node.id, ...ctx.via]));
+          const entry = await inputEntry(p, readScope(ctx), new Set([node.id, ...ctx.via]));
           return entry === undefined ? undefined : unwrap(entry);
         };
         // node.cancelled: the flow this node belongs to was cancelled (a long code can look and end early).
@@ -657,8 +609,6 @@ function createGraphInterpreter(document, saved, env) {
         blocked: !!error.blocked,
       });
       throw error;
-    } finally {
-      if (controlled) emit({ev: 'invocation.closed', ...identityOf(ctx, id)});
     }
   }
 
@@ -670,20 +620,19 @@ function createGraphInterpreter(document, saved, env) {
     for (const [port, entry] of latest.get(id) ?? EMPTY) out[port] = unwrap(entry);
     return out;
   };
-  async function startRoot(id, batch, event, index) {
+  async function startRoot(id, batch, event) {
     const ctx = {
-      execution: batch.execution,
       batch,
-      key: `${batch.id}:root:${index}:${id}`,
-      parent: batch.execution?.parent_invocation_id,
+      key: nextKey(),
       event,
       errors: batch.errors,
       work: batch.pending,
       via: new Set(),
-      wave: newWave(runWave, {}, `${batch.id}:root:${id}`),
+      wave: newWave(batch.wave),
     };
     try {
       const outputs = {};
+      if (event.input_port !== undefined) await fireTo(view.inputTargets(id, event.input_port), ctx);
       if (id.startsWith('complex:')) {
         for (const port of view.outputRefs(id))
           outputs[port.id] =
@@ -693,23 +642,23 @@ function createGraphInterpreter(document, saved, env) {
       } else {
         const node = nodes.get(id);
         if (!node) Object.assign(outputs, reported(id));
-        else if (node.running) {
+        else if (node.running && event.input_port === undefined) {
           await track(run(id, ctx), batch.pending); // a Script runs as if a signal reached it, an event node carries its data and fires
           Object.assign(outputs, reported(node.scope ?? id));
-        } else
-          for (const [port, entry] of await outputsOf(id, readScope(ctx), new Set())) outputs[port] = unwrap(entry);
+        } else if (node.running) Object.assign(outputs, reported(node.scope ?? id));
+        else for (const [port, entry] of await outputsOf(id, readScope(ctx), new Set())) outputs[port] = unwrap(entry);
       }
-      if (nodes.get(id)) emit({ev: 'root', id, outputs, ...identityOf(ctx, id)});
+      if (!nodes.get(id)) return {id}; // removed while it ran: nothing to report
+      emit({ev: 'root', id, outputs});
       return {id, outputs};
     } catch (error) {
-      if (nodes.get(id)) emit({ev: 'root', id, error: error.message, ...identityOf(ctx, id)});
+      if (nodes.get(id)) emit({ev: 'root', id, error: error.message});
       return {id, error: error.message};
     }
   }
 
   return {
     update(document) {
-      graphRevision = document.graph_revision ?? graphRevision;
       const previous = view;
       view = createGraphView(document, {context: env.context});
       states.clear();
@@ -738,19 +687,15 @@ function createGraphInterpreter(document, saved, env) {
         }
       }
     },
-    async signal(roots, event = {}, execution = {}) {
-      execution = Object.freeze({...execution, policy: Object.freeze({...execution.policy})});
-      if (runWave.cancelled) runWave = newWave(null);
-      const batch = {
-        id: execution.dispatch_id ?? ++sequence,
-        execution,
-        pending: new Set(),
-        errors: {},
-        cancelled: false,
-      };
-      const results = await Promise.all(roots.map((id, index) => startRoot(id, batch, event, index)));
+    /** Signals the roots together and answers when everything they started has finished: {outputs by root, errors by node, cancelled}. */
+    async signal(roots, event = {}) {
+      const batch = {pending: new Set(), errors: {}, cancelled: false, wave: newWave(null)};
+      const results = await Promise.all(roots.map(id => startRoot(id, batch, event)));
       while (batch.pending.size) await Promise.allSettled([...batch.pending]);
       return {
+        outputs: Object.fromEntries(
+          results.filter(result => result.outputs).map(result => [result.id, result.outputs])
+        ),
         errors: {
           ...batch.errors,
           ...Object.fromEntries(results.filter(result => result.error).map(result => [result.id, result.error])),

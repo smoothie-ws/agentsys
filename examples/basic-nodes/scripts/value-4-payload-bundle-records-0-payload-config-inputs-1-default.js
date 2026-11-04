@@ -1,1 +1,0 @@
-node.display(node.input.input);

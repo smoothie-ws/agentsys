@@ -152,7 +152,7 @@ route(
   },
   {returns: '{format: "agentsys.text/1", files: canonical project files}'}
 );
-/** Creates a project from a decoded project document (`projects/import`, and the templates of plugins). */
+/** Creates a project from a decoded project document (`projects/import`). */
 async function importProjectDocument(c, body) {
   if (!Array.isArray(body.workflows) || !body.workflows.length || body.workflows.length > 100)
     throw bad('Pass {name, workflows: [{name, document}]} as exported by the export route');

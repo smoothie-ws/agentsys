@@ -1,21 +1,19 @@
 # Workflow runtime
 
-Each workflow has one runtime with status `idle`, `running` or `paused`. `idle` means no dispatched signal work is active; it does not clear values or destroy the graph. Pausing an idle graph is allowed. Multiple signals and editor events can be active together in the same runtime.
+Each workflow has one runtime with status `idle`, `running` or `paused`. `idle` means no signal work is active; it does not clear values or destroy the graph. Pausing an idle graph is allowed. Multiple signals and editor events can be active together in the same runtime.
 
 Stop is available while idle and while a Run request is pending. It terminates the current host, including its background timers, and clears the pause gate while preserving JSON data.
 
 ## API
 
 - `GET projects/{project_id}/execution?workflow_id=...` reads the selected workflow's runtime.
-- `POST projects/{project_id}/execution` signals enabled `on_run` Events. Optional body fields are `workflow_id`, `node_ids`, `payload` and `wait`. `node_ids` targets nodes directly using the same dispatch mechanism. `payload` is an object available as `context.event.payload`.
-- `wait: true` waits for that dispatch and its descendants and for their JSON state to be saved. It does not wait on unrelated dispatches. Errors are reported in runtime state.
+- `POST projects/{project_id}/execution` signals enabled `on_run` Events. Optional body fields are `workflow_id`, `node_ids`, `payload` and `wait`. `node_ids` signals those nodes directly. `payload` is an object available as `context.event.payload`.
+- `wait: true` waits for that call and everything it started, and for the JSON state to be saved. It does not wait on unrelated calls. The response is the runtime plus `dispatch_status` (`completed`, `failed` or `cancelled`), `dispatch_outputs` (the outputs of the signalled nodes by node ID) and `errors`.
 - `DELETE projects/{project_id}/execution?workflow_id=...` stops active host work, preserving graph data.
 - `POST projects/{project_id}/execution/pause` and `/resume` set the graph's pause gate, selecting `workflow_id` in the body. Acceptance does not require already-running synchronous code to yield.
 - `POST projects/{project_id}/evaluate-node` dispatches selected nodes or reads selected values through this same runtime. It returns outputs by node ID, errors, displays and node statuses. With `collect: true`, node failures are returned as data.
 
-Execution POST responses additionally identify `run_id`, `dispatch_id`, parent dispatch/invocation and graph revision. `wait:true` returns that dispatch's status/errors/root results. GET `execution/dispatches/{id}` reads its durable record; `/trace` filters retained metadata. Optional `/scopes` and `/operations` supply versioned independent JSON and explicit checkpoint/retry boundaries. `policy` opts a dispatch into inherited budgets. See the complete [durable execution contract and examples](durable-execution.md).
-
-The runtime response contains `workflow_id`, `revision`, `status`, `paused`, `active_signals`, `nodes`, `outputs`, `errors`, `displays`, `state` and `evaluated_nodes`. `revision` changes when runtime data changes and supports UI synchronization. `evaluated_nodes` is the workflow's retained count of completed invocations; it is presentation data.
+The runtime response contains `workflow_id`, `revision`, `status`, `paused`, `active_signals`, `nodes`, `runs` (how many times each node finished or failed since the server started; the editor lights a node for every pass, however short), `outputs`, `errors`, `displays` and `state`. `revision` changes when runtime data changes and supports UI synchronization.
 
 Node statuses are `running` (code), `sleeping` (timer), `waiting` (an explicit awaited branch), `completed`, `failed`, `blocked`, `skipped` and `stopped`. Automatic completion leaves its Script marked completed while following nodes work. Overlapping calls keep the node active until its active invocations settle.
 
@@ -23,8 +21,32 @@ Node statuses are `running` (code), `sleeping` (timer), `waiting` (an explicit a
 
 `workflows/{workflow_id}/runtime` stores JSON `state`, port values, previews and the latest presentation state in the application's key-value store. The Node server maps this to `data/workflows/{workflow_id}/runtime.json`. Browser-only deployments use IndexedDB.
 
-JSON mutations and previews are sent to the host and writes are serialized/coalesced. Dispatches requested with `wait: true` and Stop wait for outstanding persistence. On restart, active node marks become stopped; no pending calls are replayed. The saved pause gate is retained. Output and preview entries for deleted nodes are pruned.
+JSON mutations and previews are sent to the host and writes are serialized/coalesced. A call with `wait: true` and Stop wait for outstanding persistence. On restart, active node marks become stopped; no pending calls are replayed. The saved pause gate is retained. Output and preview entries for deleted nodes are pruned.
 
 Workflow/project export includes `document.runtime` with `{state, outputs, displays}`. Import restores it. Duplication copies shared JSON and remaps node IDs in output/preview maps. Execution stacks, live globals, timers and external requests are not exportable graph data. Undo/redo changes the graph definition and does not roll back runtime state or external actions.
 
-`workflows/{workflow_id}/executions` stores a CAS-versioned execution journal in the same database. It retains bounded trace/dispatch metadata and user-managed operation checkpoints/areas. Restart marks unfinished operations interrupted without starting a Worker. Copies/imports start new execution histories. Runtime JSON and the execution journal are separate durability boundaries; storage failures are surfaced by awaited requests or `storage_error`, never acknowledged as a successful checkpoint.
+Storage failures are reported by awaited requests or in `storage_error`.
+
+## Limits and validation
+
+The live graph interpreter has no configured limits on signal/read chain length, active Script count, Script execution time, individual result size or total graph results. Its values remain subject to available memory, JavaScript serialization and the application's storage and transport.
+
+Stop terminates the graph host, including synchronous code that does not yield. Pause is cooperative: it gates new code and continuations, not arbitrary instructions inside an executing function. A delay accepts a finite nonnegative duration and uses timer-sized chunks internally without an application duration ceiling.
+
+Graph structure must remain valid: existing nodes and ports, compatible wires, acyclic data dependencies and acyclic group/interface bindings. Editor fields, HTTP transport and checked network requests have their own validation. These are separate from graph-interpreter execution quotas. API permission checks and secret separation apply regardless of graph size or elapsed work.
+
+## Using the API
+
+The server exposes JSON endpoints under `/api/`; `/api/openapi.json` is the generated contract. The editor's API page includes a searchable method tree and examples.
+
+Mutation requests require `X-AgentSys: 1`. Host and optional bearer-token checks protect the server; non-loopback access requires an API token.
+
+The core API covers projects, workflow editing and batches, graph validation and evaluation, live graph signals and controls, Library nodes, settings, permissions, secrets, checked network calls and plugins (`plugins`, `plugins/{id}/{name}`).
+
+See the sections above for Run/Pause/Resume/Stop and [Permissions](permissions.md) for capability checks. `if_cursor` or `If-Match` makes a graph edit conditional on its current cursor. Edit history provides undo/redo.
+
+`GET projects/{project_id}/execution` returns the current workflow runtime, including its JSON `state`, outputs and previews. `POST` sends a signal; `DELETE` stops active work. Workflow exports include durable runtime data.
+
+To invoke a signal input of a dynamically placed Custom Node, POST `{node_ids:[node_id],input_port:"in",wait:true}` to that existing execution route. The native interpreter resolves the interface binding, sends and joins a signal wave, then returns that invocation's normal outputs in `dispatch_outputs[node_id]`. No `input_port` preserves the existing Run/evaluation behavior. Library / Graph / Invoke Node wraps this call using implicit current project/workflow context. Placement and data wiring remain separate checked graph edits.
+
+`/api/openapi.json` is generated from the registered routes, their body examples, query fields and capability declarations. User-only `node-permissions/{node_id}` PUT authorizes a standalone Script without changing code or requiring Developer mode.

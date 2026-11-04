@@ -31,6 +31,22 @@ const stateOf = doc => ({
   library_nodes: doc.library_nodes ?? [],
 });
 
+/** What the interpreter can observe of a document: everything but where nodes sit and how they are coloured, pinned or folded. */
+const semanticKey = state =>
+  JSON.stringify([
+    state.nodes,
+    state.groups,
+    state.complex,
+    state.port_edges,
+    state.widgets,
+    state.types ?? [],
+    state.library_nodes ?? [],
+    Object.entries(state.style ?? {})
+      .filter(([, style]) => style?.disabled)
+      .map(([id]) => id)
+      .sort(),
+  ]);
+
 /** Copies a workflow document with fresh IDs (used for duplicated workflows and projects). */
 function duplicateDocument(doc, mapped = () => {}) {
   const map = new Map();

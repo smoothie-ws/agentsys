@@ -370,6 +370,20 @@ function createGraphView(document, {context = {}} = {}) {
     issues,
     scopes,
     readers,
+    inputTargets: (id, port) => {
+      const node = nodes.get(id);
+      const inputs = node?.kind === 'complex' ? node.interface.inputs : node?.inputs;
+      if (!inputs?.some(p => p.id === port && isSignal(p.type))) throw Error('Signal input not found: ' + port);
+      if (isOff(node) || issues.has(id)) throw Error(issues.get(id) ?? 'Node is disabled');
+      const targets = [...new Set(Editor.resolveAll(nodes, id, port, 'inputs').map(([target]) => target))];
+      for (const target of targets) {
+        const executable = describe(target);
+        if (executable?.error) throw Error(executable.error);
+        if (!executable?.running || executable.op === 'scope')
+          throw Error('Signal input has no enabled executable target: ' + port);
+      }
+      return targets;
+    },
     outputRefs: id => {
       const node = nodes.get(id);
       return (node?.kind === 'complex' ? node.interface.outputs : (node?.outputs ?? []))
