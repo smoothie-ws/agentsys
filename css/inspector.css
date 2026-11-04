@@ -1,4 +1,4 @@
-/* The right-hand panel: content on the left, a 56px icon rail on the right. */
+/* The inspector floats over the canvas, beside two independent 44px section buttons. */
 .workflow-heading {
   margin-bottom: 1.2rem;
 }
@@ -138,18 +138,19 @@ label.available-node,
 }
 
 .side {
-  position: relative;
-  grid-column: 2;
-  grid-row: 1;
+  position: absolute;
+  inset: 12px 12px 12px auto;
   display: grid;
-  grid-template-columns: minmax(0, 1fr) 56px;
+  grid-template-columns: minmax(0, 1fr) 44px;
+  gap: 8px;
+  width: min(var(--side-width, 380px), calc(100% - 24px));
   min-width: 0;
   min-height: 0;
-  margin: 0 0.6rem 0.6rem 0.6rem;
+  margin: 0;
   background: none;
-  overflow: clip;
-  overflow-clip-margin: 8px; /* the resize handle sits just outside */
-  z-index: 2;
+  overflow: visible;
+  pointer-events: none;
+  z-index: 30;
   transition: opacity var(--base) var(--ease);
 }
 .side-content {
@@ -161,29 +162,38 @@ label.available-node,
   border-radius: 30px;
   background: var(--dither), var(--glass);
   overflow: hidden;
+  pointer-events: auto;
+  backdrop-filter: var(--blur);
+  box-shadow: var(--shadow);
   transition: opacity var(--base) var(--ease);
 }
 .side[data-collapsed='true'] .side-content {
-  visibility: hidden;
-  opacity: 0;
-  pointer-events: none;
+  display: none;
+}
+.side[data-collapsed='true'] {
+  width: 44px;
+  grid-template-columns: 44px;
 }
 .side-tabs {
   order: 2;
   display: flex;
   flex-direction: column;
   align-items: center;
-  gap: 0.4rem;
-  width: 56px;
+  gap: 8px;
+  align-self: start;
+  width: 44px;
   min-height: 0;
   margin: 0;
-  padding: 0.65rem 0.4rem;
+  padding: 0;
+  pointer-events: auto;
 }
 .side-tabs button {
-  width: 36px;
-  height: 36px;
+  width: 44px;
+  height: 44px;
   padding: 0;
-  background: transparent;
+  background: var(--float);
+  backdrop-filter: var(--blur);
+  box-shadow: var(--shadow);
   color: var(--muted);
 }
 .side-tabs button:hover:not(:disabled) {
@@ -193,6 +203,9 @@ label.available-node,
 .side-tabs button.active {
   background: var(--current);
   color: var(--text);
+}
+.side > .panel-resize {
+  pointer-events: auto;
 }
 .side-heading {
   flex: none;
@@ -409,25 +422,6 @@ label.available-node,
   margin-top: 0.5rem;
   font-size: 0.75rem;
   overflow-wrap: anywhere;
-}
-
-@media (max-width: 900px) {
-  /* The panel floats over the canvas; its cell is only the rail. */
-  .side {
-    z-index: 30;
-    justify-self: end;
-    width: min(var(--side-width, 380px), calc(100vw - 70px));
-    box-shadow: var(--shadow-lg);
-  }
-  .side[data-collapsed='true'] {
-    width: 56px;
-    box-shadow: none;
-  }
-  /* Over the canvas the panel must hide what is under it (the toolbar, the selection tools, the nodes). */
-  .side-content {
-    background: var(--dither), color-mix(in srgb, var(--surface) 92%, var(--background));
-    backdrop-filter: var(--blur);
-  }
 }
 
 /* Adding a slot under a list of slots. */

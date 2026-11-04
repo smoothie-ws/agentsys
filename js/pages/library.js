@@ -324,7 +324,7 @@ const folderCard = (path, rows) => {
   });
 };
 const notFound = (what, href, back) =>
-  `<div class="empty"><h2>${what} not found</h2><p><a href="${esc(href)}" data-link>${esc(back)}</a></p></div>`;
+  `${pageHead({title: `${esc(what)} not found`, menu: ''})}<p><a class="button" href="${esc(href)}" data-link>${esc(back)}</a></p>`;
 
 /** The Library: its sections as cards (one: Nodes). */
 function libraryOverview(view) {

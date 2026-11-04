@@ -1,13 +1,14 @@
 'use strict';
-// A minimal plugin: folder `plugins/hello`, entry point `main.js`. See docs/plugins.md.
-exports.title = 'Hello';
-exports.description = 'Adds a Hello node to the Library and the route GET /api/plugins/hello/greet?name=...';
+// The AI plugin keeps the original folder id so saved settings and existing calls keep working.
+exports.title = 'AI';
+exports.icon = 'sparkles';
+exports.description = 'A plugin example with a Hello node and a configurable greeting.';
 
 // A form on the plugin's page; the values are read with api.settings.get().
 exports.settings = [{key: 'greeting', label: 'Greeting', type: 'text', default: 'Hello'}];
 
-exports.start = api => {
-  api.library.addScriptNode({
+exports.start = async api => {
+  await api.library.addScriptNode({
     name: 'Hello',
     folder: 'Plugins',
     description: 'Writes a greeting for `name`.',

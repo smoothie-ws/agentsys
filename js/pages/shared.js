@@ -121,8 +121,8 @@ const actionButton = (menu, label = 'Actions') =>
     : '';
 
 /** The common page heading, description and actions. `title` and `sub` are HTML. */
-const pageHead = ({title, sub = '', actions = '', menu = pageMenu()}) =>
-  `<div class="page-head"><div><h1>${title}</h1>${sub ? `<p class="muted">${sub}</p>` : ''}</div><div class="actions">${actions}${actionButton(menu)}</div></div>`;
+const pageHead = ({title, sub = '', glyph = '', actions = '', menu = pageMenu()}) =>
+  `<header class="page-head"><div><h1 class="page-title">${glyph ? icon(glyph) : ''}${title}</h1><p class="page-description muted"${sub ? '' : ' aria-hidden="true"'}>${sub || '&nbsp;'}</p></div><div class="actions">${actions}${actionButton(menu)}</div></header>`;
 
 /**
  * The card of every page (projects, workflows, Library nodes and groups), built like a node of the canvas: a header with an icon

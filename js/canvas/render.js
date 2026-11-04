@@ -81,22 +81,29 @@ function draw() {
           const previous = $(`textarea[data-literal="${CSS.escape(area.dataset.literal)}"]`, element);
           if (previous?.style.height) area.style.height = previous.style.height;
         }
-      // A redrawn node keeps its glow for now, so that the glow can fade when the state below changes it.
+      // Keep the shell (and its glow layer) alive while replacing the content.
       if (element?.classList.contains('glow')) next.classList.add('glow');
-      next.renderSignature = signature;
-      next.renderDefinition = definition;
-      next.renderPorts = ports;
       if (element) {
         forgetFieldHeights(element);
-        W.nodeObserver?.unobserve(element);
+        element.className = next.className;
+        element.title = next.title;
+        for (const name of ['--node-color', '--node-ink', '--fold-height']) {
+          const value = next.style.getPropertyValue(name);
+          value ? element.style.setProperty(name, value) : element.style.removeProperty(name);
+        }
+        element.replaceChildren(...next.childNodes);
+      } else {
+        container.append(next);
+        element = next;
+        W.nodeObserver?.observe(element);
       }
-      element ? element.replaceWith(next) : container.append(next);
-      element = next;
+      element.renderSignature = signature;
+      element.renderDefinition = definition;
+      element.renderPorts = ports;
       W.elements.set(node.id, element);
       W.dirtyGeometry.add(node.id);
       restoreFieldHeights(element, node.id);
       wireCodeEditors(element);
-      W.nodeObserver?.observe(element);
       const refocused = focusLiteral ? $(`[data-literal="${CSS.escape(focusLiteral)}"]`, element) : null;
       refocused?.focus({preventScroll: true});
       if (refocused && typed) {
@@ -252,10 +259,17 @@ function shownStatus(node) {
 
 /** The node the flow is on glows: while it is at work, and for a moment after a pass that was too short to see (`holdGlow`). */
 function setGlow(element, node) {
-  const glow = WORKING.includes(shownStatus(node)) || (W.glowUntil.get(node.id) ?? 0) > performance.now();
-  if (element.classList.contains('glow') === glow) return;
-  getComputedStyle(element).boxShadow; // settle the old look first: the change then fades instead of jumping
+  const status = shownStatus(node) || 'ready';
+  // Focused fields keep their content, but their execution state must still update.
+  if (element.renderStatus !== status) {
+    if (element.renderStatus) element.classList.remove('s-' + element.renderStatus);
+    element.classList.add('s-' + status);
+    element.renderStatus = status;
+  }
+  const glow = !W.runPaused && ['running', 'sleeping', 'waiting', 'completed'].includes(status) &&
+    (WORKING.includes(status) || (W.glowUntil.get(node.id) ?? 0) > performance.now());
   element.classList.toggle('glow', glow);
+  element.classList.toggle('glow-pending', W.glowPending.has(node.id));
 }
 
 function nodeHTML(node) {
@@ -274,21 +288,17 @@ function nodeHTML(node) {
   if (node.color) classes.push('colored');
   if (node.disabled || node.muted) classes.push('off');
   const pin = node.pinned ? `<span class="pinned" title="Pinned">${icon('pin')}</span>` : '';
-  // Status marks sit above the right edge; the fold button stays in the header.
+  // Auxiliary marks sit above the right edge; execution uses the node's glow.
   const fold = `<button class="icon fold" data-fold="${esc(node.id)}" title="${node.folded ? 'Expand' : 'Collapse'}" aria-label="${node.folded ? 'Expand node' : 'Collapse node'}" aria-expanded="${!node.folded}">${icon('chevron')}</button>`;
   const head = (title, glyph, extra = '') =>
     `<header>${extra}<span class="head-icon">${icon(glyph)}</span><span class="title" title="${esc(title)}">${esc(title)}</span>${fold}</header><div class="node-marks">${stateHTML}${node.disabled || node.muted ? `<span class="switched-off" title="${node.disabled ? 'Disabled' : 'Disabled by its group'}: a run skips this node">${icon('power')}</span>` : ''}${pin}</div>`;
   if (node.node_type === 'reroute')
     return `<div class="node reroute" data-id="${esc(node.id)}" title="Reroute point"><span class="sock" data-dir="in" data-port="in"></span><span class="sock" data-dir="out" data-port="out"></span></div>`;
-  // The state of a node that runs, or has just run, appears above its right edge.
+  // Keep marks for states that need a separate explanation; work, success and failure use glow.
   const stateMark = {
-      running: ['', 'Running code'],
-      sleeping: [icon('timer'), 'Delay: waiting for the timer'],
       waiting: [icon('chevron'), 'Waiting for the downstream branch to finish'],
       paused: [icon('pause'), 'Paused: new code and continuations wait for Resume'],
       stopped: [icon('stop'), 'Stopped'],
-      completed: [icon('check'), 'Completed'],
-      failed: [icon('x'), 'Failed'],
       blocked: [icon('lock'), 'Blocked: permission denied'],
       skipped: [icon('skip'), 'Skipped: its flow was cancelled'],
     }[shownStatus(node)],
@@ -801,6 +811,9 @@ function drawWires(preview) {
       b = socketPoint(edge.target, 'in', edge.target_port);
     if (!a || !b) continue;
     let cls = `wire k-${edge.kind} ${typeClass(edgeType(edge.typed_by || edge))}`;
+    if (isSignal(edgeType(edge.typed_by || edge)) && !W.runPaused &&
+      (WORKING.includes(W.nodes.get(edge.target)?.status) ||
+        (W.glowUntil.get(edge.source) ?? 0) > performance.now())) cls += ' flowing';
     if (W.nodes.get(edge.source)?.status === 'completed') cls += ' satisfied';
     if (issues.has(edge.id)) cls += ' invalid';
     if (W.edges.has(edge.id)) cls += ' selected';

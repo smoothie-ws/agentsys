@@ -57,11 +57,16 @@ function fit(ids) {
     y0 = Math.min(...boxes.map(b => b.y)),
     x1 = Math.max(...boxes.map(b => b.x + b.w)),
     y1 = Math.max(...boxes.map(b => b.y + b.h));
-  const padX = Math.min(120, W.canvas.clientWidth * 0.12), // 120px on a wide canvas, less on a phone
+  // The inspector floats now: frame the graph in the unobscured desktop area.
+  const side = $('#side'),
+    width = !narrowSidebar.matches && side?.dataset.collapsed === 'false'
+      ? Math.max(1, side.offsetLeft - 12)
+      : W.canvas.clientWidth;
+  const padX = Math.min(120, width * 0.12), // 120px on a wide canvas, less on a phone
     padY = Math.min(120, W.canvas.clientHeight * 0.12);
-  const zoom = Math.min(1.1, (W.canvas.clientWidth - padX) / (x1 - x0), (W.canvas.clientHeight - padY) / (y1 - y0));
+  const zoom = Math.min(1.1, (width - padX) / (x1 - x0), (W.canvas.clientHeight - padY) / (y1 - y0));
   setCamera(
-    (x0 + x1) / 2 - W.canvas.clientWidth / 2 / Math.max(MIN_ZOOM, zoom),
+    (x0 + x1) / 2 - width / 2 / Math.max(MIN_ZOOM, zoom),
     (y0 + y1) / 2 - W.canvas.clientHeight / 2 / Math.max(MIN_ZOOM, zoom),
     zoom
   );

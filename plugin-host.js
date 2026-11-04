@@ -9,7 +9,9 @@
 //   exports.start = api => { ... };         // called when the plugin is loaded or enabled
 //   exports.stop = () => { ... };           // called when it is disabled or the folder is reloaded
 //
-// `api` (everything a plugin can do; whatever it registers is removed when it stops):
+// `api(method, path, body, query)` calls the application API directly. Only start(api) is required;
+// stop() handles a plugin's own resources. The members below are optional conveniences.
+// Whatever a plugin registers is removed when it stops.
 //   api.id                              the folder name
 //   api.log(...)                        a line on the server's error output, prefixed with the id
 //   api.request(method, path, body, query)   any call of the application API (what the editor and Scripts use), unchecked
@@ -90,8 +92,9 @@ function createPluginHost({dir, backend, log = (...args) => console.error(...arg
   }
 
   function makeApi(plugin) {
-    return {
+    return Object.assign((method, route, body, query) => request(method, route, body, query), {
       id: plugin.id,
+      signal: plugin.controller.signal,
       log: (...args) => log(`[${plugin.id}]`, ...args),
       request,
       on(event, listener) {
@@ -124,20 +127,28 @@ function createPluginHost({dir, backend, log = (...args) => console.error(...arg
           await request('POST', 'resources', {name: spec.name, payload});
         },
       },
-    };
+    });
+  }
+
+  function readModule(plugin) {
+    const main = path.join(dir, plugin.id, 'main.js');
+    for (const file of Object.keys(require.cache))
+      if (file.startsWith(path.join(dir, plugin.id) + path.sep)) delete require.cache[file];
+    const loaded = require(main);
+    plugin.title = loaded.title || plugin.id;
+    plugin.description = loaded.description || '';
+    plugin.icon = /^[a-z][a-z0-9-]*$/.test(loaded.icon ?? '') ? loaded.icon : 'plug';
+    plugin.settings = checkSchema(loaded.settings);
+    if (typeof loaded.start !== 'function') throw new Error('main.js must export start(api)');
+    plugin.module = loaded;
   }
 
   async function start(plugin) {
     plugin.error = null;
+    plugin.controller = new AbortController();
     try {
-      const main = path.join(dir, plugin.id, 'main.js');
-      for (const file of Object.keys(require.cache))
-        if (file.startsWith(path.join(dir, plugin.id) + path.sep)) delete require.cache[file];
-      plugin.module = require(main);
-      plugin.title = plugin.module.title || plugin.id;
-      plugin.description = plugin.module.description || '';
-      plugin.settings = checkSchema(plugin.module.settings);
-      if (typeof plugin.module.start !== 'function') throw new Error('main.js must export start(api)');
+      if (!plugin.module) readModule(plugin);
+      plugin.started = true;
       await plugin.module.start(makeApi(plugin));
       plugin.running = true;
     } catch (error) {
@@ -147,11 +158,13 @@ function createPluginHost({dir, backend, log = (...args) => console.error(...arg
   }
 
   async function stop(plugin) {
+    plugin.controller?.abort();
     try {
-      if (plugin.running) await plugin.module?.stop?.();
+      if (plugin.started) await plugin.module?.stop?.();
     } catch (error) {
       plugin.error = error.message;
     }
+    plugin.started = false;
     for (const off of plugin.cleanup.splice(0)) off();
     plugin.routes.clear();
     plugin.running = false;
@@ -161,6 +174,7 @@ function createPluginHost({dir, backend, log = (...args) => console.error(...arg
     id: p.id,
     title: p.title,
     description: p.description,
+    icon: p.icon,
     enabled: p.enabled,
     running: p.running,
     error: p.error,
@@ -183,6 +197,7 @@ function createPluginHost({dir, backend, log = (...args) => console.error(...arg
           id,
           title: id,
           description: '',
+          icon: 'plug',
           enabled: !off.has(id),
           running: false,
           error: null,
@@ -192,7 +207,12 @@ function createPluginHost({dir, backend, log = (...args) => console.error(...arg
           cleanup: [],
         };
         plugins.set(id, plugin);
-        if (plugin.enabled) await start(plugin);
+        try {
+          readModule(plugin);
+          if (plugin.enabled) await start(plugin);
+        } catch (error) {
+          plugin.error = error.message;
+        }
       }
     },
     /** Stops every plugin. */

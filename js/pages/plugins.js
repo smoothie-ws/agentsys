@@ -30,7 +30,7 @@ const pluginActions = plugin =>
 const pluginCard = p =>
   card({
     href: '/plugins/' + encodeURIComponent(p.id),
-    glyph: 'plug',
+    glyph: p.icon || 'plug',
     title: p.title,
     attrs: `data-plugin="${esc(p.id)}"`,
     preview: p.error ? `<p class="form-error">${esc(p.error)}</p>` : `<span>${esc(p.description || p.id)}</span>`,
@@ -84,18 +84,12 @@ const readPluginSettings = (form, plugin) =>
     })
   );
 
-/** One plugin, laid out like an extension page: a header with its state and actions, tabs (Details, Settings, Routes) and a column of facts. */
+/** One plugin, using the same page heading and controls as the rest of the app. */
 async function pluginPage(view, route) {
   const [, plugin] = await Promise.all([loadPlugins(), api(`plugins/${encodeURIComponent(route.id)}`)]);
   if (app.route !== route) return;
   const id = encodeURIComponent(plugin.id),
-    state = plugin.error ? ['failed', 'Failed'] : plugin.running ? ['running', 'Running'] : ['off', 'Off'],
-    tabs = [
-      ['details', 'Details'],
-      ...(plugin.settings.length ? [['settings', 'Settings']] : []),
-      ['routes', `Routes${plugin.routes.length ? ` (${plugin.routes.length})` : ''}`],
-    ],
-    first = plugin.readme ? 'details' : plugin.settings.length ? 'settings' : 'details';
+    state = plugin.error ? ['failed', 'Failed'] : plugin.running ? ['running', 'Running'] : ['off', 'Off'];
   const routeList = plugin.routes.length
     ? `<ul class="plugin-routes">${plugin.routes
         .map(r => {
@@ -104,42 +98,18 @@ async function pluginPage(view, route) {
         })
         .join('')}</ul>`
     : '<p class="muted">This plugin answers no routes.</p>';
-  view.innerHTML = `<div class="page plugin-page">
-    <header class="plugin-hero">
-      <div class="plugin-icon" aria-hidden="true">${icon('plug')}</div>
-      <div class="plugin-hero-text">
-        <h1>${esc(plugin.title)}</h1>
-        ${plugin.description ? `<p class="muted">${esc(plugin.description)}</p>` : ''}
-        <div class="plugin-meta"><span class="plugin-state ${state[0]}">${state[1]}</span><span class="muted small">plugins/${esc(plugin.id)}</span></div>
-        <div class="plugin-hero-actions"><button type="button" class="${plugin.enabled ? '' : 'primary'}" data-plugin-toggle>${plugin.enabled ? 'Turn off' : 'Turn on'}</button><button type="button" class="ghost" data-plugin-reload>${icon('refresh')}Reload plugins</button><span id="save-slot"></span></div>
-      </div>
-    </header>
+  view.innerHTML = `<div class="page form-page plugin-page">
+    ${pageHead({title: esc(plugin.title), glyph: plugin.icon || 'plug', sub: esc(plugin.description || ''), menu: '', actions: `<span id="save-slot"></span><button type="button" class="${plugin.enabled ? '' : 'primary'}" data-plugin-toggle>${plugin.enabled ? 'Turn off' : 'Turn on'}</button><button type="button" class="icon" data-plugin-reload title="Reload plugins" aria-label="Reload plugins">${icon('refresh')}</button>`})}
     ${plugin.error ? `<p class="form-error plugin-error">${esc(plugin.error)}</p>` : ''}
-    <div class="plugin-body">
-      <div class="plugin-main">
-        <nav class="plugin-tabs" role="tablist">${tabs.map(([key, label]) => `<button type="button" role="tab" data-plugin-tab="${key}" aria-selected="${key === first}">${esc(label)}</button>`).join('')}</nav>
-        <section class="plugin-panel" data-plugin-panel="details" ${first === 'details' ? '' : 'hidden'}>${plugin.readme ? `<div class="markdown">${renderMarkdown(plugin.readme)}</div>` : '<p class="muted">This plugin has no README.md.</p>'}</section>
-        ${plugin.settings.length ? `<section class="plugin-panel" data-plugin-panel="settings" ${first === 'settings' ? '' : 'hidden'}>${pluginSettingsForm(plugin)}</section>` : ''}
-        <section class="plugin-panel" data-plugin-panel="routes" hidden>${routeList}</section>
-      </div>
-      <aside class="plugin-aside">
-        <h3>Information</h3>
-        <dl>
-          <dt>State</dt><dd>${state[1]}</dd>
-          <dt>Folder</dt><dd><code>plugins/${esc(plugin.id)}</code></dd>
-          <dt>Entry point</dt><dd><code>main.js</code></dd>
-          <dt>Routes</dt><dd>${plugin.routes.length}</dd>
-          <dt>Settings</dt><dd>${plugin.settings.length}</dd>
-        </dl>
-      </aside>
-    </div>
+    <section><h2>Information</h2><dl class="page-facts">
+      <div><dt>State</dt><dd><span class="plugin-state ${state[0]}">${state[1]}</span></dd></div>
+      <div><dt>Folder</dt><dd><code>plugins/${esc(plugin.id)}</code></dd></div>
+      <div><dt>Entry point</dt><dd><code>main.js</code></dd></div>
+    </dl></section>
+    ${plugin.readme ? `<section><h2>Details</h2><div class="markdown">${renderMarkdown(plugin.readme)}</div></section>` : ''}
+    ${plugin.settings.length ? `<section><h2>Settings</h2>${pluginSettingsForm(plugin)}</section>` : ''}
+    <section><h2>Routes</h2>${routeList}</section>
   </div>`;
-  for (const tab of $$('[data-plugin-tab]', view))
-    tab.onclick = () => {
-      for (const t of $$('[data-plugin-tab]', view)) t.setAttribute('aria-selected', String(t === tab));
-      for (const panel of $$('[data-plugin-panel]', view))
-        panel.hidden = panel.dataset.pluginPanel !== tab.dataset.pluginTab;
-    };
   $('[data-plugin-toggle]', view).onclick = () =>
     setPluginEnabled(plugin.id, !plugin.enabled).then(() => go('/plugins/' + id, true));
   $('[data-plugin-reload]', view).onclick = () =>
@@ -180,5 +150,5 @@ PAGES.plugins = async (view, route) => {
 };
 
 const notFoundPlugin = (view, error) => {
-  view.innerHTML = `<div class="page"><div class="empty"><h2>Plugin not found</h2><p class="muted">${esc(error.message)}</p><p><a href="/plugins" data-link>Back to Plugins</a></p></div></div>`;
+  view.innerHTML = `<div class="page">${pageHead({title: 'Plugin not found', sub: esc(error.message), menu: ''})}<p><a class="button" href="/plugins" data-link>Back to Plugins</a></p></div>`;
 };

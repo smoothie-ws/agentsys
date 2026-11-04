@@ -14,7 +14,7 @@ import threading
 import time
 
 ROOT = Path(__file__).resolve().parents[1]
-SELF_HOSTED = {'execution_ui', 'plugins'}
+SELF_HOSTED = {'execution_ui', 'plugins', 'design'}
 
 
 class QuietHandler(http.server.SimpleHTTPRequestHandler):

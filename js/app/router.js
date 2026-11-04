@@ -118,7 +118,7 @@ async function render() {
   } catch (error) {
     if (revision !== renderRevision) return;
     const [label, href] = parentPage(route);
-    view.innerHTML = `<div class="empty"><h2>Could not open this page</h2><p>${esc(error.message)}</p><a href="${esc(href)}" data-link>Back to ${esc(label)}</a></div>`;
+    view.innerHTML = `<div class="page">${pageHead({title: 'Could not open this page', sub: esc(error.message), menu: ''})}<p><a class="button" href="${esc(href)}" data-link>Back to ${esc(label)}</a></p></div>`;
   }
   if (revision !== renderRevision) return;
   app.currentURL = routeURL();

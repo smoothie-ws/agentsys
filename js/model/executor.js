@@ -301,6 +301,20 @@ function createGraphInterpreter(document, saved, env) {
 
   // ----- Signals -----
 
+  /** Signal descendants, including free Library outputs. A cycle never resets its starting node. */
+  function downstream(id) {
+    const seen = new Set([id]), pending = [id];
+    for (let i = 0; i < pending.length; i++) {
+      const node = nodes.get(pending[i]);
+      for (const target of Object.values(node?.targets ?? {}).flat().concat(Object.values(node?.signals ?? {}).flat())) {
+        if (seen.has(target)) continue;
+        seen.add(target);
+        pending.push(target);
+      }
+    }
+    return pending.slice(1);
+  }
+
   /** A signal leaves the output `port` of a node: every node it is wired to runs, at the same time. Answers when they and what they
    *  started have finished; throws the first error (in the order of the wires). */
   const fire = (node, port, ctx) => fireTo(nodes.get(node.id)?.targets?.[port.id] || [], ctx);
@@ -375,7 +389,7 @@ function createGraphInterpreter(document, saved, env) {
       }
       guard();
       announced = true;
-      announce({ev: 'start', id: node.id, label: node.label});
+      announce({ev: 'start', id: node.id, label: node.label, downstream: downstream(node.id)});
       const own = Date.now();
       const output = {...(node.preset ?? {}), ...(node.op === 'script' ? {} : (ctx.event ?? {}))};
       // A Script of a Library node reads the outputs of the node as they are now (what was typed there, what a Script left last).

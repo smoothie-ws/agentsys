@@ -50,6 +50,9 @@ PAGES.workflow = async (view, route) => {
     runStatus: new Map(),
     runs: new Map(), // node id -> how many passes it has had (the backend counts them)
     glowUntil: new Map(), // node id -> when the glow of its last pass may end (performance.now())
+    glowTimers: new Set(),
+    glowPending: new Map(),
+    activitySequence: 0,
     history: {undo: 0, redo: 0},
     drag: null,
     spawn: null,
@@ -141,6 +144,7 @@ PAGES.workflow = async (view, route) => {
   leaveGuards.push(async () => {
     for (const element of W.elements.values()) forgetFieldHeights(element);
     clearTimeout(W.reloadTimer);
+    for (const timer of W.glowTimers) clearTimeout(timer);
     W.executionSession?.unfollow?.();
     W.unsubscribe?.();
     W.unsubscribe = null;

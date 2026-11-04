@@ -21,13 +21,12 @@ async def check(base):
         assert await page.evaluate("api('plugins/hello/greet',{query:{name:'Ann'}}).then(r=>r.text==='Hello, Ann!')")
         # The card opens the plugin's page: state, routes, README.
         await card.locator('a.card-main').click()
-        await page.wait_for_selector('h1:has-text("Hello")')
+        await page.wait_for_selector('h1:has-text("AI")')
+        assert await page.locator('h1 use').get_attribute('href') == '#i-sparkles'
         assert await page.locator('.markdown').count() == 1
-        await page.locator('[data-plugin-tab=routes]').click()
         text = await page.locator('#view').inner_text()
         assert 'GET' in text and '/api/plugins/hello/greet' in text and 'Running' in text, text
         # Its settings form saves by itself and the plugin reads the value.
-        await page.locator('[data-plugin-tab=settings]').click()
         await page.locator('#plugin-settings input[name=greeting]').fill('Hi')
         await page.wait_for_function("api('plugins/hello/greet',{query:{name:'Ann'}}).then(r=>r.text==='Hi, Ann!')")
         await page.evaluate("go('/plugins')")

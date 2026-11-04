@@ -211,7 +211,7 @@ const NAV_TREES = {
       (app.plugins || []).map(p => ({
         key: 'pl:' + p.id,
         label: p.title,
-        icon: 'plug',
+        icon: p.icon || 'plug',
         href: '/plugins/' + encodeURIComponent(p.id),
         menu: 'plugin:' + p.id,
       })),

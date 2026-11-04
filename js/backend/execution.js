@@ -41,6 +41,7 @@ const runtimeDetail = entry => ({
   active_signals: entry.pending.size,
   nodes: [...entry.nodes.values()],
   runs: entry.runs,
+  activity: entry.activity,
   outputs: entry.outputs,
   errors: entry.errors,
   displays: entry.displays,
@@ -55,7 +56,7 @@ function saveRuntime(entry) {
       .then(async () => {
         while (entry.dirty && !entry.deleted) {
           entry.dirty = false;
-          const {runs: _passes, ...saved} = runtimeDetail(entry); // the pass counts start again after a restart
+          const {runs: _passes, activity: _activity, ...saved} = runtimeDetail(entry);
           await DB.commit({[runtimeKey(entry.workflow)]: clone(saved)});
         }
       })
@@ -123,6 +124,8 @@ async function graphRuntime(c, project) {
         ),
         // node id -> how many times it finished or failed: the editor lights a node for each pass, however short
         runs: {},
+        activity: [], // bounded start order for the canvas; transient, never replayed after a restart
+        activitySequence: 0,
         revision: saved.revision ?? 0,
         paused: saved.paused === true,
         pending: new Set(), // the signal calls in progress
@@ -173,6 +176,17 @@ function runtimeEvent(entry, event) {
     skip: 'skipped',
   }[event.ev];
   if (!status) return;
+  if (event.ev === 'start')
+    for (const id of event.downstream ?? []) {
+      // A parallel invocation owns its live state; only previous, settled work is cleared.
+      const previous = entry.nodes.get(id);
+      if (id !== event.id && previous && !entry.calls.get(id)?.size && !BUSY.includes(previous.status))
+        entry.nodes.set(id, {node_id: id, status: 'ready'});
+    }
+  if (event.ev === 'start') {
+    entry.activity.push({sequence: ++entry.activitySequence, node_id: event.id});
+    if (entry.activity.length > 128) entry.activity.splice(0, entry.activity.length - 128);
+  }
   // A node with overlapping invocations stays active until all of them have settled.
   const calls = entry.calls.get(event.id) ?? new Map(),
     key = event.invocation ?? event.id;

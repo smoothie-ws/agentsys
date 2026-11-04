@@ -11,7 +11,7 @@ test('the bundled plugin starts: it adds a Library node and answers its route', 
     fs.writeFileSync(path.join(pluginsDir, 'hello', 'README.md'), '# Hello\nA readme.');
     const list = (await call('GET', 'plugins')).body;
     assert.deepEqual(list, [
-      {id: 'hello', title: 'Hello', description: list[0].description, enabled: true, running: true, error: null},
+      {id: 'hello', title: 'AI', description: list[0].description, icon: 'sparkles', enabled: true, running: true, error: null},
     ]);
     assert.ok((await call('GET', 'resources')).body.some(r => r.name === 'Hello'));
     assert.deepEqual((await call('GET', 'plugins/hello/greet', undefined, {name: 'Ann'})).body, {text: 'Hello, Ann!'});
@@ -21,6 +21,45 @@ test('the bundled plugin starts: it adds a Library node and answers its route', 
     assert.match(detail.readme, /Hello/);
     assert.equal((await call('GET', 'plugins/nothing')).status, 404);
   });
+});
+
+test('a minimal plugin uses the application API directly and keeps metadata while disabled', async () => {
+  const source = `exports.title='Simple';exports.icon='sparkles';
+    exports.start=async api=>{globalThis.__pluginSignal=api.signal;await api('POST','projects',{name:'Direct API'});};
+    exports.stop=()=>{globalThis.__pluginStopped=(globalThis.__pluginStopped??0)+1;};`;
+  await withServer({simple: source}, async ({call}) => {
+    assert.ok((await call('GET', 'projects')).body.some(p => p.name === 'Direct API'));
+    await call('PUT', 'plugins/simple', {enabled: false});
+    assert.equal(globalThis.__pluginSignal.aborted, true);
+    assert.equal(globalThis.__pluginStopped, 1);
+    await call('POST', 'plugins/reload');
+    const plugin = (await call('GET', 'plugins/simple')).body;
+    assert.equal(plugin.title, 'Simple');
+    assert.equal(plugin.icon, 'sparkles');
+    assert.equal(plugin.running, false);
+    assert.equal(globalThis.__pluginStopped, 1, 'stop is called once for each start');
+  });
+  delete globalThis.__pluginSignal;
+  delete globalThis.__pluginStopped;
+});
+
+test('a failed startup stops partial work and removes routes and listeners', async () => {
+  const source = `exports.start=api=>{globalThis.__failedSignal=api.signal;
+    api.route('GET','partial',()=>true);api.on('change',()=>globalThis.__failedChanges++);throw Error('partial startup');};
+    exports.stop=()=>{globalThis.__failedStopped=true;};`;
+  globalThis.__failedChanges = 0;
+  await withServer({broken: source}, async ({call}) => {
+    assert.equal(globalThis.__failedStopped, true);
+    assert.equal(globalThis.__failedSignal.aborted, true);
+    const changes = globalThis.__failedChanges;
+    await call('POST', 'projects', {name: 'After failure'});
+    assert.equal(globalThis.__failedChanges, changes);
+    assert.equal((await call('GET', 'plugins/broken/partial')).status, 404);
+    assert.equal((await call('GET', 'plugins/broken')).body.error, 'partial startup');
+  });
+  delete globalThis.__failedChanges;
+  delete globalThis.__failedSignal;
+  delete globalThis.__failedStopped;
 });
 
 test('turning a plugin off stops it, removes its routes and stays off after a reload', async () => {

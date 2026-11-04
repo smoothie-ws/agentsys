@@ -47,7 +47,7 @@ function syncComplexStatus() {
     memo.set(id, undefined); // a group inside itself is not possible; this only guards the recursion
     const states = (W.complex.get(id.slice('complex:'.length))?.members || []).map(stateOf);
     const state = ['running', 'sleeping', 'blocked', 'failed', 'waiting', 'stopped', 'completed', 'skipped'].find(s =>
-      states.includes(s)
+      states.includes(s) && (s !== 'completed' || !states.includes('ready'))
     );
     memo.set(id, state);
     return state;
@@ -56,6 +56,7 @@ function syncComplexStatus() {
     const node = W.nodes.get('complex:' + cx.id);
     if (node) {
       node.status = stateOf(node.id) || 'ready';
+      if (node.status === 'ready') W.glowUntil.delete(node.id);
     }
   }
 }
@@ -67,14 +68,16 @@ function applyExecution(detail) {
   const first = W.runtimeRevision === null; // the first look: what happened before it is not shown
   W.runtimeRevision = detail.revision;
   W.runtimeState = detail.state ?? {};
-  const seen = new Map(W.runStatus); // what the last look showed
   W.runStatus.clear();
   for (const item of detail.nodes ?? []) {
     W.runStatus.set(item.node_id, item.status);
+    // A new upstream pass invalidates the old completion, including its minimum glow hold.
+    if (!['running', 'sleeping', 'waiting', 'completed'].includes(item.status)) {
+      W.glowUntil.delete(item.node_id);
+      W.glowPending.delete(item.node_id);
+    }
   }
   for (const [id, count] of Object.entries(detail.runs ?? {})) {
-    // A pass the last look saw at work glows by its status; one that came and went between two looks is held.
-    if (!first && count > (W.runs.get(id) ?? 0) && !WORKING.includes(seen.get(id))) holdGlow(id);
     W.runs.set(id, count);
   }
   W.results.clear();
@@ -82,36 +85,72 @@ function applyExecution(detail) {
   for (const item of detail.nodes ?? []) if (item.error) W.results.set(item.node_id, {error: item.error});
   for (const node of W.nodes.values()) node.status = W.runStatus.get(node.id) || 'ready';
   syncComplexStatus();
+  const activity = detail.activity ?? [];
+  if (!first) queuePassGlows(activity.filter(event => event.sequence > W.activitySequence));
+  W.activitySequence = activity.at(-1)?.sequence ?? W.activitySequence;
   syncToolbar();
   draw();
 }
-const GLOW_MS = 300; // the least a node glows for a pass: the fade in, a moment lit, the fade out
+const GLOW_MS = 480; // short passes remain visible without delaying execution
+/** Preserve start order when several fast nodes finish between two UI updates. */
+function queuePassGlows(events) {
+  if (document.documentElement.dataset.motion === 'false' || matchMedia('(prefers-reduced-motion: reduce)').matches) return;
+  const session = W.executionSession;
+  const latest = new Map(events.map(event => [event.node_id, event]));
+  const passes = events.filter(
+    event => latest.get(event.node_id) === event &&
+      ['running', 'sleeping', 'waiting', 'completed'].includes(W.runStatus.get(event.node_id))
+  );
+  const step = passes.length > 1 ? Math.min(90, 450 / (passes.length - 1)) : 0;
+  passes.forEach((event, index) => {
+    W.glowPending.set(event.node_id, event.sequence);
+    const show = () => {
+      if (
+        W.executionSession !== session || !session?.canvas.isConnected ||
+        W.glowPending.get(event.node_id) !== event.sequence
+      ) return;
+      W.glowPending.delete(event.node_id);
+      if (W.runPaused || !['running', 'sleeping', 'waiting', 'completed'].includes(W.runStatus.get(event.node_id))) return;
+      holdGlow(event.node_id);
+    };
+    if (WORKING.includes(W.runStatus.get(event.node_id)) || index === 0) show();
+    else {
+      const timer = setTimeout(() => {
+        W.glowTimers.delete(timer);
+        show();
+      }, index * step);
+      W.glowTimers.add(timer);
+    }
+  });
+}
 /**
- * The nodes a pass lights: the node, the Complex Nodes around it (a folded one hides what runs inside), and the nodes whose
- * data it read. Those that only hold or pass data never run, so the nodes that feed them are lit too.
+ * A pass lights its node and the enclosing Complex Nodes. Data suppliers do not imply execution.
  */
 function litBy(id) {
-  const found = new Set(),
-    edges = W.snapshot?.edges ?? [];
-  const visit = (x, reads) => {
+  const found = new Set();
+  const visit = x => {
     if (found.has(x)) return;
     found.add(x);
-    for (const c of W.complex.values()) if (c.members.includes(x)) visit('complex:' + c.id, reads);
-    // What a node read comes from the nodes wired to its data inputs; those that ran themselves stop the chain.
-    if (reads === 0 || !W.runs.has(x))
-      for (const e of edges) if (e.target === x && !isSignal(edgeType(e.typed_by || e))) visit(e.source, reads + 1);
+    for (const c of W.complex.values()) if (c.members.includes(x)) visit('complex:' + c.id);
   };
-  visit(id, 0);
+  visit(id);
   return found;
 }
 /** A node that had a pass glows for at least GLOW_MS, however short the pass was. */
 function holdGlow(id) {
+  const session = W.executionSession;
   const lit = [...litBy(id)],
     until = performance.now() + GLOW_MS;
   for (const x of lit) W.glowUntil.set(x, Math.max(until, W.glowUntil.get(x) ?? 0));
-  setTimeout(() => {
+  for (const x of lit) if (W.nodes.get(x) && W.elements.get(x)) setGlow(W.elements.get(x), W.nodes.get(x));
+  drawWires();
+  const timer = setTimeout(() => {
+    if (W.executionSession !== session) return;
+    W.glowTimers.delete(timer);
     for (const x of lit) if (W.nodes.get(x) && W.elements.get(x)) setGlow(W.elements.get(x), W.nodes.get(x));
+    drawWires();
   }, GLOW_MS + 20);
+  W.glowTimers.add(timer);
 }
 const executionVisible = session => !!session && session === W.executionSession && session.canvas.isConnected;
 async function followExecution(detail, session = W.executionSession) {

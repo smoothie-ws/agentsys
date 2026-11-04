@@ -13,9 +13,11 @@ Stop is available while idle and while a Run request is pending. It terminates t
 - `POST projects/{project_id}/execution/pause` and `/resume` set the graph's pause gate, selecting `workflow_id` in the body. Acceptance does not require already-running synchronous code to yield.
 - `POST projects/{project_id}/evaluate-node` dispatches selected nodes or reads selected values through this same runtime. It returns outputs by node ID, errors, displays and node statuses. With `collect: true`, node failures are returned as data.
 
-The runtime response contains `workflow_id`, `revision`, `status`, `paused`, `active_signals`, `nodes`, `runs` (how many times each node finished or failed since the server started; the editor lights a node for every pass, however short), `outputs`, `errors`, `displays` and `state`. `revision` changes when runtime data changes and supports UI synchronization.
+The runtime response contains `workflow_id`, `revision`, `status`, `paused`, `active_signals`, `nodes`, `runs` (how many times each node finished or failed since the server started), `activity`, `outputs`, `errors`, `displays` and `state`. `revision` changes when runtime data changes and supports UI synchronization. `activity` retains the last 128 starts as `{sequence, node_id}` so the canvas can show short passes in their actual start order even when updates are coalesced. This transient history and the pass counts are not persisted or replayed when opening a graph.
 
-Node statuses are `running` (code), `sleeping` (timer), `waiting` (an explicit awaited branch), `completed`, `failed`, `blocked`, `skipped` and `stopped`. Automatic completion leaves its Script marked completed while following nodes work. Overlapping calls keep the node active until its active invocations settle.
+Node statuses are `ready`, `running` (code), `sleeping` (timer), `waiting` (an explicit awaited branch), `completed`, `failed`, `blocked`, `skipped` and `stopped`. Starting a node clears old terminal states downstream along signal connections, without clearing stored values or interrupting active parallel invocations. Automatic completion leaves its Script marked completed while following nodes work. Overlapping calls keep the node active until its active invocations settle.
+
+The canvas uses white for active work and briefly holds short passes before settling to green (completed) or red (failed). Signal wires animate in the flow direction. The presentation never delays graph execution. Animation-off and reduced-motion preferences show static states.
 
 ## Persistence
 

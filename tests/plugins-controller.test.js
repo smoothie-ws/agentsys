@@ -108,7 +108,7 @@ test('api.data, api.secret and api.library.add', async () => {
 test('the plugin skeleton of docs/llm-controller.md works: settings, key header, answer, and Stop aborts the model request', async () => {
   const http = require('node:http');
   const doc = fs.readFileSync(path.join(__dirname, '..', 'docs', 'llm-controller.md'), 'utf8');
-  const skeleton = doc.match(/```js\n([\s\S]*?)```/)[1];
+  const skeleton = doc.match(/```js\r?\n([\s\S]*?)```/)[1];
   const seen = {requests: 0, closed: 0, auth: null, body: null};
   const model = http.createServer((req, res) => {
     let data = '';

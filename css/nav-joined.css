@@ -303,8 +303,7 @@ body.nav-joined #mobile-secondary > .nav-pill {
       color-mix(in srgb, var(--accent) 9%, var(--j-3))
     );
 }
-/* The Properties panel is docked like the left ones, mirrored: icon rail (sidebar tone) on the right, panel (second-panel tone) to its left;
-   the open icon flows left into the panel through its own pill, and the panel's right edge carries the seam. */
+/* The floating inspector keeps the shell's glass tones; its section buttons sit independently over the canvas. */
 .nav-joined .side {
   --edge: 0.4rem;
   --join: var(--join-sidebar);
@@ -312,26 +311,14 @@ body.nav-joined #mobile-secondary > .nav-pill {
   margin: 0;
   border-radius: 0;
   background: none; /* the glass sits on .side-content and .side-tabs, each in its own tone */
-  overflow: clip;
-}
-/* Folded to the icon rail, the panel is exactly the rail wide: no empty column of the panel tone between it and the canvas. */
-.nav-joined .editor[data-side-collapsed='true'] {
-  grid-template-columns: minmax(0, 1fr) 56px;
-}
-@media (max-width: 900px) {
-  .nav-joined .editor,
-  .nav-joined .editor[data-side-collapsed='true'] {
-    grid-template-columns: minmax(0, 1fr) 56px;
-  }
+  overflow: visible;
 }
 .nav-joined .side[data-collapsed='true'] {
   border-radius: 0;
 }
 .nav-joined .side-tabs {
   position: relative;
-  padding-top: calc(
-    2 * var(--join-r) + 0.15rem
-  ); /* leave room for both the panel corner and the first tab's joining curve */
+  padding-top: 0;
   background: none;
 }
 .nav-joined .side-content {
@@ -378,10 +365,23 @@ body.nav-joined #mobile-secondary > .nav-pill {
 }
 .nav-joined .side-tabs button.active,
 .nav-joined .side-tabs button.active:hover:not(:disabled) {
-  background: transparent;
+  background: var(--current);
 }
 .nav-joined .side-tabs button:hover:not(.active) {
   background: color-mix(in srgb, var(--accent) 9%, transparent);
+}
+/* Canvas controls float independently; they no longer form a docked rail. */
+.nav-joined .side-tabs > .nav-pill,
+.nav-joined .side-content > .nav-seam {
+  display: none;
+}
+body[data-page='workflow'] main {
+  background: var(--background);
+  border-top-right-radius: 0;
+  border-bottom-right-radius: 0;
+}
+body[data-page='workflow'] main > .nav-seam {
+  display: none;
 }
 
 /* Effects off: everything solid and flat again (the glass tones fall back to the opaque ones). */

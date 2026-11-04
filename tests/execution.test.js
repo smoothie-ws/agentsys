@@ -28,6 +28,37 @@ async function change(app, project, node, code) {
   config.inputs.find(p => p.id === 'script').default = code;
   await app.api('PUT', `projects/${project.id}/typed-nodes/${node.id}`, {node_type: 'custom', config});
 }
+for (const parallel of [false, true])
+  test(`starting upstream clears old downstream states${parallel ? ' through a cycle while preserving active work' : ''}`, async t => {
+    const {app, project, node, path} = await fixture(t, 'node.display("first");');
+    const make = code => app.api('POST', `projects/${project.id}/typed-nodes`, {
+      node_type: 'custom', config: nodes.script(code),
+    });
+    const second = await make('node.display("second");'),
+      last = await make(`node.display("last");${parallel ? 'throw Error("old failure");' : ''}`),
+      unrelated = await make('node.display("unrelated");');
+    await flow(app, project.id, {}, [node.id, second.id, last.id]);
+    const previous = await app.api('POST', path, {node_ids: [node.id, unrelated.id], wait: true});
+    assert.equal(previous.nodes.find(n => n.node_id === last.id)?.status, parallel ? 'failed' : 'completed');
+    await change(app, project, node, 'await node.sleep(500);node.flow.cancel();');
+    if (parallel) {
+      await app.api('POST', `projects/${project.id}/port-connections`, {
+        add: [{source: last.id, source_port: 'out', target: node.id, target_port: 'in'}],
+      });
+      await change(app, project, second, 'await node.sleep(500);node.flow.cancel();');
+      await app.api('POST', path, {node_ids: [second.id]});
+      await until(app, path, r => r.nodes.some(n => n.node_id === second.id && n.status === 'sleeping'));
+    }
+    await app.api('POST', path, {node_ids: [node.id]});
+    const detail = await until(app, path, r => r.nodes.some(n => n.node_id === node.id && n.status === 'sleeping')),
+      status = id => detail.nodes.find(n => n.node_id === id)?.status;
+    assert.equal(status(second.id), parallel ? 'sleeping' : 'ready');
+    assert.equal(status(last.id), 'ready');
+    assert.equal(status(unrelated.id), 'completed');
+    assert.equal(detail.displays[last.id], 'last');
+    assert.equal(detail.runs[last.id], 1);
+    await until(app, path, r => r.status === 'idle');
+  });
 test('flow.abort cancels its owning dispatch without cancelling an unrelated concurrent dispatch', async t => {
   const {app, project, node, path} = await fixture(
     t,

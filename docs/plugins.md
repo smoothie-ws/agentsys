@@ -1,6 +1,6 @@
 # Plugins
 
-Plugins work the way Substance Painter's do: a plugin is a folder, the application finds it at start-up, calls `start` when it loads and `stop` when it is turned off. There is no manifest, no package format and no sandbox. A plugin is trusted code that runs in the server process with the same rights as the server.
+The plugin contract is two functions: `start(api)` and `stop()`. Put a `main.js` in a folder under `plugins/`; the application discovers it and manages its lifecycle. `api(method, path, body, query)` calls the same application API as the editor. There is no manifest or required settings schema. A plugin is trusted code that runs in the server process.
 
 ```
 plugins/
@@ -11,25 +11,29 @@ plugins/
 `main.js` is a CommonJS module:
 
 ```js
-exports.title = 'Hello';                       // optional, shown on the Plugins page
-exports.description = 'What it does.';         // optional
-
-exports.start = api => {                       // required
-  api.library.addScriptNode({name: 'Hello', folder: 'Plugins', inputs: ['name'], outputs: ['greeting'],
-    code: "node.output.greeting = 'Hello, ' + (node.input.name || 'world') + '!';"});
-  api.route('GET', 'greet', ({query}) => ({text: 'Hello, ' + (query.name || 'world')}));
+let timer;
+exports.start = async api => {
+  const projects = await api('GET', 'projects');
+  api.log('Projects:', projects.length);
+  timer = setInterval(() => api.log('Plugin is active'), 60000);
 };
 
-exports.stop = () => {};                       // optional: undo what `start` did outside the api
+exports.stop = () => clearInterval(timer);
 ```
 
-`plugins/hello` is a working example. `start` may be `async`. If it throws, the plugin stays stopped and the Plugins page shows the error; other plugins are not affected.
+That is the complete required structure. `start` and `stop` may be async; await application calls during startup. `stop` is optional if there is nothing to release. It is also called when startup fails, to release partially created resources. `api.signal` aborts on disable/reload so a plugin can cancel its background work. Registered routes and change listeners are removed automatically.
 
-## The api object
+Optional display metadata is `exports.title`, `exports.description`, and `exports.icon` (an application icon name such as `sparkles`). It is read even when the plugin is disabled. The bundled **AI** example is in `plugins/hello`; its original id and greeting behavior are kept for existing workflows and saved settings.
+
+## Optional API helpers
+
+The direct application call is enough for normal API operations. These conveniences remain available for existing plugins and integrations; none adds a lifecycle requirement.
 
 | Member | Does |
 | --- | --- |
 | `api.id` | the folder name |
+| `api(method, path, body, query)` | calls the application API directly |
+| `api.signal` | aborts when this instance is stopped or fails to start |
 | `api.log(...)` | writes a line to the server's error output, prefixed with the id |
 | `api.request(method, path, body, query)` | calls the application API, the one the editor and Scripts use (`projects`, `resources`, `projects/{id}/typed-nodes`, ...). Not permission-checked: the plugin is trusted. |
 | `api.on('change', keys => {})` | called with the stored keys that changed. Returns the function that stops listening. |
@@ -41,7 +45,7 @@ exports.stop = () => {};                       // optional: undo what `start` di
 | `api.library.addScriptNode(spec)` | adds a node made of one Script to the Library unless a node of that name exists. `spec`: `{name, inputs, outputs, code, description, folder, icon, grants}`; ports are names or `{id, name, type}`. |
 | `api.library.add({name, payload})` | adds any Library node (a full graph payload) unless a node of that name exists |
 
-## Settings
+## Optional settings
 
 `exports.settings = [{key, label, type, default, options, help}]` gives the plugin a form on its page, saved by itself. Types: `text`, `textarea`, `password`, `number`, `boolean`, `select` (with `options`). A password is stored on the server and never sent back to the page: the field shows only that one is saved, an empty field keeps it, and the page can clear it. The plugin reads the values with `api.settings.get()`. A malformed schema stops the plugin and shows the error.
 
@@ -53,7 +57,7 @@ The Plugins page (sidebar) shows every folder that has a `main.js` as a card, li
 
 | Call | Does |
 | --- | --- |
-| `GET plugins` | `[{id, title, description, enabled, running, error}]` |
+| `GET plugins` | `[{id, title, description, icon, enabled, running, error}]` |
 | `GET plugins/{id}` | the same plus `routes`, `readme` and `settings` (with values; a password only as `set`) |
 | `PUT plugins/{id}` `{enabled}` | turns one on or off |
 | `PUT plugins/{id}/settings` `{values}` | saves settings (the name `settings` is reserved) |

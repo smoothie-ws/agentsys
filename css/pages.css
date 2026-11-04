@@ -1,22 +1,27 @@
 /* Pages: project list, project, settings, Library, API reference. */
 
 /* ----- Page frame ----- */
-.page > section + section,
-.page > .cards + section {
-  margin-top: 2rem;
-}
 .page {
+  --page-gap: 1.5rem;
+  display: flex;
+  flex-direction: column;
+  gap: var(--page-gap);
+  width: 100%;
   max-width: 1080px;
   margin: 0 auto;
   padding: 2rem 2rem 4rem;
+}
+.page > * {
+  flex-shrink: 0;
+  min-width: 0;
+  margin-block: 0;
 }
 .page-head {
   display: flex;
   align-items: flex-start;
   justify-content: space-between;
   gap: 1rem;
-  min-height: 4.4rem; /* with or without a line of help, the content of every page starts at the same height */
-  margin-bottom: 1.4rem;
+  min-height: 4.4rem;
 }
 .page-head .actions {
   display: flex;
@@ -32,8 +37,18 @@
 .page-head > .actions {
   flex: none;
 }
-.page-head h1 + .muted {
+.page-description {
   margin: 0.35rem 0 0;
+}
+.page-title {
+  display: flex;
+  align-items: center;
+  gap: 0.6rem;
+}
+.page-title > svg {
+  width: 1.4rem;
+  height: 1.4rem;
+  color: var(--muted);
 }
 .empty {
   padding: 4rem 1rem;
@@ -50,9 +65,12 @@
 /* ----- Cards: the surface of a node of the canvas (tint, radius, shadow, a header with an icon and the name), so a page and a canvas read as one ----- */
 .cards {
   display: grid;
-  grid-template-columns: repeat(auto-fill, minmax(260px, 1fr));
+  grid-template-columns: repeat(auto-fill, minmax(min(260px, 100%), 1fr));
   gap: 1rem;
-  margin: 1.2rem 0 1.5rem;
+  margin: 0;
+}
+.cards:empty {
+  display: none;
 }
 .card {
   position: relative;
@@ -255,8 +273,8 @@
 }
 
 /* ----- Settings and other forms ----- */
-.form-page section {
-  padding: 0.1rem 0 0.4rem;
+.form-page > section {
+  padding: 0;
 }
 .form-page section h2 {
   margin-bottom: 1rem;
@@ -286,9 +304,6 @@
 /* ----- Library item ----- */
 
 /* ----- API reference: method tree and search stay beside the documentation ----- */
-.api-page {
-  max-width: none;
-}
 #api-box {
   display: grid;
   grid-template-columns: minmax(15rem, 20rem) minmax(0, 1fr);
@@ -425,20 +440,22 @@
   font-weight: 560;
 }
 
-@media (max-width: 900px) {
+@media (max-width: 1100px) {
   .page {
-    padding: 1.2rem 1rem 3rem;
+    padding: 1.5rem 1.5rem 3rem;
   }
 }
 
-.dashboard {
-  max-width: 1040px;
+#dashboard-projects {
+  display: flex;
+  flex-direction: column;
+  gap: var(--page-gap);
 }
 .dashboard-metrics {
   display: grid;
   grid-template-columns: repeat(2, minmax(0, 1fr));
   gap: 0.8rem;
-  margin: 1.5rem 0 2rem;
+  margin: 0;
 }
 .dashboard .tile-label {
   font-size: 0.8rem;
@@ -446,14 +463,6 @@
 }
 .dashboard .tile-value {
   font-size: 1.8rem;
-}
-.dashboard .section-head {
-  gap: 0.7rem;
-  margin-bottom: 0.6rem;
-}
-.dashboard .section-head h2 {
-  margin: 0;
-  font-size: 0.95rem;
 }
 .dashboard .section-head a {
   font-size: 0.78rem;
@@ -514,6 +523,11 @@ a.tile:hover {
   display: flex;
   align-items: center;
   justify-content: space-between;
+  gap: 1rem;
+  margin-bottom: 1rem;
+}
+.section-head h2 {
+  margin: 0;
 }
 .subnav-tree > a.subnav-row {
   display: flex;
@@ -526,10 +540,11 @@ a.tile:hover {
 
 .welcome-panel {
   padding: 24px;
-  margin: 20px 0;
-  border: 1px solid var(--line);
-  border-radius: var(--radius);
-  background: var(--field);
+  margin: 0;
+  border-radius: var(--node-radius, 16px);
+  background: color-mix(in srgb, var(--text) 6%, var(--glass-card));
+  backdrop-filter: var(--blur-sm);
+  box-shadow: var(--card-shadow);
 }
 .welcome-panel p {
   max-width: 62ch;
@@ -598,46 +613,26 @@ a.tile:hover {
   }
 }
 
-/* ----- Plugin page: header with state and actions, tabs, a column of facts ----- */
-.plugin-hero {
-  display: flex;
-  align-items: flex-start;
-  gap: 1.4rem;
-  padding-bottom: 1.4rem;
-  border-bottom: 1px solid var(--line);
-}
-.plugin-icon {
+/* ----- Page metadata and plugin details ----- */
+.page-facts {
   display: grid;
-  flex: none;
-  place-items: center;
-  width: 5.2rem;
-  height: 5.2rem;
-  border-radius: calc(var(--radius) * 1.4);
-  background: linear-gradient(
-    145deg,
-    color-mix(in srgb, var(--accent) 55%, var(--field)),
-    color-mix(in srgb, var(--accent) 18%, var(--field))
-  );
-  color: var(--text);
-}
-.plugin-icon svg {
-  width: 2.4rem;
-  height: 2.4rem;
-}
-.plugin-hero-text {
-  min-width: 0;
-}
-.plugin-hero-text h1 {
+  grid-template-columns: repeat(auto-fit, minmax(min(12rem, 100%), 1fr));
+  gap: 1rem;
   margin: 0;
 }
-.plugin-hero-text > .muted {
-  margin: 0.3rem 0 0;
+.page-facts > div {
+  display: grid;
+  align-content: start;
+  gap: 0.4rem;
+  min-width: 0;
 }
-.plugin-meta {
-  display: flex;
-  align-items: center;
-  gap: 0.8rem;
-  margin: 0.7rem 0;
+.page-facts dt {
+  color: var(--muted);
+  font-size: 0.85rem;
+}
+.page-facts dd {
+  margin: 0;
+  overflow-wrap: anywhere;
 }
 .plugin-state {
   padding: 0.12rem 0.6rem;
@@ -654,67 +649,6 @@ a.tile:hover {
   background: color-mix(in srgb, var(--bad) 20%, transparent);
   color: var(--bad);
 }
-.plugin-hero-actions {
-  display: flex;
-  flex-wrap: wrap;
-  align-items: center;
-  gap: 0.5rem;
-}
-.plugin-error {
-  margin: 1rem 0 0;
-}
-.plugin-body {
-  display: grid;
-  grid-template-columns: minmax(0, 1fr) 17rem;
-  gap: 2rem;
-  margin-top: 0.4rem;
-}
-.plugin-tabs {
-  display: flex;
-  gap: 0.2rem;
-  margin-bottom: 1.2rem;
-  border-bottom: 1px solid var(--line);
-}
-.plugin-tabs button {
-  margin-bottom: -1px;
-  padding: 0.7rem 1rem;
-  border: 0;
-  border-bottom: 2px solid transparent;
-  border-radius: 0;
-  background: none;
-  color: var(--muted);
-  font-weight: 600;
-}
-.plugin-tabs button[aria-selected='true'] {
-  border-bottom-color: var(--accent);
-  color: var(--text);
-}
-.plugin-aside {
-  align-self: start;
-  padding: 1rem 1.1rem;
-  border: 1px solid var(--line);
-  border-radius: var(--radius);
-  background: var(--field);
-}
-.plugin-aside h3 {
-  margin: 0 0 0.7rem;
-  font-size: 0.9rem;
-}
-.plugin-aside dl {
-  display: grid;
-  grid-template-columns: auto 1fr;
-  gap: 0.5rem 1rem;
-  margin: 0;
-  font-size: 0.85rem;
-}
-.plugin-aside dt {
-  color: var(--muted);
-}
-.plugin-aside dd {
-  margin: 0;
-  text-align: right;
-  overflow-wrap: anywhere;
-}
 .plugin-routes {
   display: grid;
   gap: 0.5rem;
@@ -730,11 +664,7 @@ a.tile:hover {
   border-radius: var(--radius-sm, 10px);
   background: var(--field);
 }
-@media (max-width: 900px) {
-  .plugin-body {
-    grid-template-columns: minmax(0, 1fr);
-  }
-  .plugin-hero {
-    flex-direction: column;
-  }
+.plugin-routes code {
+  min-width: 0;
+  overflow-wrap: anywhere;
 }
