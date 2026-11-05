@@ -106,20 +106,20 @@ function typeDialog(current, done) {
     current ? 'Edit type' : 'New type',
     `${field('Name', `<input name="name" maxlength="60" required autofocus value="${esc(current?.name ?? '')}">`)}
      ${field('Color', `<input type="color" name="color" value="${esc(toHex(current?.color || autoTypeColor(id)))}">`)}
-     <div class="field" id="type-alias-part"><span>Alias of <small class="muted">(it means the same as that type, so the two fit each other; it keeps its own name, color and control)</small></span>
+     <div class="field" id="type-alias-part"><span title="(it means the same as that type, so the two fit each other; it keeps its own name, color and control)">Alias of</span>
        <select name="alias" aria-label="Alias of"><option value="">None</option>${types
          .filter(t => t.id !== id)
          .map(
            t => `<option value="t:${t.id}" ${current?.alias === 't:' + t.id ? 'selected' : ''}>${esc(t.name)}</option>`
          )
          .join('')}</select></div>
-     <div class="field" id="type-fields-part"><span>Fields <small class="muted">(none: a named kind, such as Text or Signal)</small></span><div class="type-fields" id="type-fields">${fields.map(fieldRow).join('')}</div>
+     <div class="field" id="type-fields-part"><span title="(none: a named kind, such as Text or Signal)">Fields</span><div class="type-fields" id="type-fields">${fields.map(fieldRow).join('')}</div>
      <button type="button" class="dashed-action" id="add-type-field">${icon('plus')} Add field</button></div>
-     <div class="field" id="type-control-part"><span>Control <small class="muted">(how a free slot of this type is typed in on the node; the value is the default of the slot)</small></span>
+     <div class="field" id="type-control-part"><span title="(how a free slot of this type is typed in on the node; the value is the default of the slot)">Control</span>
        <select name="control" aria-label="Control"><option value="">None</option>${Object.entries(CONTROL_LABELS)
          .map(([k, v]) => `<option value="${k}" ${current?.control === k ? 'selected' : ''}>${v}</option>`)
          .join('')}</select>
-       <textarea name="options" rows="4" id="type-options" placeholder="One option per line" aria-label="Options">${esc((current?.options ?? []).join('\n'))}</textarea></div>`,
+       <textarea name="options" rows="4" id="type-options" title="One option per line" aria-label="Options">${esc((current?.options ?? []).join('\n'))}</textarea></div>`,
     async form => {
       const next = {
         id,
@@ -172,7 +172,7 @@ function typeDialog(current, done) {
     else event.target.closest('[data-remove-field]')?.closest('[data-type-field]').remove();
     sync();
   };
-  form.addEventListener('change', sync);
+  form.onchange = sync;
   sync();
 }
 

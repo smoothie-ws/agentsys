@@ -217,7 +217,7 @@ const Inspector = {
     panelResize(root, {
       edge: 'left',
       key: 'agentsys-inspector-width',
-      initial: 380,
+      initial: 360,
       min: 280,
       max: Math.max(380, Math.min(760, innerWidth - 240)),
       setWidth: width => root.parentElement.style.setProperty('--side-width', width + 'px'),
@@ -230,6 +230,8 @@ const Inspector = {
   /** The editor's grid follows the panel's state through an attribute (a :has() selector would restyle the whole page on every edit). */
   setCollapsed(collapsed) {
     this.root.dataset.collapsed = String(collapsed);
+    const content = $('.side-content', this.root);
+    if (content) content.inert = collapsed;
     this.root.parentElement.dataset.sideCollapsed = String(collapsed);
   },
 
@@ -242,7 +244,7 @@ const Inspector = {
       b.setAttribute('aria-pressed', String(on));
     });
     if (save) store.set(sideHiddenKey(), !visible);
-    requestAnimationFrame(() => placeRailPill());
+    followPills();
     if (visible) this.show();
     drawMinimap();
   },
@@ -371,8 +373,7 @@ const Inspector = {
 
   /** Nothing is selected. */
   nothing() {
-    const html =
-      '<p class="muted small" data-selection-empty>Select a node or a group to edit its properties here.</p>';
+    const html = `<div class="selection-empty" data-selection-empty title="Select a node or a group to edit its properties here.">${icon('node')}</div>`;
     if (this.body().innerHTML !== html) this.body().innerHTML = html;
   },
 
@@ -454,7 +455,7 @@ const Inspector = {
     const opened = (this.workflowSections ??= new Set()),
       key = id => `${W.project}/${W.workflow}/${id}`,
       section = (id, title, glyph, note, content) =>
-        `<details class="workflow-section" data-workflow-section="${id}" ${opened.has(key(id)) ? 'open' : ''}><summary>${icon(glyph)}<span><strong>${esc(title)}</strong><small>${esc(note)}</small></span>${icon('chevron')}</summary><div class="workflow-section-body">${content}</div></details>`;
+        `<details class="workflow-section" data-workflow-section="${id}" ${opened.has(key(id)) ? 'open' : ''}><summary title="${esc(note)}">${icon(glyph)}<span><strong>${esc(title)}</strong></span>${icon('chevron')}</summary><div class="workflow-section-body">${content}</div></details>`;
     host.innerHTML = `<div class="workflow-heading"><h2>${esc(W.snapshot.workflow_name)}</h2><p class="muted small">${plural(W.snapshot.nodes.length, 'node')} · ${plural(W.snapshot.edges.length, 'connection')}</p></div>
       ${
         issues.length
@@ -543,7 +544,7 @@ const Inspector = {
             ? `<button type="button" class="icon" data-type-source title="A Library type: it is changed in the Custom Node that defines it" aria-label="Open the Custom Node">${icon('package')}</button>`
             : `<button type="button" class="icon" data-type-edit title="${t.library ? 'Edit: changes it for every Custom Node and workflow' : 'Edit'}" aria-label="Edit">${icon('pencil')}</button>`
         }${t.library ? '' : `<button type="button" class="icon" data-type-delete ${used.has(t.id) ? 'disabled title="In use"' : 'title="Delete"'} aria-label="Delete">${icon('trash')}</button>`}</span></li>`;
-    return `${types.length ? `<ul class="type-list">${types.map(row).join('')}</ul>` : '<p class="muted small">No types yet. A type groups named fields. A type a Custom Node of the Library uses is available in every workflow; the others belong to this workflow.</p>'}${
+    return `${types.length ? `<ul class="type-list">${types.map(row).join('')}</ul>` : '<p class="muted small" title="A type groups named fields. Library types are available in every workflow.">No types yet.</p>'}${
       dev
         ? `<div class="button-row"><button type="button" class="dashed-action" data-type-new>${icon('plus')}New type</button></div>`
         : ''
@@ -691,9 +692,13 @@ const Inspector = {
       const showPermissions = detail => {
         if (!panel.isConnected) return;
         const open = panel.querySelector('.script-permissions')?.open;
-        panel.innerHTML = `<details class="script-permissions"${open ? ' open' : ''}><summary>Permissions</summary>${detail.editable ? grantControls(detail.grants, {title: 'Allowed operations'}) : '<p class="muted small">Permissions come from the enclosing Custom Nodes.</p>'}<p class="small" data-effective-permissions>Effective: ${esc(detail.effective.join(', ') || 'none')}</p><details><summary>Permission constraints</summary><p class="small">Project: ${esc(detail.project_allow.join(', ') || 'none')}</p>${detail.layers.map((layer, i) => `<p class="small">Layer ${i + 1}: ${esc(layer.join(', ') || 'none')}</p>`).join('')}</details></details>`;
+        panel.innerHTML = `<details class="script-permissions"${open ? ' open' : ''}><summary>Permissions</summary>${detail.editable ? grantControls(detail.grants, {title: 'Allowed operations'}) : '<span class="muted small" title="Permissions come from the enclosing Custom Nodes.">Inherited permissions</span>'}<p class="small" data-effective-permissions>Effective: ${esc(detail.effective.join(', ') || 'none')}</p><details><summary>Permission constraints</summary><p class="small">Project: ${esc(detail.project_allow.join(', ') || 'none')}</p>${detail.layers.map((layer, i) => `<p class="small">Layer ${i + 1}: ${esc(layer.join(', ') || 'none')}</p>`).join('')}</details></details>`;
       };
-      api(permissionPath, {query: {workflow_id}}).then(showPermissions).catch(fail);
+      api(permissionPath, {query: {workflow_id}}).then(showPermissions).catch(error => {
+        if (!panel.isConnected || W.project !== project || W.workflow !== workflow_id) return;
+        if (error.code === 'not_found') return scheduleReload();
+        fail(error);
+      });
       let permissionSave = Promise.resolve();
       panel.addEventListener('change', () => {
         const grants = readGrantControls(panel);
@@ -948,7 +953,7 @@ const Inspector = {
       `
       : ``;
     this.body().innerHTML = `${this.nameHeading(group.name, main ? '' : cx ? 'Complex Node' : 'Group')}<form id="group-form" class="stack"><input type="hidden" name="name" value="${esc(group.name)}">
-      ${main ? field('Description', `<textarea name="description" rows="3" maxlength="2000" placeholder="What does this node do?">${esc(item?.payload.description || '')}</textarea>`) + field('Icon', iconGrid(item?.payload.icon, 'complex')) : ''}
+      ${main ? field('Description', `<textarea name="description" rows="3" maxlength="2000" title="What does this node do?">${esc(item?.payload.description || '')}</textarea>`) + field('Icon', iconGrid(item?.payload.icon, 'complex')) : ''}
       ${complexPart}
       ${main ? '' : `<div class="button-row" data-node-actions><button type="button" data-act="ungroup">${icon('ungroup')}Ungroup</button><button type="button" class="danger" data-act="delete">${icon('trash')}Delete with contents</button></div>`}</form>`;
     const form = $('#group-form');

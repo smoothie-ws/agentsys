@@ -1,4 +1,4 @@
-/* The inspector floats over the canvas, beside two independent 44px section buttons. */
+/* The inspector occupies a column beside the canvas, with a transparent button rail. */
 .workflow-heading {
   margin-bottom: 1.2rem;
 }
@@ -40,11 +40,6 @@
   font-size: 0.86rem;
   font-weight: 600;
 }
-.workflow-section > summary small {
-  color: var(--muted);
-  font-size: 0.75rem;
-  line-height: 1.45;
-}
 .workflow-section[open] > summary > svg:last-child {
   transform: rotate(90deg);
 }
@@ -57,9 +52,6 @@
 }
 .workflow-section-body .permission-controls > legend {
   display: none;
-}
-.workflow-section-body .permission-hint {
-  margin-top: 0;
 }
 .workflow-section-body .permission-table {
   font-size: 0.75rem;
@@ -138,12 +130,13 @@ label.available-node,
 }
 
 .side {
-  position: absolute;
-  inset: 12px 12px 12px auto;
+  position: relative;
+  height: 100%;
   display: grid;
-  grid-template-columns: minmax(0, 1fr) 44px;
-  gap: 8px;
-  width: min(var(--side-width, 380px), calc(100% - 24px));
+  grid-template-columns: minmax(0, 1fr) 48px;
+  gap: 0;
+  --side-open-width: min(var(--side-width, 360px), 50cqw, calc(100cqw - 80px));
+  width: var(--side-open-width);
   min-width: 0;
   min-height: 0;
   margin: 0;
@@ -151,28 +144,35 @@ label.available-node,
   overflow: visible;
   pointer-events: none;
   z-index: 30;
-  transition: opacity var(--base) var(--ease);
+  transition: width var(--base) var(--ease), opacity var(--base) var(--ease);
 }
+.resizing-panel .side { transition: none; }
 .side-content {
   order: 1;
   display: flex;
   flex-direction: column;
   min-width: 0;
   min-height: 0;
-  border-radius: 30px;
+  border-radius: var(--radius);
   background: var(--dither), var(--glass);
   overflow: hidden;
   pointer-events: auto;
   backdrop-filter: var(--blur);
-  box-shadow: var(--shadow);
-  transition: opacity var(--base) var(--ease);
+  box-shadow: none;
+  transition: opacity var(--fast) var(--ease), visibility 0s;
+}
+.side-content > :is(.side-heading, .side-body, .side-actions) {
+  min-width: calc(var(--side-open-width) - 48px);
 }
 .side[data-collapsed='true'] .side-content {
-  display: none;
+  opacity: 0;
+  visibility: hidden;
+  pointer-events: none;
+  transition: opacity var(--fast) var(--ease), visibility 0s var(--base);
 }
 .side[data-collapsed='true'] {
-  width: 44px;
-  grid-template-columns: 44px;
+  width: 48px;
+
 }
 .side-tabs {
   order: 2;
@@ -181,19 +181,16 @@ label.available-node,
   align-items: center;
   gap: 8px;
   align-self: start;
-  width: 44px;
+  width: 48px;
   min-height: 0;
   margin: 0;
-  padding: 0;
+  padding: 16px 4px;
   pointer-events: auto;
 }
 .side-tabs button {
-  width: 44px;
-  height: 44px;
-  padding: 0;
-  background: var(--float);
-  backdrop-filter: var(--blur);
-  box-shadow: var(--shadow);
+  background: transparent;
+  backdrop-filter: none;
+  box-shadow: none;
   color: var(--muted);
 }
 .side-tabs button:hover:not(:disabled) {
@@ -212,7 +209,8 @@ label.available-node,
   display: flex;
   align-items: center;
   justify-content: space-between;
-  padding: 0.65rem 0.6rem 0.35rem 1.1rem;
+  min-height: 64px;
+  padding: 16px 16px 8px;
   color: var(--muted);
   font-size: 0.85rem;
 }
@@ -220,7 +218,7 @@ label.available-node,
   flex: 1;
   min-height: 0;
   width: 100%;
-  padding: 0.5rem 1.1rem 2rem;
+  padding: 0 16px 24px;
   overflow: auto;
 }
 .side-actions {
@@ -588,4 +586,15 @@ button.dashed-action[data-add] {
 }
 [data-node-actions] .danger {
   margin-left: auto;
+}
+
+.selection-empty {
+  display: grid;
+  place-items: center;
+  min-height: 80px;
+  color: var(--muted);
+}
+.selection-empty svg {
+  width: 24px;
+  height: 24px;
 }

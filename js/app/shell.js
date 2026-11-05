@@ -1,17 +1,24 @@
 // The page frame: sidebar toggle and resizing, panel resizing, global search and boot(). The navigation itself is in nav.js.
 'use strict';
 
-function toggleSidebar(expand = document.body.classList.contains('sidebar-hidden'), persist = true) {
-  document.body.classList.toggle('sidebar-hidden', !expand);
-  if (persist) store.set('agentsys-sidebar-collapsed', !expand);
+function toggleSidebar(expand, persist = true) {
+  const mobile = matchMedia('(max-width: 760px)').matches,
+    className = mobile ? 'mobile-sidebar-hidden' : 'sidebar-hidden',
+    key = mobile ? 'agentsys-mobile-sidebar-collapsed' : 'agentsys-sidebar-collapsed';
+  expand ??= document.body.classList.contains(className);
+  document.body.classList.toggle(className, !expand);
+  if (persist) store.set(key, !expand);
+  syncSubnavToggle();
 }
-if (store.get('agentsys-sidebar-collapsed')) toggleSidebar(false);
 const narrowSidebar = matchMedia('(max-width: 900px)');
-if (narrowSidebar.matches) toggleSidebar(false, false);
-narrowSidebar.addEventListener('change', event => {
-  if (event.matches) toggleSidebar(false, false);
-  else toggleSidebar(!store.get('agentsys-sidebar-collapsed', false), false);
-});
+function restoreSidebar() {
+  const mobile = matchMedia('(max-width: 760px)').matches;
+  toggleSidebar(mobile
+    ? !store.get('agentsys-mobile-sidebar-collapsed', false)
+    : !narrowSidebar.matches && !store.get('agentsys-sidebar-collapsed', true), false);
+}
+store.ready.then(restoreSidebar).catch(fail);
+narrowSidebar.addEventListener('change', restoreSidebar);
 $('#open-search').onclick = () => openSearch();
 
 /** A keyboard-reachable separator on a panel's boundary; it sits just outside the panel (see .panel-resize). */
@@ -84,7 +91,7 @@ function panelResize(panel, {edge, key, initial, min, max, setWidth, collapse, e
       }
     );
   };
-  commit(width);
+  store.ready.then(() => commit(clamp(Number(store.get(key)) || initial, min, max))).catch(fail);
   return handle;
 }
 /** Left sidebar: the boundary follows the pointer; the layout previews what release will do. */
@@ -101,7 +108,7 @@ function panelResize(panel, {edge, key, initial, min, max, setWidth, collapse, e
     body.style.setProperty('--sidebar-width', width + 'px');
     store.set(key, width);
   };
-  setWidth(width);
+  store.ready.then(() => setWidth(Number(store.get(key)) || 232)).catch(fail);
   const handle = resizeHandle(side, 'right', 'Resize sidebar', event => {
     if (event.key === 'Home') toggleSidebar(false);
     else if (event.key === 'End') toggleSidebar(true);
@@ -126,6 +133,7 @@ function panelResize(panel, {edge, key, initial, min, max, setWidth, collapse, e
         live = clamp(startWidth + e.clientX - startX, RAIL, MAX);
         expand = live >= (RAIL + MIN) / 2;
         side.style.width = live + 'px';
+        body.style.setProperty('--sidebar-live-width', live + 'px');
         body.classList.toggle('sidebar-hidden', !expand);
         body.classList.toggle('sidebar-will-collapse', !expand);
         body.classList.toggle('sidebar-will-expand', expand && wasHidden);
@@ -133,6 +141,7 @@ function panelResize(panel, {edge, key, initial, min, max, setWidth, collapse, e
       e => {
         body.classList.remove('resizing-panel', 'sidebar-dragging', 'sidebar-will-collapse', 'sidebar-will-expand');
         side.style.width = '';
+        body.style.removeProperty('--sidebar-live-width');
         if (e.type === 'pointercancel') return toggleSidebar(!wasHidden);
         if (expand) setWidth(live);
         toggleSidebar(expand);
@@ -141,13 +150,31 @@ function panelResize(panel, {edge, key, initial, min, max, setWidth, collapse, e
   };
 })();
 /** Second panel: the same draggable boundary as the sidebar's; a narrow drag folds it to icons, a drag on the folded one opens it. */
+function syncSubnavToggle() {
+  const open = matchMedia('(max-width: 760px)').matches
+    ? !document.body.classList.contains('mobile-sidebar-hidden')
+    : !document.body.classList.contains('sidebar-hidden');
+  const button = $('#toggle-subnav');
+  button.setAttribute('aria-controls', 'sidebar');
+  button.setAttribute('aria-expanded', String(open));
+  button.title = open ? 'Collapse navigation' : 'Expand navigation';
+  button.setAttribute('aria-label', button.title);
+}
+function toggleSubnav(expand = document.body.classList.contains('subnav-collapsed')) {
+  document.body.classList.toggle('subnav-collapsed', !expand);
+  store.set('agentsys-subnav-collapsed', !expand);
+  syncSubnavToggle();
+}
+$('#toggle-subnav').onclick = () => {
+  toggleSidebar();
+};
 (function subnavResize() {
-  const body = document.body,
-    toggle = (expand = body.classList.contains('subnav-collapsed')) => {
-      body.classList.toggle('subnav-collapsed', !expand);
-      store.set('agentsys-subnav-collapsed', !expand);
-    };
-  if (store.get('agentsys-subnav-collapsed')) toggle(false);
+  const body = document.body;
+  store.ready
+    .then(() => {
+      toggleSubnav(!store.get('agentsys-subnav-collapsed', false));
+    })
+    .catch(fail);
   const handle = panelResize($('#subnav'), {
     edge: 'right',
     key: 'agentsys-subnav-width',
@@ -155,11 +182,11 @@ function panelResize(panel, {edge, key, initial, min, max, setWidth, collapse, e
     min: 170,
     max: 420,
     setWidth: width => body.style.setProperty('--subnav-width', width + 'px'),
-    collapse: () => toggle(false),
-    expand: () => toggle(true),
+    collapse: () => toggleSubnav(false),
+    expand: () => toggleSubnav(true),
     isCollapsed: () => body.classList.contains('subnav-collapsed'),
   });
-  handle.ondblclick = () => toggle();
+  handle.ondblclick = () => toggleSubnav();
 })();
 document.addEventListener('keydown', event => {
   if ((event.ctrlKey || event.metaKey) && keyCode(event) === 'KeyK') {
@@ -260,6 +287,8 @@ function openSearch() {
 
 // ----- boot -----
 async function boot() {
+  await store.ready;
+  Tabs.load();
   const session = await api('session');
   Object.assign(app, {preferences: session.preferences, shortcutDefaults: session.shortcut_defaults});
   applyStyle(session.preferences.style);
@@ -268,6 +297,7 @@ async function boot() {
   await api('library/builtin', {method: 'POST', body: {}}).catch(() => {}); // the built-in nodes join the Library
   await Promise.all([loadLibrary(), loadProjects(), loadPlugins()]);
   await render();
+  await Tabs.refreshRuntimes();
 }
 Backend.subscribe(keys => {
   if (keys.includes('projects')) {

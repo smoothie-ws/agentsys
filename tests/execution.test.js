@@ -31,9 +31,11 @@ async function change(app, project, node, code) {
 for (const parallel of [false, true])
   test(`starting upstream clears old downstream states${parallel ? ' through a cycle while preserving active work' : ''}`, async t => {
     const {app, project, node, path} = await fixture(t, 'node.display("first");');
-    const make = code => app.api('POST', `projects/${project.id}/typed-nodes`, {
-      node_type: 'custom', config: nodes.script(code),
-    });
+    const make = code =>
+      app.api('POST', `projects/${project.id}/typed-nodes`, {
+        node_type: 'custom',
+        config: nodes.script(code),
+      });
     const second = await make('node.display("second");'),
       last = await make(`node.display("last");${parallel ? 'throw Error("old failure");' : ''}`),
       unrelated = await make('node.display("unrelated");');
@@ -252,7 +254,7 @@ test('JSON context rejects functions and keeps its previous value', async t => {
   assert.match(result.displays[node.id], /JSON/);
 });
 
-test('export, import and duplication carry graph JSON state and remap node values', async t => {
+test('graph export omits runtime; workflow duplication keeps state and remaps node values', async t => {
   const {app, project, node, path} = await fixture(
     t,
     'context.state.nodes=[{id:"z"},{id:"a"}];context.state.marker={$script:"literal data"};node.display("stored");'
@@ -261,12 +263,12 @@ test('export, import and duplication carry graph JSON state and remap node value
   const packet = await app.api('GET', `projects/${project.id}/workflows/${project.id}/export`);
   const imported = await app.api('POST', `projects/${project.id}/workflows/import`, packet);
   const restored = await app.api('GET', path, {}, {workflow_id: imported.id});
-  assert.deepEqual(restored.state.nodes, [{id: 'z'}, {id: 'a'}]);
-  assert.deepEqual(restored.state.marker, {$script: 'literal data'});
-  assert.equal(restored.displays[node.id], 'stored');
+  assert.deepEqual(restored.state, {});
+  assert.deepEqual(restored.displays, {});
   const copied = await app.api('POST', `projects/${project.id}/workflows/${project.id}/duplicate`);
   const copy = await app.api('GET', path, {}, {workflow_id: copied.id});
-  assert.deepEqual(copy.state, restored.state);
+  assert.deepEqual(copy.state.nodes, [{id: 'z'}, {id: 'a'}]);
+  assert.deepEqual(copy.state.marker, {$script: 'literal data'});
   assert.deepEqual(Object.values(copy.displays), ['stored']);
   assert.equal(copy.displays[node.id], undefined);
 });
@@ -365,3 +367,26 @@ test('Stop of a Script that runs another workflow stops that workflow too', asyn
   await until(app, otherPath, r => r.status === 'idle');
   assert.equal((await app.api('GET', otherPath)).state.unwanted, undefined);
 });
+
+for (const group of [false, true])
+  test(`deleting a Library ${group ? 'group' : 'node'} releases its editor runtime and history`, async t => {
+    const app = createApp({scripts: 'worker'});
+    t.after(() => app.Backend.shutdownExecutions());
+    const opened = await app.api('POST', 'library/node-editor', {folder: 'Disposable'});
+    const id = opened.project_id;
+    const script = await app.api('POST', `projects/${id}/typed-nodes`, {
+      node_type: 'custom',
+      config: nodes.script('await node.sleep(10000);'),
+    });
+    await app.api('POST', `projects/${id}/execution`, {node_ids: [script.id]});
+    await until(app, `projects/${id}/execution`, detail => detail.nodes.some(n => n.status === 'sleeping'));
+    assert.equal(app.eval(`GRAPH_RUNTIMES.has('${id}')`), true);
+    assert.equal(app.eval(`histories.has('${id}')`), true);
+    if (group) await app.api('POST', 'library/node-folders', {action: 'delete', path: 'Disposable'});
+    else await app.api('DELETE', `resources/${opened.resource_id}`);
+    assert.equal(app.eval(`GRAPH_RUNTIMES.has('${id}')`), false);
+    assert.equal(app.workerStats.terminated, 1);
+    assert.equal(app.eval(`histories.has('${id}')`), false);
+    assert.equal(await app.eval(`DB.get('wf:${id}')`), undefined);
+    assert.equal(await app.eval(`DB.get(runtimeKey('${id}'))`), undefined);
+  });

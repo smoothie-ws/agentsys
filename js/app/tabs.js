@@ -1,10 +1,11 @@
-// Tabs of the open graph editors (workflows and Custom Nodes), like files in a code editor; persisted in this browser.
+// Tabs of the open graph editors (workflows and Custom Nodes), like files in a code editor; persisted in the application data store.
 // Every other page (Dashboard, Projects, a project, Library, Settings) is reached through the sidebar and the second panel;
 // it has no tab; Tabs.pages remembers scroll and local filters, while the URL selects the page and subsection.
 'use strict';
 
 const Tabs = {
   items: [],
+  runtimes: new Map(),
   /** Editors shown during this page session: reopening one keeps its camera, a fresh open fits the view. */
   seen: new Set(),
   /** Scroll and local filters of non-editor pages, by page key. */
@@ -45,6 +46,8 @@ const Tabs = {
     this.pages = pages && typeof pages === 'object' && !Array.isArray(pages) ? pages : {};
   },
   save() {
+    for (const key of this.runtimes.keys())
+      if (!this.items.some(tab => this.key(tab) === key)) this.runtimes.delete(key);
     for (const key of this.seen) if (!this.items.some(t => this.key(t) === key)) this.seen.delete(key);
     store.set('agentsys-tabs', this.items);
     store.set('agentsys-pages', this.pages);
@@ -150,6 +153,41 @@ const Tabs = {
     ]);
   },
   href: tab => tab.href || `/p/${encodeURIComponent(tab.project)}/w/${encodeURIComponent(tab.workflow)}`,
+  setRuntime(tab, detail) {
+    const key = this.key(tab);
+    const status = detail.paused ? 'paused' : detail.active_signals > 0 ? 'running' : 'idle';
+    this.runtimes.set(key, status);
+    const element = [...$('#tabs').children].find(el => el.dataset.tab === key && !el.classList.contains('closing'));
+    if (element) this.paintRuntime(element, status);
+  },
+  paintRuntime(element, status) {
+    element.classList.toggle('is-running', status === 'running');
+    element.classList.toggle('is-paused', status === 'paused');
+    element.dataset.runtime = status || 'idle';
+    element.setAttribute(
+      'aria-label',
+      element.title + (status === 'running' ? ' (running)' : status === 'paused' ? ' (paused)' : '')
+    );
+  },
+  async refreshRuntimes(workflows = null) {
+    const current = app.route || {};
+    const tabs = this.items.filter(
+      tab =>
+        !tab.library &&
+        (!workflows || workflows.has(tab.workflow)) &&
+        !(current.workflow === tab.workflow && W.executionReady)
+    );
+    await Promise.all(
+      tabs.map(async tab => {
+        try {
+          const detail = await api(`projects/${tab.project}/execution`, {query: {workflow_id: tab.workflow}});
+          if (this.items.includes(tab)) this.setRuntime(tab, detail);
+        } catch (error) {
+          if (error.status === 404) this.setRuntime(tab, {active_signals: 0});
+        }
+      })
+    );
+  },
   /** A closed tab fades and shrinks to nothing, so the tabs to its right glide over (the bar is a flex row; its width is animated in CSS). */
   dismiss(el) {
     if (document.documentElement.dataset.motion === 'false' || !el.isConnected) return el.remove();
@@ -171,16 +209,18 @@ const Tabs = {
       .filter(tab => developerMode() || (!tab.library && !tab.project.startsWith('lib-')))
       .map(tab => {
         const key = this.key(tab),
-          el = old.get(key) || Object.assign(document.createElement('a'), {role: 'tab'});
+          el = old.get(key) || Object.assign(document.createElement('a'), {role: 'tab'}),
+          sub = tab.library || tab.project.startsWith('lib-') ? 'Library' : tab.sub;
         old.delete(key);
-        const html = `${icon(tab.icon || (tab.library ? 'complex' : 'node'))}<span class="tab-title">${esc(tab.title)}</span>${tab.sub ? `<span class="tab-sub">${esc(tab.sub)}</span>` : ''}${tab.pinned ? `<span class="tab-pin" title="Pinned">${icon('pin')}</span>` : `<button class="icon tab-close" data-close-tab="${esc(key)}" title="Close" aria-label="Close tab">${icon('x')}</button>`}`;
+        const html = `${icon(tab.icon || (tab.library ? 'complex' : 'node'))}<span class="tab-title">${esc(tab.title)}</span>${sub ? `<span class="tab-sub">${esc(sub)}</span>` : ''}${tab.pinned ? `<span class="tab-pin" title="Pinned">${icon('pin')}</span>` : `<button class="icon tab-close" data-close-tab="${esc(key)}" title="Close" aria-label="Close tab">${icon('x')}</button>`}`;
         el.dataset.tab = key;
         el.draggable = false;
         el.toggleAttribute('data-link', true);
         el.dataset.path = this.href(tab);
         el.href = urlOf(el.dataset.path);
-        el.title = (tab.sub ? tab.sub + ' / ' : '') + tab.title;
+        el.title = (sub ? sub + ' / ' : '') + tab.title;
         el.className = 'tab' + (key === current ? ' active' : '') + (tab.pinned ? ' is-pinned' : '');
+        this.paintRuntime(el, this.runtimes.get(key));
         el.setAttribute('aria-selected', String(key === current));
         el.tabIndex =
           key === current || (!this.items.some(t => this.key(t) === current) && tab === this.items[0]) ? 0 : -1;
@@ -198,7 +238,6 @@ const Tabs = {
     if (!this.sorting) $('.tab.active', bar)?.scrollIntoView({block: 'nearest', inline: 'nearest'});
   },
 };
-Tabs.load();
 Tabs.arrange();
 $('#tabs').addEventListener('contextmenu', event => {
   const tab = event.target.closest('[data-tab]');
@@ -412,3 +451,23 @@ $('#tabs').addEventListener('pointerdown', event => {
     {signal: controller.signal}
   );
 });
+
+// Runtime commits also update tabs whose canvases are closed. Coalesce bursts of state/value events.
+const changedTabRuntimes = new Set();
+let tabRuntimeTimer = null;
+Backend.subscribe(
+  keys => {
+    for (const key of keys) {
+      const match = /^workflows\/([^/]+)\/runtime$/.exec(key);
+      if (match && Tabs.items.some(tab => tab.workflow === match[1])) changedTabRuntimes.add(match[1]);
+    }
+    if (!changedTabRuntimes.size || tabRuntimeTimer) return;
+    tabRuntimeTimer = setTimeout(() => {
+      tabRuntimeTimer = null;
+      const workflows = new Set(changedTabRuntimes);
+      changedTabRuntimes.clear();
+      Tabs.refreshRuntimes(workflows);
+    }, 100);
+  },
+  {commits: true}
+);

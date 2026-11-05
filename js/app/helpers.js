@@ -27,22 +27,57 @@ const when = seconds => {
       : {month: 'short', day: 'numeric', hour: '2-digit', minute: '2-digit'}
   );
 };
-/** localStorage that never throws (private windows, blocked storage); values are JSON. */
-const store = {
-  get(key, fallback = null) {
-    try {
-      const raw = localStorage.getItem(key);
-      return raw === null ? fallback : JSON.parse(raw);
-    } catch {
-      return fallback;
+/** UI state uses the same file-backed store as projects; localStorage is read once for migration. */
+const store = (() => {
+  const values = {...(globalThis.AGENTSYS_UI_STORE || {})};
+  const legacy = [];
+  try {
+    for (let i = 0; i < localStorage.length; i++) {
+      const key = localStorage.key(i);
+      if (!key.startsWith('agentsys-') && !key.startsWith('fieldHeights:')) continue;
+      try {
+        if (!(key in values)) values[key] = JSON.parse(localStorage.getItem(key));
+        legacy.push(key);
+      } catch {}
     }
-  },
-  set(key, value) {
-    try {
-      localStorage.setItem(key, JSON.stringify(value));
-    } catch {}
-  },
-};
+  } catch {}
+  const dirty = new Map();
+  let pending = Promise.resolve();
+  const save = () => {
+    pending = pending
+      .catch(() => {})
+      .then(async () => {
+        if (!dirty.size) return;
+        const changes = Object.fromEntries(dirty);
+        const state = await api('ui-state', {method: 'PUT', body: {values: changes}});
+        for (const [key, value] of Object.entries(changes)) if (dirty.get(key) === value) dirty.delete(key);
+        for (const [key, value] of Object.entries(state)) if (!dirty.has(key)) values[key] = value;
+      });
+    return pending;
+  };
+  const ready = (async () => {
+    const saved = await DB.get('ui-state');
+    for (const [key, value] of Object.entries(saved || {})) if (!dirty.has(key)) values[key] = value;
+    for (const key of legacy) if (!Object.hasOwn(saved || {}, key)) dirty.set(key, values[key]);
+    if (legacy.length) {
+      await save();
+      for (const key of legacy) localStorage.removeItem(key);
+    }
+  })();
+  return {
+    ready,
+    get: (key, fallback = null) => clone(Object.hasOwn(values, key) ? values[key] : fallback),
+    set(key, value) {
+      if (JSON.stringify(values[key]) !== JSON.stringify(value)) {
+        values[key] = clone(value);
+        dirty.set(key, values[key]);
+      }
+      const result = ready.then(save);
+      result.catch(error => console.error('Could not save UI state:', error));
+      return result;
+    },
+  };
+})();
 const uuid = () => crypto.randomUUID?.() ?? uid();
 const app = {
   preferences: {},

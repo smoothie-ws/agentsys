@@ -95,7 +95,7 @@ test('api.data, api.secret and api.library.add', async () => {
       return (await api.request('GET', 'resources')).filter(r => r.name === 'Hello copy').length;
     });
   };`;
-  const hello = fs.readFileSync(path.join(__dirname, '..', 'plugins', 'hello', 'main.js'), 'utf8');
+  const hello = `exports.start = api => api.library.addScriptNode({name: 'Hello', inputs: ['name'], outputs: ['greeting'], code: "node.output.greeting = node.input.name;"});`;
   await withServer({tools: source, hello}, async ({call}) => {
     assert.deepEqual((await call('POST', 'plugins/tools/remember', {n: 7})).body, {n: 7});
     assert.deepEqual((await call('POST', 'plugins/tools/remember', {n: 8})).body, {n: 8});

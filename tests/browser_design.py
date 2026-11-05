@@ -16,7 +16,7 @@ async def check(base):
         await page.wait_for_selector('.dashboard')
         project = await page.evaluate("api('projects',{method:'POST',body:{name:'Layout review'}})")
         routes = ['/', '/projects', '/p/' + project['id'], '/p/' + project['id'] + '/settings',
-                  '/library', '/library/nodes', '/settings', '/plugins', '/plugins/hello', '/api', '/missing']
+                  '/library', '/library/nodes', '/settings', '/plugins', '/plugins/ai', '/api', '/missing']
         artifacts = Path(os.environ.get('AGENTSYS_UI_ARTIFACTS', 'node_modules/.cache/ui-review'))
         artifacts.mkdir(parents=True, exist_ok=True)
         for width in [1600, 1000, 390]:
@@ -28,13 +28,17 @@ async def check(base):
                 measured = await page.evaluate("""() => {
                   const page=document.querySelector('#view > .page'),head=page.querySelector('.page-head');
                   const r=page.getBoundingClientRect(),h=head.getBoundingClientRect(),style=getComputedStyle(page);
-                  return {x:r.x,width:r.width,top:h.y-r.y,padding:style.paddingLeft,
+                    return {x:r.x,width:r.width,top:h.y-r.y,padding:style.paddingLeft,
+                    paddingTop:style.paddingTop,paddingRight:style.paddingRight,paddingBottom:style.paddingBottom,
                     overflow:page.scrollWidth-page.clientWidth,headX:h.x-r.x};
                 }""")
                 assert measured['overflow'] <= 1, (width, route, measured)
+                assert len({measured['padding'], measured['paddingTop'], measured['paddingRight']}) == 1, (width, route, measured)
+                extra = 48 if width > 760 else 0
+                assert float(measured['paddingBottom'].removesuffix('px')) == float(measured['paddingTop'].removesuffix('px')) + extra, (width, route, measured)
                 measurements.append(measured)
-                if route in ['/plugins/hello', '/settings', '/api', '/'] and width in [1600, 390]:
-                    name = {'/': 'dashboard', '/settings': 'settings', '/api': 'api', '/plugins/hello': 'plugin'}[route]
+                if route in ['/plugins/ai', '/settings', '/api', '/'] and width in [1600, 390]:
+                    name = {'/': 'dashboard', '/settings': 'settings', '/api': 'api', '/plugins/ai': 'plugin'}[route]
                     await page.screenshot(path=str(artifacts / f'{name}-{width}.png'), animations='disabled')
             reference = measurements[0]
             for route, measured in zip(routes, measurements):
@@ -43,6 +47,16 @@ async def check(base):
             print(f'PASS common page frame on {len(routes)} routes at {width}px', flush=True)
 
         await page.set_viewport_size({'width': 1600, 'height': 1000})
+        await page.evaluate("go('/settings?section=keyboard-shortcuts')")
+        await page.wait_for_selector('.shortcuts')
+        margins = await page.evaluate("""() => {
+          const view=document.querySelector('#view'), page=document.querySelector('#view > .page');
+          const top=page.querySelector('.page-head').getBoundingClientRect().top;
+          view.scrollTop=view.scrollHeight;
+          return {top, bottom:innerHeight-page.lastElementChild.getBoundingClientRect().bottom,
+            scrollable:view.scrollHeight>view.clientHeight};
+        }""")
+        assert margins['scrollable'] and abs(margins['top']-margins['bottom']) < 1, margins
         ids = await page.evaluate("""async () => {
           await api('settings',{method:'PUT',body:{developer_mode:true}});
           const project=await api('projects',{method:'POST',body:{name:'Glow review'}});

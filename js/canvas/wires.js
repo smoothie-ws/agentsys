@@ -162,19 +162,11 @@ async function disconnectMany(ids) {
   await reload();
 }
 
-/** The middle of a wire, in canvas coordinates. */
-function edgeMiddle(edge) {
-  const a = socketPoint(edge.source, 'out', edge.source_port),
-    b = socketPoint(edge.target, 'in', edge.target_port);
-  return a && b ? {x: (a.x + b.x) / 2, y: (a.y + b.y) / 2} : null;
-}
-
-/** Breaks wires in the middle: a Reroute point appears there, which can be moved and wired onward. */
+/** Inserts reroute points at the current canvas cursor. */
 async function splitEdges(ids) {
   const splits = W.snapshot.edges
     .filter(e => ids.includes(e.id))
-    .map(e => ({edge_id: e.id, position: edgeMiddle(e)}))
-    .filter(s => s.position)
+    .map(e => ({edge_id: e.id, position: spawnPoint()}))
     .map(s => ({edge_id: s.edge_id, position: {x: Math.round(s.position.x - 11), y: Math.round(s.position.y - 11)}}));
   if (!splits.length) return;
   const result = await api(`projects/${W.project}/split-connections`, {

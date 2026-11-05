@@ -1,15 +1,7 @@
 // Controls and previews of the workflow's live runtime.
 'use strict';
 function syncToolbar() {
-  if (!W.canvas?.isConnected || !$('#run-summary')) return;
-  const summary = W.executionCommand
-    ? {stop: 'Stopping…', pause: 'Pausing…', resume: 'Resuming…'}[W.executionCommand]
-    : W.runPaused
-      ? 'Paused'
-      : W.running
-        ? 'Working'
-        : 'Ready';
-  if ($('#run-summary').textContent !== summary) $('#run-summary').textContent = summary;
+  if (!W.canvas?.isConnected) return;
   // One button starts the work and, while there is work, stops it; Pause and Resume only make sense while there is work.
   const start = $('#start'),
     pause = $('#pause');
@@ -17,10 +9,11 @@ function syncToolbar() {
   const disabled = !W.executionReady || !!W.executionCommand;
   if (start) {
     if (start.disabled !== disabled) start.disabled = disabled;
-    if (start.classList.contains('stop') !== active) {
-      start.classList.toggle('stop', active);
-      start.innerHTML = icon(active ? 'stop' : 'play') + `<span>${active ? 'Stop' : 'Run'}</span>`;
+    if (start.classList.contains('danger') !== active) {
+      start.classList.toggle('danger', active);
+      start.innerHTML = icon(active ? 'stop' : 'play');
       start.title = active ? 'Stop current work' : `Run the workflow (${shortcutText('run')})`;
+      start.setAttribute('aria-label', active ? 'Stop current work' : 'Run workflow');
     }
   }
   if (pause) {
@@ -46,8 +39,8 @@ function syncComplexStatus() {
     if (memo.has(id)) return memo.get(id);
     memo.set(id, undefined); // a group inside itself is not possible; this only guards the recursion
     const states = (W.complex.get(id.slice('complex:'.length))?.members || []).map(stateOf);
-    const state = ['running', 'sleeping', 'blocked', 'failed', 'waiting', 'stopped', 'completed', 'skipped'].find(s =>
-      states.includes(s) && (s !== 'completed' || !states.includes('ready'))
+    const state = ['running', 'sleeping', 'blocked', 'failed', 'waiting', 'stopped', 'completed', 'skipped'].find(
+      s => states.includes(s) && (s !== 'completed' || !states.includes('ready'))
     );
     memo.set(id, state);
     return state;
@@ -62,6 +55,7 @@ function syncComplexStatus() {
 }
 
 function applyExecution(detail) {
+  Tabs.setRuntime({project: W.project, workflow: detail.workflow_id}, detail);
   W.executionStatus = detail.status;
   W.running = detail.active_signals > 0;
   W.runPaused = detail.paused;
@@ -94,11 +88,13 @@ function applyExecution(detail) {
 const GLOW_MS = 480; // short passes remain visible without delaying execution
 /** Preserve start order when several fast nodes finish between two UI updates. */
 function queuePassGlows(events) {
-  if (document.documentElement.dataset.motion === 'false' || matchMedia('(prefers-reduced-motion: reduce)').matches) return;
+  if (document.documentElement.dataset.motion === 'false' || matchMedia('(prefers-reduced-motion: reduce)').matches)
+    return;
   const session = W.executionSession;
   const latest = new Map(events.map(event => [event.node_id, event]));
   const passes = events.filter(
-    event => latest.get(event.node_id) === event &&
+    event =>
+      latest.get(event.node_id) === event &&
       ['running', 'sleeping', 'waiting', 'completed'].includes(W.runStatus.get(event.node_id))
   );
   const step = passes.length > 1 ? Math.min(90, 450 / (passes.length - 1)) : 0;
@@ -106,11 +102,14 @@ function queuePassGlows(events) {
     W.glowPending.set(event.node_id, event.sequence);
     const show = () => {
       if (
-        W.executionSession !== session || !session?.canvas.isConnected ||
+        W.executionSession !== session ||
+        !session?.canvas.isConnected ||
         W.glowPending.get(event.node_id) !== event.sequence
-      ) return;
+      )
+        return;
       W.glowPending.delete(event.node_id);
-      if (W.runPaused || !['running', 'sleeping', 'waiting', 'completed'].includes(W.runStatus.get(event.node_id))) return;
+      if (W.runPaused || !['running', 'sleeping', 'waiting', 'completed'].includes(W.runStatus.get(event.node_id)))
+        return;
       holdGlow(event.node_id);
     };
     if (WORKING.includes(W.runStatus.get(event.node_id)) || index === 0) show();

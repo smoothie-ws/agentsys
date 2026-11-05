@@ -298,6 +298,12 @@ async function deleteGraphRuntime(workflow) {
   }
   await DB.commit({[runtimeKey(workflow)]: undefined});
 }
+/** Release a deleted workflow's live work, durable state and undo history together. */
+async function removeWorkflow(c, workflow) {
+  await deleteGraphRuntime(workflow);
+  await c.ctx.remove('wf:' + workflow);
+  histories.delete(workflow);
+}
 async function dispatchGraphEvent(project, workflow, hook, group, data, removed = null) {
   const entry = await graphRuntime(new Call('GET', {}, {workflow_id: workflow}, null), project);
   if (removed) {

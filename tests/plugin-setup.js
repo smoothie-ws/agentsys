@@ -11,9 +11,9 @@ const write = (dir, id, source) => {
 };
 async function withServer(plugins, body) {
   const root = fs.mkdtempSync(path.join(os.tmpdir(), 'agentsys-plugins-')),
-    pluginsDir = path.join(root, 'plugins');
+    pluginsDir = path.join(root, 'data', 'plugins');
   for (const [id, source] of Object.entries(plugins)) write(pluginsDir, id, source);
-  const server = createServer({dataDir: path.join(root, 'data'), pluginsDir});
+  const server = createServer({dataDir: path.join(root, 'data')});
   const base = await server.listen(0);
   const call = async (method, route, payload, query = {}) => {
     const url = new URL('/api/' + route, base);

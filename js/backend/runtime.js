@@ -28,6 +28,7 @@ const EDITS = new Set([
   'layout',
   'groups',
   'paste',
+  'import-graph',
   'node-style',
   'node-title',
   'input-values',

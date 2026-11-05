@@ -1,4 +1,10 @@
 node_modules/
-data/
+data/*
+!data/plugins/
+data/plugins/*
+!data/plugins/ai/
+data/plugins/ai/*
+!data/plugins/ai/main.js
+!data/plugins/ai/README.md
 __pycache__/
 *.py[cod]

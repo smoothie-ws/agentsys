@@ -32,10 +32,20 @@ const SHORTCUT_LABELS = {
   fold: 'Collapse or expand nodes and groups',
   snap: 'Toggle snapping to the grid',
   hints: 'Toggle key hints',
+  toolSelect: 'Select tool',
+  toolMove: 'Move tool',
+  toolPan: 'Pan tool',
+  toolDelete: 'Delete tool',
+  toolAdd: 'Add node menu',
 };
 /** Developer mode (Settings): Custom nodes can be made and edited by hand, and the Custom node is offered. */
 const developerMode = () => !!app.preferences?.developer_mode;
-const binding = action => app.preferences.shortcuts?.[action] ?? app.shortcutDefaults[action] ?? '';
+const binding = action => {
+  const shortcuts = app.preferences.shortcuts || {}, fallback = app.shortcutDefaults[action] ?? '';
+  if (Object.hasOwn(shortcuts, action)) return shortcuts[action];
+  if (action.startsWith('tool') && Object.entries(shortcuts).some(([key, value]) => key !== action && value === fallback)) return '';
+  return fallback;
+};
 // Shortcuts follow the physical key, so they work on any layout. When the system gives no key code
 // (remote desktops, some virtual machines), a Cyrillic letter is mapped to the Latin key at the same place.
 const CYRILLIC_KEYS = Object.fromEntries(

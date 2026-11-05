@@ -79,7 +79,7 @@ function grantControls(
   {hint = 'Permissions are limited by the parent node.', title = 'Permissions', prefix = 'grant'} = {}
 ) {
   const extra = grants.filter(v => !COMMON_CAPABILITIES.includes(v)).join(', ');
-  return `<fieldset class="permission-controls" data-grants><legend>${esc(title)}</legend><p class="permission-hint muted">${esc(hint)}</p><div class="permission-fields">${permissionChoices(COMMON_CAPABILITIES, grants, 'data-grant', prefix)}<label class="field"><span>Specific permissions</span><input name="extra_grants" value="${esc(extra)}" placeholder="net.fetch:example.com"></label></div></fieldset>`;
+  return `<fieldset class="permission-controls" data-grants title="${esc(hint)}"><legend title="${esc(hint)}">${esc(title)}</legend><div class="permission-fields">${permissionChoices(COMMON_CAPABILITIES, grants, 'data-grant', prefix)}<label class="field"><span>Specific permissions</span><input name="extra_grants" value="${esc(extra)}" placeholder="net.fetch:example.com"></label></div></fieldset>`;
 }
 function readGrantControls(root) {
   const box = $('[data-grants]', root);
@@ -122,7 +122,7 @@ const actionButton = (menu, label = 'Actions') =>
 
 /** The common page heading, description and actions. `title` and `sub` are HTML. */
 const pageHead = ({title, sub = '', glyph = '', actions = '', menu = pageMenu()}) =>
-  `<header class="page-head"><div><h1 class="page-title">${glyph ? icon(glyph) : ''}${title}</h1><p class="page-description muted"${sub ? '' : ' aria-hidden="true"'}>${sub || '&nbsp;'}</p></div><div class="actions">${actions}${actionButton(menu)}</div></header>`;
+  `<header class="page-head"><div><h1 class="page-title"${sub ? ` title="${sub.replace(/"/g, '&quot;')}"` : ''}>${glyph ? icon(glyph) : ''}${title}</h1></div><div class="actions">${actions}${actionButton(menu)}</div></header>`;
 
 /**
  * The card of every page (projects, workflows, Library nodes and groups), built like a node of the canvas: a header with an icon
@@ -381,7 +381,8 @@ function loadCardPreviews(view, projectId = null) {
 }
 
 async function loadLibrary() {
-  const settings = await api('settings');
+  const [settings, sections] = await Promise.all([api('settings'), api('library/sections')]);
+  app.librarySections = sections;
   app.resources = settings.resources;
   app.nodeFolders = settings.node_folders || [];
   app.nodeFolderIcons = settings.node_folder_icons || {};

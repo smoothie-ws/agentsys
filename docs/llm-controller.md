@@ -7,7 +7,7 @@ AgentSys has no AI in its core. A controller (an agent, a planner, a recursive p
 The plugin owns the credentials and the HTTP call, and offers the model as a route and as a Library node. A complete skeleton for an OpenAI-compatible endpoint:
 
 ```js
-// plugins/llm/main.js
+// data/plugins/llm/main.js
 exports.title = 'LLM';
 exports.settings = [
   {key: 'baseURL', label: 'Base URL', type: 'text', default: 'http://localhost:11434/v1'},

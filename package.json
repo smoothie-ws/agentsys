@@ -4,10 +4,6 @@
   "description": "AgentSys: a live graph programming environment with a small Node server that keeps the data as JSON files.",
   "scripts": {
     "start": "node server.js",
-    "test": "node --test",
-    "format": "prettier --write \"js/**/*.js\" \"css/*.css\" \"tests/*.js\""
-  },
-  "devDependencies": {
-    "prettier": "3.3.3"
+    "test": "node --test"
   }
 }

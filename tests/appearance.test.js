@@ -5,6 +5,15 @@ const {createApp} = require('./harness');
 
 const palette = {background: '#080808', surface: '#101010', text: '#ededed', accent: '#d9d9d9'};
 
+test('existing digit shortcuts remain valid when tool defaults are introduced', async () => {
+  const app = createApp();
+  const saved = await app.api('PUT', 'settings', {shortcuts: {copy: 'Digit1'}});
+  assert.equal(saved.shortcuts.copy, 'Digit1');
+  await assert.rejects(app.api('PUT', 'settings', {shortcuts: {copy: 'Digit1', toolSelect: 'Digit1'}}), /unique/);
+  const rebound = await app.api('PUT', 'settings', {shortcuts: {copy: 'Digit1', toolSelect: 'KeyQ'}});
+  assert.equal(rebound.shortcuts.toolSelect, 'KeyQ');
+});
+
 test('the appearance is saved and changes merge into what is stored', async () => {
   const app = createApp();
   await app.api('PUT', 'settings', {style: {...palette, font_size: 16, animations: false, wire_style: 'step'}});

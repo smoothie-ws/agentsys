@@ -451,3 +451,42 @@ test('bad requests get a 400, not a server error', async () => {
     assert.equal((await post(JSON.stringify({set: {other: {a: 1}}}))).status, 200);
   });
 });
+
+test('UI state bootstraps from data safely and respects storage authentication', async () => {
+  await withServer({token: 'ui-test-token'}, async ({url, dataDir}) => {
+    fs.mkdirSync(path.join(dataDir, 'other'), {recursive: true});
+    const state = {'agentsys-clipboard': '</script><script>bad()</script>$&', 'agentsys-snap': true};
+    fs.writeFileSync(path.join(dataDir, 'other', 'ui-state.json'), JSON.stringify(state));
+    const anonymous = await (await fetch(url + '/editor/')).text();
+    assert.match(anonymous, /AGENTSYS_UI_STORE=\{\};/);
+    const html = await (await fetch(url + '/editor/', {headers: {Authorization: 'Bearer ui-test-token'}})).text();
+    const bootstrap = html.match(/<script>globalThis.AGENTSYS_UI_STORE=([\s\S]*?);<\/script>/)[1];
+    assert.equal(bootstrap.includes('</script>'), false);
+    assert.deepEqual(JSON.parse(bootstrap), state);
+    assert.equal((await fetch(url + '/data/other/ui-state.json')).status, 404);
+  });
+});
+
+test('corrupt UI state returns an HTTP error without terminating static hosting', async () => {
+  await withServer({}, async ({url, dataDir}) => {
+    fs.mkdirSync(path.join(dataDir, 'other'), {recursive: true});
+    fs.writeFileSync(path.join(dataDir, 'other', 'ui-state.json'), '{broken');
+    assert.equal((await fetch(url + '/editor/')).status, 500);
+    assert.equal((await fetch(url + '/editor/js/app/helpers.js')).status, 200);
+    assert.equal((await fetch(url + '/editor/js/missing.js')).status, 404);
+  });
+});
+
+test('storage keys matching Object properties round-trip as ordinary user data', async () => {
+  await withServer({}, async ({url}) => {
+    const values = Object.fromEntries(['constructor', 'toString', '__proto__'].map(key => [key, {value: key}]));
+    const saved = await fetch(url + '/__data', {
+      method: 'POST',
+      headers: {'X-AgentSys': '1'},
+      body: JSON.stringify({set: values}),
+    });
+    assert.equal(saved.status, 200);
+    for (const [key, value] of Object.entries(values))
+      assert.deepEqual(await (await fetch(url + '/__data/' + key)).json(), value);
+  });
+});

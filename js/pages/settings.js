@@ -14,7 +14,7 @@ PAGES['project-settings'] = async (view, route) => {
     actions: '<span id="save-slot"></span>',
   })}
     <section><h2>General</h2>${field('Name', `<input name="name" required maxlength="100" value="${esc(project.name)}">`)}
-      ${field('Description', `<textarea name="description" rows="4" maxlength="2000" placeholder="What is this project for?">${esc(project.description)}</textarea>`)}</section>
+      ${field('Description', `<textarea name="description" rows="4" maxlength="2000" title="What is this project for?">${esc(project.description)}</textarea>`)}</section>
     <p class="form-error" hidden></p></form>`;
   const form = $('#project-form');
   pageAutosave(
@@ -43,19 +43,19 @@ PAGES.settings = async (view, route) => {
     <section><h2>Editing</h2>${field('Undo steps per workflow', `<input name="undo_steps" type="number" min="0" max="500" value="${esc(preferences.undo_steps ?? 50)}">`)}
       <label class="check"><input type="checkbox" name="developer_mode" ${preferences.developer_mode ? 'checked' : ''}> Developer mode</label></section>
     <section class="appearance-section"><h2>Appearance</h2>
-      <div class="settings-group"><h3>Theme</h3><p class="muted">Pick a built-in theme, or set the four colours below yourself.</p>
+      <div class="settings-group"><h3 title="Pick a built-in theme, or set the four colours below yourself.">Theme</h3>
         <select name="theme" aria-label="Theme"><option value="">Custom</option>${options(
           Object.keys(THEMES).map(name => [name, name]),
           themeOf(style)
         )}</select></div>
-      <div class="settings-group"><h3>Colours</h3><p class="muted">The four colours every other colour is made from.</p>
+      <div class="settings-group"><h3 title="The four colours every other colour is made from.">Colours</h3>
         <div class="colour-fields">${PALETTE.map(k => `<label class="colour-field"><input type="color" name="${k}" value="${esc(style[k])}" aria-label="${k}"><span>${k[0].toUpperCase() + k.slice(1)}</span></label>`).join('')}</div></div>
       <div class="settings-group"><h3>Text</h3>
         <div class="settings-grid">${field('Text size', `<input name="font_size" type="number" min="12" max="22" value="${style.font_size}">`)}
         ${field('Font', `<select name="font_family">${options([['system', 'System'], ...['Arial', 'Verdana', 'Georgia', 'Trebuchet MS', 'Courier New'].map(f => [f, f])], style.font_family)}</select>`)}</div></div>
       <div class="settings-group"><h3>Interface</h3>
-        <label class="toggle-row"><input type="checkbox" name="animations" ${style.animations ? 'checked' : ''}><span><strong>Animations</strong><small class="muted">Panels, pills and menus move instead of jumping.</small></span></label>
-        <label class="toggle-row"><input type="checkbox" name="effects" ${style.effects ? 'checked' : ''}><span><strong>Effects</strong><small class="muted">Blur, glow and connected panels.</small></span></label></div>
+        <label class="toggle-row"><input type="checkbox" name="animations" ${style.animations ? 'checked' : ''}><span><strong title="Panels, pills and menus move instead of jumping.">Animations</strong></span></label>
+        <label class="toggle-row"><input type="checkbox" name="effects" ${style.effects ? 'checked' : ''}><span><strong title="Blur, glow and connected panels.">Effects</strong></span></label></div>
       <div class="settings-group"><h3>Graph editor</h3>
         <div class="settings-grid">${field('Wire style', `<select name="wire_style">${options(WIRE_STYLES, style.wire_style)}</select>`)}
         ${field('Wire thickness', graphNumber('wire_width', style))}

@@ -63,10 +63,11 @@ function importedDocument(project, input) {
     if (!isObject(node) || typeof node.id !== 'string' || ids.has(node.id))
       throw bad('Every node needs a unique string id');
     ids.add(node.id);
-    if (node.kind !== 'function' || !(node.node_type in DEFINITIONS)) throw bad('A node has an unsupported type');
+    if (node.kind !== 'function' || !Object.hasOwn(DEFINITIONS, node.node_type))
+      throw bad('A node has an unsupported type');
   }
   // An imported type is the workflow's own until it turns out to be a Library type of this installation (see unifyTypes).
-  doc.types = doc.types.map(({library, ...t}) => t);
+  doc.types = doc.types.map(t => (isObject(t) ? plainType(t) : t));
   checkTypes(doc.types);
   for (const [id, list] of Object.entries(doc.widgets)) {
     if (!ids.has(id)) throw bad('Widgets belong to a node that does not exist');
@@ -79,19 +80,25 @@ function importedDocument(project, input) {
   }
   return doc;
 }
-/** A name that is not used yet: "Name", then "Name 2", "Name 3"… */
-const freeName = (taken, base) => {
-  let name = base.slice(0, 100),
-    n = 2;
-  while (taken.has(name)) name = base.slice(0, 100 - ` ${n}`.length).trimEnd() + ` ${n++}`;
-  return name;
-};
+// Insert through the same ID remapping and type merging as clipboard paste.
+route('POST', 'projects/{project_id}/import-graph', 'Insert an exported graph into an existing workflow', async (c, {project_id}) => {
+  const input = decodeExchange(c.body.graph);
+  if (!['workflow', 'graph'].includes(input.kind) || !input.document) throw bad('Choose an exported workflow graph');
+  const {project, editor, doc} = await c.workflow(project_id);
+  const imported = importedDocument(project, input.document);
+  const source = new Editor(project, {id: 'import', name: 'Imported graph'}, imported);
+  const bundle = source.copy(imported.nodes.map(n => n.id), imported.groups.map(g => g.id));
+  const result = bundle.records.length || bundle.groups.length ? editor.paste(bundle, c.body.point ?? {x: 0, y: 0}) : {ids: [], roots: []};
+  doc.library_nodes = [...new Set([...(doc.library_nodes ?? []), ...imported.library_nodes])];
+  return result;
+}, {body: {workflow_id: 'target workflow', graph: {}, point: {x: 0, y: 0}}});
+
 const wrapDocument = (kind, extra) => TextGraph.encode({kind, ...extra});
 
 route(
   'GET',
   'projects/{project_id}/workflows/{workflow_id}/export',
-  'Export a workflow as one JSON document',
+  'Export the workflow graph (nodes, groups and connections)',
   async (c, {project_id, workflow_id}) => {
     if (String(project_id).startsWith('lib-')) throw bad('Export a Custom Node from the Library');
     const project = await c.project(project_id),
@@ -99,7 +106,7 @@ route(
     if (!wf) throw missing('Record not found');
     return wrapDocument('workflow', {
       name: wf.name,
-      document: await exportedDocument(c, await c.ctx.get('wf:' + wf.id, emptyDoc()), wf.id),
+      document: await exportedDocument(c, await c.ctx.get('wf:' + wf.id, emptyDoc())),
     });
   },
   {returns: '{format: "agentsys.text/1", files: {"graph.json": text, "layout.json": text, "scripts/…js": source}}'}
@@ -122,7 +129,6 @@ route(
     const id = uid();
     project.workflows.push({id, name, created: Date.now() / 1000});
     c.ctx.set('wf:' + id, doc);
-    importGraphData(c, id, input.document.runtime);
     c.ctx.set('projects', await c.projects());
     await c.collectHooks(project_id, id, doc, JSON.stringify(stateOf(emptyDoc())));
     return {id, name, diagnostics: new Editor(project, {id, name}, doc).snapshot().diagnostics.map(d => d.message)};

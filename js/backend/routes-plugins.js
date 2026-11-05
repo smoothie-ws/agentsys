@@ -67,3 +67,10 @@ route(
   },
   {unlocked: true}
 );
+
+route(
+  'GET',
+  'library/sections',
+  'List Library sections registered by running plugins',
+  async () => pluginHost()?.sections() ?? []
+);

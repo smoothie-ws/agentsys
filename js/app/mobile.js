@@ -3,7 +3,7 @@
 const phoneLayout = matchMedia('(max-width: 760px)');
 /** Whether the canvas side panel is hidden: the phone layout remembers its own choice; unless chosen, narrow screens start with it hidden. */
 const sideHiddenKey = () => (phoneLayout.matches ? 'agentsys-side-hidden-mobile' : 'agentsys-side-hidden');
-const sideHidden = () => store.get(sideHiddenKey(), narrowSidebar.matches);
+const sideHidden = () => store.get(sideHiddenKey(), phoneLayout.matches || $('#view').clientWidth < 800);
 for (const link of $$('#sidebar [data-section]')) link.setAttribute('aria-label', SECTION_TITLES[link.dataset.section]);
 let desktopSubnavFolded = document.body.classList.contains('subnav-collapsed');
 let mobileReturnFocus = null;
@@ -11,6 +11,7 @@ function toggleMobileNavigation(open = !document.body.classList.contains('mobile
   if (!phoneLayout.matches) return;
   document.body.classList.toggle('mobile-subnav-open', open);
   $('#mobile-nav-backdrop').hidden = !open;
+  syncSubnavToggle();
   $('#mobile-browse').setAttribute('aria-expanded', String(open));
   $('main').inert = open;
   const panel = $('#subnav');
@@ -97,12 +98,23 @@ function updatePhoneLayout() {
     $('#subnav').removeAttribute('role');
     $('#subnav').removeAttribute('aria-modal');
   }
+  restoreSidebar();
   syncMobileNavigation();
+  syncSubnavToggle();
   if ($('#side')) Inspector.toggle(!sideHidden(), false);
   requestAnimationFrame(() => placePills(true, true));
 }
 phoneLayout.addEventListener('change', updatePhoneLayout);
 updatePhoneLayout();
+store.ready
+  .then(() => {
+    if (phoneLayout.matches) {
+      desktopSubnavFolded = store.get('agentsys-subnav-collapsed', false);
+      document.body.classList.remove('subnav-collapsed');
+      syncSubnavToggle();
+    }
+  })
+  .catch(fail);
 let restingViewportHeight = innerHeight;
 function updateVisualViewport() {
   const view = window.visualViewport;

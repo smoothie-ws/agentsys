@@ -488,3 +488,153 @@ test('a project may have no workflow: the last one can be deleted and a new one 
   assert.equal((await app.api('GET', `projects/${id}`)).workflows.length, 1);
   assert.ok(made.id);
 });
+
+test('renaming a Library group to itself preserves its icons and descendant icons', async () => {
+  const app = createApp();
+  await app.api('POST', 'library/node-folders', {action: 'create', name: 'Logic'});
+  await app.api('POST', 'library/node-folders', {action: 'create', path: 'Logic', name: 'Nested'});
+  await app.api('POST', 'library/node-folders', {action: 'icon', path: 'Logic', icon: 'bolt'});
+  await app.api('POST', 'library/node-folders', {action: 'icon', path: 'Logic/Nested', icon: 'star'});
+  await app.api('POST', 'library/node-folders', {action: 'rename', path: 'Logic', name: 'Logic'});
+  assert.deepEqual((await app.api('GET', 'settings')).node_folder_icons, {Logic: 'bolt', 'Logic/Nested': 'star'});
+});
+
+test('duplicate names stay unique and within 100 characters for workflows and Library nodes', async () => {
+  const app = createApp();
+  const project = await app.api('POST', 'projects', {name: 'P'.repeat(100)});
+  await app.api('PATCH', `projects/${project.id}/workflows/${project.id}`, {name: 'W'.repeat(100)});
+  const resource = await app.api('POST', 'resources', {
+    name: 'N'.repeat(100),
+    payload: {
+      bundle: {version: 3, groups: [{id: 'g', name: 'N', members: [], parent: null}], complex: []},
+    },
+  });
+  for (const route of [
+    `projects/${project.id}/duplicate`,
+    `projects/${project.id}/workflows/${project.id}/duplicate`,
+    `library/custom-nodes/${resource.id}/duplicate`,
+  ]) {
+    const copies = [];
+    for (let i = 0; i < 3; i++) copies.push(await app.api('POST', route));
+    assert.equal(new Set(copies.map(c => c.name)).size, 3);
+    assert.ok(copies.every(c => c.name.length <= 100));
+  }
+});
+
+test('invalid ports and inherited node type names are rejected as invalid requests', async () => {
+  const app = createApp();
+  const project = await app.api('POST', 'projects', {name: 'Validation'});
+  for (const node_type of ['constructor', 'toString', '__proto__']) {
+    await assert.rejects(
+      app.api('POST', `projects/${project.id}/typed-nodes`, {node_type}),
+      e => e.code === 'invalid_request'
+    );
+  }
+  for (const direction of ['inputs', 'outputs']) {
+    await assert.rejects(
+      app.api('POST', `projects/${project.id}/typed-nodes`, {node_type: 'custom', config: {[direction]: [null]}}),
+      e => e.code === 'invalid_request'
+    );
+  }
+  assert.equal((await app.api('GET', `projects/${project.id}/workflow`)).nodes.length, 0);
+});
+
+test('deleting a project removes its stored permission policy', async () => {
+  const app = createApp();
+  const project = await app.api('POST', 'projects', {name: 'Policy'});
+  assert.ok(await app.eval(`DB.get('policy:${project.id}')`));
+  await app.api('DELETE', `projects/${project.id}`);
+  assert.equal(await app.eval(`DB.get('policy:${project.id}')`), undefined);
+});
+
+test('independent UI state updates merge without overwriting other clients', async () => {
+  const app = createApp();
+  await Promise.all([
+    app.api('PUT', 'ui-state', {values: {'agentsys-snap': true}}),
+    app.api('PUT', 'ui-state', {values: {'agentsys-hints': false}}),
+  ]);
+  const state = JSON.parse(JSON.stringify(await app.eval("DB.get('ui-state')")));
+  assert.deepEqual(state, {'agentsys-snap': true, 'agentsys-hints': false});
+  for (const values of [null, [], {'unrelated-key': true}, JSON.parse('{"__proto__":{}}')]) {
+    await assert.rejects(app.api('PUT', 'ui-state', {values}), e => e.code === 'invalid_request');
+  }
+});
+
+test('malformed imported types and inherited shortcut names return validation errors', async () => {
+  const app = createApp();
+  const TextGraph = require('../js/storage/format');
+  const project = await app.api('POST', 'projects', {name: 'Invalid imports'});
+  for (const type of [null, 42, 'invalid']) {
+    await assert.rejects(
+      app.api('POST', `projects/${project.id}/workflows/import`, TextGraph.encode({document: {types: [type]}})),
+      e => e.code === 'invalid_request'
+    );
+  }
+  for (const key of ['constructor', 'toString', '__proto__']) {
+    await assert.rejects(app.api('PUT', 'settings', {shortcuts: {[key]: ''}}), e => e.code === 'invalid_request');
+  }
+});
+
+test('deleting a Library group also reconciles types owned only by its removed nodes', async () => {
+  const app = createApp();
+  const id = '1234567890abcdef1234567890abcdef';
+  await app.api('POST', 'resources', {
+    name: 'Disposable type owner',
+    payload: {
+      folder: 'Disposable',
+      bundle: {
+        version: 3,
+        types: [{id, name: 'Disposable type', fields: []}],
+        groups: [{id: 'g', name: 'Owner', members: [], parent: null}],
+        complex: [],
+        records: [],
+      },
+    },
+  });
+  assert.equal(
+    (await app.eval("DB.get('library_types')")).some(t => t.id === id),
+    true
+  );
+  await app.api('POST', 'library/node-folders', {action: 'delete', path: 'Disposable'});
+  assert.equal(
+    (await app.eval("DB.get('library_types')")).some(t => t.id === id),
+    false
+  );
+});
+
+test('graph import inserts connected nodes and nested groups into the chosen workflow and supports undo', async () => {
+  const app = createApp(), p = await newProject(app, 'Graph exchange');
+  const a = await p.node('custom', {title: 'Source', outputs: [{id: 'out', name: 'out'}]}, {x: 20, y: 40});
+  const b = await p.node('custom', {title: 'Target', inputs: [{id: 'in', name: 'in'}], outputs: []}, {x: 320, y: 40});
+  await p.connect(a.id, 'out', b.id, 'in');
+  await app.api('PUT', `projects/${p.id}/groups`, {...p.workflow, groups: [
+    {id: 'outer', name: 'Outer', members: [a.id], parent: null},
+    {id: 'inner', name: 'Inner', members: [b.id], parent: 'outer'},
+  ]});
+  const packet = await app.api('GET', `projects/${p.id}/workflows/${p.id}/export`);
+  const other = await app.api('POST', `projects/${p.id}/workflows`, {name: 'Existing target'});
+  const body = {workflow_id: other.id, graph: packet, point: {x: 500, y: 600}};
+  await app.api('POST', `projects/${p.id}/import-graph`, body);
+  const snapshot = () => app.api('GET', `projects/${p.id}/workflow`, {}, {workflow_id: other.id});
+  let snap = await snapshot();
+  assert.equal(snap.nodes.length, 2);
+  assert.equal(snap.groups.length, 2);
+  assert.equal(snap.edges.length, 1);
+  assert.ok(snap.nodes.every(n => ![a.id, b.id].includes(n.id)));
+  assert.ok(snap.edges.every(e => snap.nodes.some(n => n.id === e.source) && snap.nodes.some(n => n.id === e.target)));
+  const outer = snap.groups.find(g => g.name === 'Outer'), inner = snap.groups.find(g => g.name === 'Inner');
+  assert.equal(inner.parent, outer.id);
+  assert.equal(snap.nodes.find(n => n.config.title === 'Source').position.x, 500);
+  await app.api('POST', `projects/${p.id}/import-graph`, body);
+  snap = await snapshot();
+  assert.equal(snap.nodes.length, 4);
+  assert.equal(snap.edges.length, 2);
+  assert.equal((await app.api('GET', `projects/${p.id}`)).workflows.length, 2);
+  assert.equal((await p.snapshot()).nodes.length, 2);
+  await app.api('POST', `projects/${p.id}/undo`, {workflow_id: other.id});
+  assert.equal((await snapshot()).nodes.length, 2);
+  await app.api('POST', `projects/${p.id}/undo`, {workflow_id: other.id});
+  assert.equal((await snapshot()).nodes.length, 0);
+  await assert.rejects(app.api('POST', `projects/${p.id}/import-graph`, {...body, graph: {}}), /Expected/);
+  assert.equal((await snapshot()).nodes.length, 0);
+});

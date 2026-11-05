@@ -4,7 +4,7 @@ const tile = (label, value, href) =>
   `<a class="tile" href="${esc(href)}" data-link><span class="tile-label">${esc(label)}</span><strong class="tile-value">${esc(value)}</strong></a>`;
 
 const welcomeHTML = () =>
-  `<div class="welcome-panel"><span class="muted small">YOUR FIRST WORKFLOW</span><h2>Turn an idea into a running workflow</h2><p class="muted">Start with a small example: one node starts the workflow, another shows its result. Then make it your own.</p><div class="button-row"><button type="button" class="primary" data-example>Open example</button><button type="button" data-new-project>New project</button></div></div>`;
+  `<div class="welcome-panel"><span class="muted small">YOUR FIRST WORKFLOW</span><h2 title="Start with a small example: one node starts the workflow, another shows its result. Then make it your own.">Turn an idea into a running workflow</h2><div class="button-row"><button type="button" class="primary" data-example>Open example</button><button type="button" data-new-project>New project</button></div></div>`;
 async function openStarterWorkflow() {
   const start = 'record:' + uid(),
     result = 'record:' + uid(),

@@ -1,10 +1,10 @@
 # Plugins
 
-The plugin contract is two functions: `start(api)` and `stop()`. Put a `main.js` in a folder under `plugins/`; the application discovers it and manages its lifecycle. `api(method, path, body, query)` calls the same application API as the editor. There is no manifest or required settings schema. A plugin is trusted code that runs in the server process.
+The plugin contract is two functions: `start(api)` and `stop()`. Put a `main.js` in a folder under `data/plugins/`; the application discovers it and manages its lifecycle. `api(method, path, body, query)` calls the same application API as the editor. There is no manifest or required settings schema. A plugin is trusted code that runs in the server process.
 
 ```
-plugins/
-  hello/
+data/plugins/
+  my-plugin/
     main.js
 ```
 
@@ -23,7 +23,7 @@ exports.stop = () => clearInterval(timer);
 
 That is the complete required structure. `start` and `stop` may be async; await application calls during startup. `stop` is optional if there is nothing to release. It is also called when startup fails, to release partially created resources. `api.signal` aborts on disable/reload so a plugin can cancel its background work. Registered routes and change listeners are removed automatically.
 
-Optional display metadata is `exports.title`, `exports.description`, and `exports.icon` (an application icon name such as `sparkles`). It is read even when the plugin is disabled. The bundled **AI** example is in `plugins/hello`; its original id and greeting behavior are kept for existing workflows and saved settings.
+Optional display metadata is `exports.title`, `exports.description`, and `exports.icon` (an application icon name such as `sparkles`). It is read even when the plugin is disabled. The **AI** plugin is in `data/plugins/ai`. It registers the Providers section of Library; disabling it removes the section while retaining saved providers.
 
 ## Optional API helpers
 
@@ -64,12 +64,14 @@ The Plugins page (sidebar) shows every folder that has a `main.js` as a card, li
 | `POST plugins/reload` | reloads the folder |
 | `GET/POST/PUT/DELETE plugins/{id}/{name}` | a route a plugin registered |
 
-`PLUGINS_DIR` selects another folder (default: `plugins/` beside `server.js`).
+Plugins always load from `plugins/` inside the selected data folder (`data/` by default). `DATA_DIR` moves the whole data folder, including plugin code and settings.
 
 ## Scripts and plugins
 
-A Script can call a plugin's route with `await agentsys('GET', 'plugins/hello/greet', undefined, {name: 'Ann'})`. That needs the `plugins.call` permission on the node and in the project policy, like every other checked call. Listing and switching plugins is administrative and not available to Scripts.
+A Script can call a plugin's route with `await agentsys('GET', 'plugins/ai/providers')`. That needs the `plugins.call` permission on the node and in the project policy, like every other checked call. Listing and switching plugins is administrative and not available to Scripts.
 
 Plugins need the server. In a browser without the server there is no plugin host and the list is empty.
 
 To build an LLM controller on top of a plugin like this, see [building an LLM controller from nodes](llm-controller.md).
+
+`api.library.addSection({id, title, icon, description, route, fields})` registers a Library collection for the lifetime of a running plugin. Its route returns the collection items; POST, PUT and DELETE edit them. The AI plugin uses this for Providers.

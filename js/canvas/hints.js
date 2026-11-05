@@ -26,9 +26,7 @@ function setSnap(on, save = true) {
 function setHintsShown(on, save = true) {
   W.hintsShown = !!on;
   if (save) store.set('agentsys-hints', W.hintsShown);
-  const bar = $('#hints'),
-    button = $('#hints-toggle');
-  bar?.classList.toggle('collapsed', !W.hintsShown);
+  const button = $('#hints-toggle');
   if (button) {
     button.setAttribute('aria-pressed', String(W.hintsShown));
     button.title = `Key hints (${shortcutText('hints')}): ${W.hintsShown ? 'shown' : 'hidden'}`;
@@ -43,18 +41,14 @@ function setHintMode(mode, detail = {}) {
   updateHints();
 }
 
-const hintItem = (keys, label, on = false) =>
-  `<span class="hint${on ? ' on' : ''}">${[]
-    .concat(keys)
-    .map(k => `<kbd>${esc(k)}</kbd>`)
-    .join('')}<span>${esc(label)}</span></span>`;
-
 /** The hints for the current mode and selection: [[keys, label, highlighted?], ...]. */
 function hintList() {
   const key = shortcutText,
     snap = [key('snap'), `Snap ${W.snap ? 'off' : 'on'}`],
     detail = W.hintDetail || {};
   switch (W.hintMode) {
+    case 'move':
+      return [['Drag', 'Move selection'], snap, ['Middle drag / Space+drag', 'Pan']];
     case 'node':
       return [
         ['Drag', 'Move'],
@@ -74,6 +68,8 @@ function hintList() {
     case 'resize':
       return [['Drag', 'Resize'], snap];
   }
+  if (W.tool === 'delete') return [['Click', 'Delete node, group or wire'], [key('undo'), 'Undo'], ['Middle drag / Space+drag', 'Pan']];
+  if (W.tool === 'pan') return [['Drag', 'Pan'], ['Wheel', 'Zoom'], [key('fit'), 'Fit']];
   const items = [];
   if (W.edges.size)
     return [
@@ -83,7 +79,7 @@ function hintList() {
     ];
   if (W.selected.size) {
     items.push(
-      ['Drag', 'Move'],
+      ['Drag', W.tool === 'move' ? 'Move selection (also from empty space)' : 'Move'],
       ['Ctrl+Drag', 'Move with the nodes it feeds'],
       [key('multiSelect') + '+Click', 'Add to selection']
     );
@@ -100,7 +96,8 @@ function hintList() {
     return items;
   }
   items.push(
-    ['Drag', 'Pan'],
+    ['Drag', W.tool === 'pan' ? 'Pan' : 'Box select'],
+    ['Middle drag / Space+drag', 'Pan'],
     ['Wheel', 'Zoom'],
     [key('marquee'), 'Box select'],
     [key('selectAll'), 'Select all'],
@@ -112,30 +109,21 @@ function hintList() {
 }
 
 function updateHints() {
-  const list = $('#hint-list');
-  if (!list) return;
-  list.innerHTML = W.hintsShown
-    ? hintList()
-        .map(([keys, label, on]) => hintItem(keys, label, on))
-        .join('')
-    : '';
-  fitHints();
-}
-
-/** A hint is shown whole or not at all: those that do not fit the strip (the panel on the right narrows it) are left out, not cut mid-word. */
-function fitHints() {
-  const list = $('#hint-list');
-  if (!list) return;
-  const items = [...list.children];
-  items.forEach(item => (item.hidden = false));
-  const limit = list.clientWidth;
-  let overflow = false;
-  for (const item of items) {
-    if (overflow || item.offsetLeft + item.offsetWidth > limit) {
-      item.hidden = true;
-      overflow = true;
-    }
+  const button = $('#hints-toggle');
+  if (!button) return;
+  const strip = $('#canvas-hints');
+  if (strip) {
+    strip.hidden = !W.hintsShown;
+    strip.innerHTML = hintList().map(([keys, label]) => `<span><kbd>${esc([].concat(keys).join(' + '))}</kbd> ${esc(label)}</span>`).join('');
   }
+  button.title =
+    'Keyboard shortcuts' +
+    (W.hintsShown
+      ? '\n' +
+        hintList()
+          .map(([keys, label]) => [].concat(keys).join(' + ') + ' - ' + label)
+          .join('\n')
+      : ` (${shortcutText('hints')})`);
 }
 
 function wireHints() {
@@ -143,5 +131,4 @@ function wireHints() {
   setHintsShown(store.get('agentsys-hints', true), false);
   $('#snap-toggle').onclick = () => setSnap(!W.snap);
   $('#hints-toggle').onclick = () => setHintsShown(!W.hintsShown);
-  new ResizeObserver(fitHints).observe($('#hint-list'));
 }

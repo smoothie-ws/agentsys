@@ -112,10 +112,10 @@ function createGraphView(document, {context = {}} = {}) {
     const publisher = (source, from, inside) =>
       outputsAt.get(key(...source))?.find(i => i >= from && !wrappers[i].members.has(inside));
     for (const edge of document.edges) {
-      let targets, origin;
+      let targets;
       try {
         targets = Editor.resolveAll(nodes, edge.target, edge.target_port, 'inputs');
-        origin = Editor.resolve(nodes, edge.source, edge.source_port, 'outputs')[0];
+        Editor.resolve(nodes, edge.source, edge.source_port, 'outputs');
       } catch {
         continue;
       }
@@ -139,8 +139,7 @@ function createGraphView(document, {context = {}} = {}) {
    * Answers node ID -> {group: the group ID of the copy, instance_id: 'complex:<group>', widgets: the IDs of the nodes with widgets in it, inputs: its free inputs}.
    */
   function instanceScopes(document) {
-    const byId = new Map(document.nodes.map(n => [n.id, n])),
-      scopes = new Map();
+    const scopes = new Map();
     const composites = [...document.complex].sort((a, b) => b.depth - a.depth);
     for (const node of document.nodes) {
       const c = composites.find(cx => cx.members.includes(node.id));

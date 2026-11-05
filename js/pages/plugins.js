@@ -32,8 +32,8 @@ const pluginCard = p =>
     href: '/plugins/' + encodeURIComponent(p.id),
     glyph: p.icon || 'plug',
     title: p.title,
-    attrs: `data-plugin="${esc(p.id)}"`,
-    preview: p.error ? `<p class="form-error">${esc(p.error)}</p>` : `<span>${esc(p.description || p.id)}</span>`,
+    attrs: `data-plugin="${esc(p.id)}" title="${esc(p.description || p.id)}"`,
+    preview: p.error ? `<p class="form-error">${esc(p.error)}</p>` : `<code>${esc(p.id)}</code>`,
     previewClass: 'card-note',
     facts: p.error ? 'Failed' : p.running ? 'Running' : 'Off',
     menu: 'plugin:' + p.id,
@@ -43,36 +43,30 @@ const pluginCard = p =>
 /** The form of the settings a plugin declares (see plugin-host.js). A password is never shown: only whether one is saved. */
 function pluginSettingsForm(plugin) {
   const control = f => {
-    const name = `name="${esc(f.key)}"`;
+    const name = `name="${esc(f.key)}"${f.help ? ` title="${esc(f.help)}"` : ''}`;
     if (f.type === 'boolean')
       return `<label class="check"><input type="checkbox" ${name} ${f.value ? 'checked' : ''}> ${esc(f.label)}</label>`;
-    const help = f.help ? `<small class="muted">${esc(f.help)}</small>` : '';
-    if (f.type === 'textarea')
-      return field(f.label, `<textarea ${name} rows="4">${esc(f.value ?? '')}</textarea>`) + help;
+    if (f.type === 'textarea') return field(f.label, `<textarea ${name} rows="4">${esc(f.value ?? '')}</textarea>`);
     if (f.type === 'select')
-      return (
-        field(
-          f.label,
-          `<select ${name}>${options(
-            f.options.map(o => (typeof o === 'object' ? [o.value, o.label ?? o.value] : [o, o])),
-            f.value
-          )}</select>`
-        ) + help
+      return field(
+        f.label,
+        `<select ${name}>${options(
+          f.options.map(o => (typeof o === 'object' ? [o.value, o.label ?? o.value] : [o, o])),
+          f.value
+        )}</select>`
       );
-    if (f.type === 'number')
-      return field(f.label, `<input type="number" ${name} value="${esc(f.value ?? '')}">`) + help;
+    if (f.type === 'number') return field(f.label, `<input type="number" ${name} value="${esc(f.value ?? '')}">`);
     if (f.type === 'password')
       return (
         field(
           f.label,
-          `<input type="password" ${name} autocomplete="new-password" placeholder="${f.set ? 'Saved. Type to replace.' : ''}">`
+          `<input type="password" ${name} autocomplete="new-password" title="${f.set ? 'Saved. Type to replace.' : 'API key'}">`
         ) +
         (f.set
           ? `<button type="button" class="ghost small" data-clear="${esc(f.key)}">Clear saved ${esc(f.label.toLowerCase())}</button>`
-          : '') +
-        help
+          : '')
       );
-    return field(f.label, `<input ${name} value="${esc(f.value ?? '')}">`) + help;
+    return field(f.label, `<input ${name} value="${esc(f.value ?? '')}">`);
   };
   return `<form id="plugin-settings" class="stack">${plugin.settings.map(control).join('')}<p class="form-error" hidden></p></form>`;
 }
@@ -103,7 +97,7 @@ async function pluginPage(view, route) {
     ${plugin.error ? `<p class="form-error plugin-error">${esc(plugin.error)}</p>` : ''}
     <section><h2>Information</h2><dl class="page-facts">
       <div><dt>State</dt><dd><span class="plugin-state ${state[0]}">${state[1]}</span></dd></div>
-      <div><dt>Folder</dt><dd><code>plugins/${esc(plugin.id)}</code></dd></div>
+      <div><dt>Folder</dt><dd><code>data/plugins/${esc(plugin.id)}</code></dd></div>
       <div><dt>Entry point</dt><dd><code>main.js</code></dd></div>
     </dl></section>
     ${plugin.readme ? `<section><h2>Details</h2><div class="markdown">${renderMarkdown(plugin.readme)}</div></section>` : ''}
@@ -140,12 +134,12 @@ PAGES.plugins = async (view, route) => {
   if (app.route !== route) return;
   view.innerHTML = `<div class="page">${pageHead({
     title: 'Plugins',
-    sub: 'Folders in plugins/ with a main.js. They run on the server with full access.',
-    menu: 'section:plugins',
+    sub: 'Folders in data/plugins/ with a main.js. They run on the server with full access.',
+    menu: '',
   })}${
     app.plugins.length
       ? `<div class="cards">${app.plugins.map(pluginCard).join('')}</div>`
-      : '<div class="empty small"><h2>No plugins</h2><p class="muted">Put a folder with a main.js into plugins/ and choose Reload plugins in the menu.</p></div>'
+      : '<div class="empty small"><h2 title="Put a folder with a main.js into data/plugins/ and choose Reload plugins in the menu.">No plugins</h2></div>'
   }</div>`;
 };
 

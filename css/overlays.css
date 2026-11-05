@@ -2,6 +2,7 @@
 
 /* ----- Dialog ----- */
 dialog {
+  background: transparent;
   width: min(560px, calc(100vw - 2rem));
   max-height: calc(100vh - 4rem);
   padding: 0;
@@ -174,10 +175,10 @@ dialog[open]::before {
 .popup.in-dialog {
   z-index: 100;
 }
-/* The dialog is glass itself, and glass does not blur glass: inside it the menu is solid, or the dialog's buttons show through. */
+/* Menus keep the same glass surface inside dialogs. */
 .popup.in-dialog::before {
-  background: color-mix(in srgb, var(--surface) 98%, black);
-  backdrop-filter: none;
+  background: var(--float);
+  backdrop-filter: var(--blur);
 }
 .popup button[aria-checked='true'] {
   background: var(--current);

@@ -1,76 +1,52 @@
-/* Connected navigation: the open item of a panel flows into the next panel, like a folder tab (three tones: sidebar < second panel < content).
-   Everything here is scoped to `body.nav-joined`; Settings > Appearance > Effects switches the class, so removing the class (or this file) restores the plain look. */
+/* The selected navigation row joins the next panel with curved corners and a shared fade. */
 body.nav-joined {
-  --j-1: color-mix(in srgb, var(--surface) 30%, var(--background)); /* sidebar */
-  --j-2: color-mix(in srgb, var(--surface) 55%, var(--background)); /* second panel */
-  --j-3: var(--background); /* content: the same colour as without this file */
-  --tail: 150px; /* width of the seam inside the next panel */
-  --seam: 8%; /* how strongly the seam starts in the accent colour: quiet, it should be felt more than seen */
+  --j-1: color-mix(in srgb, var(--surface) 30%, var(--background));
+  --j-2: color-mix(in srgb, var(--surface) 55%, var(--background));
+  --j-3: var(--background);
+  --tail: 150px;
+  --seam: 8%;
   --join-r: 21px;
-  --edge-line: color-mix(in srgb, var(--text) 13%, transparent); /* the thin line between two panels */
-  /* the same palette for everything that floats (menus, dialogs, toolbar, minimap) and the same accent-tinted hover */
-  --float: color-mix(
-    in srgb,
-    var(--j-2) 60%,
-    transparent
-  ); /* glass again: the blur of the menu / dialog shows through */
-  /* the panels are translucent glass; over the plain background they compose to exactly --j-1 / --j-2, so the pill and the seam still match them */
+  --float: color-mix(in srgb, var(--j-2) 60%, transparent);
   --glass-2: color-mix(in srgb, var(--surface) 55%, transparent);
   --hover: color-mix(in srgb, var(--accent) 12%, color-mix(in srgb, var(--text) 9%, transparent));
-  --join-sidebar: color-mix(in srgb, var(--accent) var(--seam), var(--j-2)); /* seam on the second panel */
-  --join-subnav: color-mix(in srgb, var(--accent) var(--seam), var(--j-3)); /* seam on the content */
+  --join-sidebar: color-mix(in srgb, var(--accent) var(--seam), var(--j-2));
+  --join-subnav: color-mix(in srgb, var(--accent) var(--seam), var(--j-3));
   overflow: clip;
 }
+
 .nav-joined #sidebar {
-  --edge: 0.65rem;
+  --edge: 0.4rem;
   --join: var(--join-sidebar);
   --own: var(--j-1);
   background: none;
   border-radius: 0;
 }
-.nav-joined.sidebar-hidden #sidebar {
-  --edge: 0.4rem;
-}
+.nav-joined.sidebar-hidden #sidebar { --edge: 0.4rem; }
 .nav-joined #subnav {
   --edge: 0.65rem;
   --join: var(--join-subnav);
   --own: var(--j-2);
   padding-right: 0;
   background: var(--dither), var(--glass-2);
-  overflow: clip; /* the glow reaches below the last row: it must not make the page scroll */
-  overflow-clip-margin: 4px; /* keep the resize handle reachable on the shared edge */
-  border-radius: var(--panel-top-r) var(--join-r) var(--join-r) var(--panel-bottom-r);
+  overflow: clip;
+  overflow-clip-margin: 0;
+  border-radius: var(--join-r);
+  transition: width var(--slow) var(--ease), padding var(--slow) var(--ease), border-radius var(--slow) var(--ease);
   isolation: isolate;
-  --corner: var(--j-1);
-  --edge-line: transparent; /* the border you drag (sidebar | second panel) carries no outline of its own */
 }
 .nav-joined.subnav-collapsed #subnav {
   --edge: 0.4rem;
   padding-right: 0;
 }
-/* The glow of the open row reaches past the window's edge, and so does the sidebar's 8px clip margin: nothing of it may make the page itself scroll. */
-html.nav-joined-root {
-  overflow: hidden;
-}
-/* The list scrolls inside its own box; its right padding is where the open row reaches the edge, its top padding holds the upper curve. */
-.nav-joined .subnav-head {
-  margin-right: var(--edge);
-}
+html.nav-joined-root { overflow: hidden; }
+.nav-joined .subnav-head { margin-right: var(--edge); }
 .nav-joined #subnav-body {
   margin-top: calc(-1 * var(--join-r));
   padding: var(--join-r) var(--edge) var(--join-r) 0;
   position: relative;
 }
 
-/* The open row is one element per panel (.nav-pill, placed by placePills in shell.js) that glides to the row you pick.
-   It ends in the seam colour of the next panel, and the curves above and below it are its two corners. */
-.nav-pill {
-  display: none;
-}
-
-/* The eased fades. A cosine curve (flat at both ends, steepest in the middle) in 20 steps, so the colour never changes slope abruptly: that
-   is what read as a hard edge at the start of the old fades. They are variables so the pill and the seams of every panel share one definition;
-   var() inside them resolves on the element that declares them, hence the selector list below. */
+.nav-pill { display: none; }
 .nav-joined .nav-pill,
 .nav-joined .nav-seam,
 body.nav-joined #sidebar > .nav-pill,
@@ -138,25 +114,15 @@ body.nav-joined #mobile-secondary > .nav-pill {
   transform: translateY(var(--y, 0));
   opacity: 1;
   pointer-events: none;
-  transition:
-    transform var(--slow) var(--ease),
-    height var(--slow) var(--ease),
-    opacity var(--base) var(--ease);
+  transition: transform var(--slow) var(--ease), height var(--slow) var(--ease), opacity var(--base) var(--ease);
   --dir: 90deg;
   --pill-own: color-mix(in srgb, var(--accent) 26%, var(--own));
   background: var(--dither), var(--ramp-pill);
 }
-.nav-joined .nav-pill.off {
-  opacity: 0;
-}
-.nav-joined .nav-pill.jump {
-  transition: opacity var(--base) var(--ease); /* it moves at once but still fades in */
-}
-/* A dragged boundary and its highlights must use the same frame, including the receiving panel's glow. */
+.nav-joined .nav-pill.off { opacity: 0; }
+.nav-joined .nav-pill.jump { transition: opacity var(--base) var(--ease); }
 .resizing-panel .nav-pill,
-.resizing-panel .nav-seam {
-  transition: none !important;
-}
+.resizing-panel .nav-seam { transition: none !important; }
 .nav-joined #sidebar .nav-pill {
   left: var(--edge);
 }
@@ -167,41 +133,36 @@ body.nav-joined #mobile-secondary > .nav-pill {
   right: 0;
   width: var(--curve-r);
   height: var(--curve-r);
+  opacity: 1;
+  transition: opacity var(--slow) var(--ease);
 }
 .nav-joined .nav-pill::before {
-  --curve-r: min(var(--join-r), var(--space-before, var(--join-r)));
+  --curve-r: var(--join-r);
   top: calc(-1 * var(--curve-r));
   background: radial-gradient(circle at 0 0, transparent calc(var(--curve-r) - 0.8px), var(--join) var(--curve-r));
 }
 .nav-joined .nav-pill::after {
-  --curve-r: min(var(--join-r), var(--space-after, var(--join-r)));
+  --curve-r: var(--join-r);
   bottom: calc(-1 * var(--curve-r));
   background: radial-gradient(circle at 0 100%, transparent calc(var(--curve-r) - 0.8px), var(--join) var(--curve-r));
 }
 .nav-joined #subnav-body > .nav-pill {
   left: var(--x, 0px);
 }
-/* Rows sit above the pill and keep no fill of their own while open. */
-.nav-joined .brand,
-.nav-joined .sidebar-top a,
-.nav-joined .sidebar-footer a,
+.nav-joined .sidebar-top .sidebar-item,
+.nav-joined .sidebar-footer .sidebar-item,
 .nav-joined .subnav-row {
   position: relative;
   z-index: 1;
 }
-.nav-joined
-  :is(.brand.active, .sidebar-top a.active, .sidebar-footer a.active, .subnav-row.active, .subnav-row.active:hover) {
-  background: transparent;
-}
-.nav-joined .subnav-row.active {
-  padding-right: 0;
-}
+.nav-joined .sidebar-item.active,
+.nav-joined .sidebar-item.active:hover,
+.nav-joined .sidebar-item > a.active,
+.nav-joined .subnav-row.active,
+.nav-joined .subnav-row.active:hover { background: transparent; }
+.nav-joined .subnav-row.active { padding-right: 0; }
 
-/* The selected section flows into a horizontal linear fade behind the receiving panel's content.
-   One .nav-seam per host; its starting colour matches the selected row and its joining corners. */
-.nav-seam {
-  display: none;
-}
+.nav-seam { display: none; }
 .nav-joined .nav-seam {
   position: absolute;
   top: 0;
@@ -209,122 +170,92 @@ body.nav-joined #mobile-secondary > .nav-pill {
   z-index: 0;
   display: block;
   width: var(--tail);
-  height: 100%;
-  transform: none;
+  height: calc(var(--h, 0px) + 2 * var(--host-h, 0px));
+  transform: translateY(calc(var(--y, 0px) - var(--host-h, 0px)));
   opacity: 1;
   pointer-events: none;
   transition:
     transform var(--slow) var(--ease),
     height var(--slow) var(--ease),
     opacity var(--base) var(--ease);
-  /* A horizontal linear fade sits behind the receiving panel content. */
   --dir: 90deg;
   background: var(--dither), var(--ramp-seam);
+  mask-image: linear-gradient(transparent, #000 var(--host-h, 0px), #000 calc(var(--host-h, 0px) + var(--h, 0px)), transparent);
 }
-.nav-joined .nav-seam.off {
-  opacity: 0;
-}
-.nav-joined .nav-seam.jump {
-  transition: opacity var(--base) var(--ease);
-}
+.nav-joined .nav-seam.off { opacity: 0; }
+.nav-joined .nav-seam.jump { transition: opacity var(--base) var(--ease); }
 .nav-joined #subnav > .nav-seam {
   --join: var(--join-sidebar);
   z-index: -1;
-  max-width: 100%; /* folded to icons the panel is narrower than the glow */
+  max-width: 100%;
+}
+.nav-joined main {
+  position: relative;
+  isolation: isolate;
+  overflow: clip;
+  border-radius: var(--join-r);
+  transition: border-radius var(--slow) var(--ease);
 }
 .nav-joined main > .nav-seam {
   --join: var(--join-subnav);
   z-index: -1;
 }
-.nav-joined main {
-  border-radius: var(--panel-top-r) var(--join-r) var(--join-r) var(--panel-bottom-r);
-  position: relative;
-  isolation: isolate;
-  overflow: clip; /* the glow beside a row near the bottom must not extend the page */
-  --corner: var(--j-2);
-  --edge-line: transparent; /* second panel | content is dragged too: no outline */
-}
 
-/* A selected row near the window edge supplies the outer curve itself; leave space for it instead of overlapping two corners. */
-.nav-joined #subnav,
-.nav-joined main {
-  --panel-top-r: clamp(0px, calc(var(--row-top, 9999px) - var(--join-r)), var(--join-r));
-  --panel-bottom-r: clamp(0px, calc(var(--row-bottom, 9999px) - var(--join-r)), var(--join-r));
-}
-
-/* The left edge of the open panels: rounded top and bottom, with a thin visible line. One strip per panel: a small piece in the colour of the panel on the left
-   fills what the radius cuts away, the line runs along the straight part and follows the curves. */
-.nav-joined #subnav::after,
-.nav-joined main::after {
+/* Apply fine grain after the seam is composited: grain inside its opacity mask
+   fades along with the glow and cannot break up the long, faint bands. */
+.nav-joined #subnav::before,
+.nav-joined main::before,
+.nav-joined .side-content::before {
   content: '';
   position: absolute;
-  top: 0;
-  bottom: 0;
-  left: 0;
-  z-index: 5;
-  width: var(--join-r);
+  inset: 0 auto 0 0;
+  z-index: 0;
+  width: min(100%, var(--tail));
   pointer-events: none;
-  background:
-    radial-gradient(
-        circle at 100% 100%,
-        transparent calc(var(--panel-top-r) - 1.8px),
-        var(--edge-line) calc(var(--panel-top-r) - 1.8px),
-        var(--edge-line) calc(var(--panel-top-r) - 0.8px),
-        var(--corner) calc(var(--panel-top-r) - 0.8px)
-      )
-      top left / var(--panel-top-r) var(--panel-top-r) no-repeat,
-    radial-gradient(
-        circle at 100% 0,
-        transparent calc(var(--panel-bottom-r) - 1.8px),
-        var(--edge-line) calc(var(--panel-bottom-r) - 1.8px),
-        var(--edge-line) calc(var(--panel-bottom-r) - 0.8px),
-        var(--corner) calc(var(--panel-bottom-r) - 0.8px)
-      )
-      bottom left / var(--panel-bottom-r) var(--panel-bottom-r) no-repeat,
-    linear-gradient(90deg, var(--edge-line) 1px, transparent 1px) 0 var(--panel-top-r) / 100%
-      calc(100% - var(--panel-top-r) - var(--panel-bottom-r)) no-repeat;
+  background: var(--dither);
+  mask-image: linear-gradient(90deg, #000, transparent);
+}
+.nav-joined .side-content::before {
+  inset: 0 0 0 auto;
+  mask-image: linear-gradient(270deg, #000, transparent);
 }
 
-/* One family: the rest of the shell speaks the same accent language as the open row (hover, tabs, the Properties panel). */
-.nav-joined .sidebar-top a:hover:not(.active),
-.nav-joined .sidebar-footer a:hover:not(.active),
-.nav-joined .subnav-row:hover:not(.active) {
-  background: color-mix(in srgb, var(--accent) 9%, transparent);
-}
+.nav-joined .subnav-row:hover:not(.active),
 .nav-joined .tab:hover:not(.active) {
   background: color-mix(in srgb, var(--accent) 9%, transparent);
 }
 .nav-joined .tab.active,
 .nav-joined .tab.active:hover {
-  background: var(--dither),
-    linear-gradient(
-      90deg,
-      color-mix(in srgb, var(--accent) 26%, var(--j-3)),
-      color-mix(in srgb, var(--accent) 9%, var(--j-3))
-    );
+  background: linear-gradient(
+    90deg,
+    color-mix(in srgb, var(--accent) 22%, var(--j-3)),
+    color-mix(in srgb, var(--accent) 9%, var(--j-3))
+  );
 }
-/* The floating inspector keeps the shell's glass tones; its section buttons sit independently over the canvas. */
+
 .nav-joined .side {
+  gap: 0;
   --edge: 0.4rem;
   --join: var(--join-sidebar);
   --own: var(--j-1);
   margin: 0;
   border-radius: 0;
-  background: none; /* the glass sits on .side-content and .side-tabs, each in its own tone */
+  background: none;
   overflow: visible;
-}
-.nav-joined .side[data-collapsed='true'] {
-  border-radius: 0;
 }
 .nav-joined .side-tabs {
   position: relative;
-  padding-top: 0;
+  align-self: stretch;
+  padding-top: 16px;
   background: none;
+  border-radius: 0;
 }
 .nav-joined .side-content {
   isolation: isolate;
   position: relative;
   border-radius: var(--join-r);
+  transition: opacity var(--fast) var(--ease), visibility 0s, border-radius var(--slow) var(--ease);
+
   background: var(--dither), var(--glass-2);
 }
 .nav-joined .side-content > .nav-seam {
@@ -332,68 +263,119 @@ body.nav-joined #mobile-secondary > .nav-pill {
   left: auto;
   right: 0;
   --join: var(--join-sidebar);
-  transform: none;
   --dir: 270deg;
-  background: var(--dither), var(--ramp-seam);
 }
 .nav-joined .side-tabs .nav-pill {
   left: 0;
   right: var(--edge);
   border-radius: 0 var(--nav-radius) var(--nav-radius) 0;
   --dir: 270deg;
-  --pill-own: color-mix(in srgb, var(--accent) 26%, var(--own));
-  background: var(--dither), var(--ramp-pill);
 }
 .nav-joined .side-tabs .nav-pill::before,
-.nav-joined .side-tabs .nav-pill::after {
-  right: auto;
-  left: 0;
-}
+.nav-joined .side-tabs .nav-pill::after { right: auto; left: 0; }
 .nav-joined .side-tabs .nav-pill::before {
   background: radial-gradient(circle at 100% 0, transparent calc(var(--curve-r) - 0.8px), var(--join) var(--curve-r));
 }
 .nav-joined .side-tabs .nav-pill::after {
-  background: radial-gradient(
-    circle at 100% 100%,
-    transparent calc(var(--curve-r) - 0.8px),
-    var(--join) var(--curve-r)
-  );
+  background: radial-gradient(circle at 100% 100%, transparent calc(var(--curve-r) - 0.8px), var(--join) var(--curve-r));
 }
 .nav-joined .side-tabs button {
   position: relative;
   z-index: 1;
+  border-radius: var(--nav-radius);
+  background: transparent;
+  box-shadow: none;
+  backdrop-filter: none;
 }
 .nav-joined .side-tabs button.active,
-.nav-joined .side-tabs button.active:hover:not(:disabled) {
-  background: var(--current);
-}
-.nav-joined .side-tabs button:hover:not(.active) {
-  background: color-mix(in srgb, var(--accent) 9%, transparent);
-}
-/* Canvas controls float independently; they no longer form a docked rail. */
-.nav-joined .side-tabs > .nav-pill,
-.nav-joined .side-content > .nav-seam {
-  display: none;
-}
-body[data-page='workflow'] main {
-  background: var(--background);
-  border-top-right-radius: 0;
-  border-bottom-right-radius: 0;
-}
-body[data-page='workflow'] main > .nav-seam {
-  display: none;
-}
+.nav-joined .side-tabs button.active:hover:not(:disabled) { background: transparent; }
+.nav-joined .side-tabs button:hover:not(.active) { background: color-mix(in srgb, var(--accent) 9%, transparent); }
 
-/* Effects off: everything solid and flat again (the glass tones fall back to the opaque ones). */
 [data-effects='false'] body.nav-joined {
   --glass-2: var(--j-2);
   --float: var(--j-2);
 }
 
-/* The drag handle sits exactly on the line between two panels (its own 2px line is at the centre of the 8px strip). */
-.nav-joined .panel-resize.edge-right {
-  right: -4px;
-}
-.nav-joined .panel-resize.edge-left {
-  left: -4px;
+.nav-joined .panel-resize.edge-right { right: -4px; }
+.nav-joined .panel-resize.edge-left { left: -4px; }
+.nav-joined #subnav > .panel-resize.edge-right { right: 0; }
+.resizing-panel.nav-joined :is(#subnav, main, .side-content) { transition: none; }
+
+/* Rows at an edge share a straight edge with the next panel; other rows keep
+   enough room for both full-size corners. */
+@media (min-width: 761px) {
+  body.nav-joined { --nav-radius: var(--join-r); }
+  body.nav-joined #topstrip > #toggle-subnav { margin-left: calc(8px + 0.2rem); }
+  .nav-joined .sidebar-item > a > :is(svg, .brand-mark) { left: calc(20px - 0.2rem); }
+  .nav-joined .sidebar-item > a { padding-left: calc(56px - 0.2rem - 8px); }
+  .nav-joined #sidebar,
+  .nav-joined.sidebar-hidden #sidebar { padding-right: 0; }
+  .nav-joined .side-tabs {
+    --tool-size: calc(2 * var(--join-r));
+    padding-inline: 0;
+  }
+  .nav-joined .side-tabs > .icon { width: 48px; }
+  .nav-joined .side-tabs .nav-pill { right: 0; }
+  .nav-joined .side-heading {
+    height: calc(2 * var(--join-r));
+    min-height: calc(2 * var(--join-r));
+    padding-block: 0;
+  }
+  .nav-joined #sidebar,
+  .nav-joined.sidebar-hidden #sidebar,
+  .nav-joined .side-tabs {
+    padding-top: 0;
+    padding-bottom: 0;
+  }
+  .nav-joined #subnav {
+    padding-top: 0;
+    padding-bottom: 0;
+  }
+  .nav-joined #subnav-body { margin-top: 0; padding: 0; }
+  .nav-joined .sidebar-item > a { height: calc(2 * var(--join-r)); }
+  .nav-joined .subnav-row { height: calc(2 * var(--join-r)); }
+  .nav-joined #sidebar .sidebar-item:hover:not(.active),
+  .nav-joined #subnav .subnav-row:hover:not(.active),
+  .nav-joined .side-tabs button:hover:not(.active) { background: transparent; }
+  .nav-joined #sidebar .sidebar-item:not(.active)::before,
+  .nav-joined #subnav .subnav-row:not(.active)::before,
+  .nav-joined .side-tabs button:not(.active)::before {
+    content: '';
+    position: absolute;
+    top: 50%;
+    /* Match the space around a 32px highlight in the folded 56px rail. */
+    left: calc((56px - 0.4rem - 32px) / 2);
+    right: calc((56px - 0.4rem - 32px) / 2);
+    height: calc(100% - 10px);
+    border-radius: 16px;
+    transform: translateY(-50%);
+    background: var(--hover);
+    pointer-events: none;
+    opacity: 0;
+    transition: opacity var(--fast) var(--ease), background-color var(--fast) var(--ease);
+  }
+  .nav-joined #sidebar .sidebar-item:hover:not(.active)::before,
+  .nav-joined #subnav .subnav-row:hover:not(.active)::before,
+  .nav-joined .side-tabs button:hover:not(.active)::before { opacity: 1; }
+  .nav-joined #sidebar .sidebar-item:active:not(.active)::before,
+  .nav-joined #subnav .subnav-row:active:not(.active)::before,
+  .nav-joined .side-tabs button:active:not(.active)::before { background: var(--press); }
+  .nav-joined.sidebar-hidden #sidebar .sidebar-item:not(.active)::before,
+  .nav-joined.subnav-collapsed #subnav .subnav-row:not(.active)::before,
+  .nav-joined .side-tabs button:not(.active)::before {
+    left: 50%;
+    right: auto;
+    width: 32px;
+    height: 32px;
+    border-radius: 50%;
+    transform: translate(-50%, -50%);
+  }
+  .nav-joined .nav-pill.join-top::before,
+  .nav-joined .nav-pill.join-bottom::after { opacity: 0; }
+  .nav-joined :is(#subnav, main).join-in-top { border-top-left-radius: 0; }
+  .nav-joined :is(#subnav, main).join-in-bottom { border-bottom-left-radius: 0; }
+  .nav-joined #subnav.join-out-top { border-top-right-radius: 0; }
+  .nav-joined #subnav.join-out-bottom { border-bottom-right-radius: 0; }
+  .nav-joined .side-content.join-in-top { border-top-right-radius: 0; }
+  .nav-joined .side-content.join-in-bottom { border-bottom-right-radius: 0; }
 }

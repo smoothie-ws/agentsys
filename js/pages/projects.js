@@ -3,7 +3,7 @@
 
 // ----- projects -----
 const EMPTY_PROJECTS =
-  '<div class="empty"><h2>Start your first project</h2><p class="muted">Projects keep related workflows together. Create one or explore a working example.</p><div class="button-row"><button type="button" class="primary" data-new-project>New project</button><button type="button" data-example>Open example</button></div></div>';
+  '<div class="empty"><h2 title="Projects keep related workflows together. Create one or explore a working example.">Start your first project</h2><div class="button-row"><button type="button" class="primary" data-new-project>New project</button><button type="button" data-example>Open example</button></div></div>';
 PAGES.projects = async (view, route) => {
   await loadProjects();
   if (app.route !== route) return;
@@ -55,7 +55,7 @@ function projectActions(project, title = $(`[data-project-title="${CSS.escape(pr
       {icon: 'copy'},
     ],
     ['Export project', () => exportProject(project), {icon: 'upload'}],
-    ['Import workflow', () => importWorkflows(project.id), {icon: 'download'}],
+    ['Import graph', () => importWorkflows(project.id), {icon: 'download'}],
     ['Settings', () => go(`/p/${project.id}/settings`), {icon: 'settings'}],
     null,
     [
@@ -173,8 +173,8 @@ function workflowActions(projectId, workflow, title) {
       },
       {icon: 'copy'},
     ],
-    ['Export workflow', () => exportWorkflow(projectId, workflow), {icon: 'upload'}],
-    ['Import workflow', () => importWorkflows(projectId), {icon: 'download'}],
+    ['Export graph', () => exportWorkflow(projectId, workflow), {icon: 'upload'}],
+    ['Import graph', () => importWorkflows(projectId, workflow.id), {icon: 'download'}],
     null,
     [
       'Delete',
@@ -218,16 +218,44 @@ async function importProjects() {
     await go(`/p/${last.id}`);
   }
 }
-async function importWorkflows(projectId) {
+async function importWorkflows(projectId, workflowId = null) {
   const files = await pickFiles();
-  let last;
+  const graphs = [];
   for (const file of files) {
-    const data = JSON.parse(await file.text());
-    if (TextGraph.decode(data).kind !== 'workflow') throw new Error(`${file.name}: choose an exported workflow.`);
-    last = await api(`projects/${projectId}/workflows/import`, {method: 'POST', body: data});
+    const packet = JSON.parse(await file.text()), graph = TextGraph.decode(packet);
+    if (!['workflow', 'graph'].includes(graph.kind) || !graph.document)
+      throw new Error(`${file.name}: choose an exported workflow graph.`);
+    graphs.push({packet, graph, file});
   }
-  if (last) {
+  if (!graphs.length) return;
+  if (workflowId) {
+    const open = W.project === projectId && W.workflow === workflowId && W.canvas?.isConnected;
+    if (open) await flushNodeEdits();
+    const point = open ? spawnPoint() : {x: 0, y: 0};
+    let last;
+    for (const {packet} of graphs) {
+      last = await api(`projects/${projectId}/import-graph`, {
+        method: 'POST', body: {workflow_id: workflowId, graph: packet, point}, edit: editToken(),
+      });
+      point.x += 48; point.y += 48;
+    }
+    if (W.project === projectId && W.workflow === workflowId && W.canvas?.isConnected) {
+      await reload();
+      select(pastedSelection(last));
+    }
+    toast('Graph imported.');
+    return;
+  }
+  dialog('Import graph into project', graphs.map(({graph, file}, index) =>
+    field(file.name, `<input name="graph-${index}" value="${esc(graph.name || 'Imported workflow')}" required maxlength="100" ${index ? '' : 'autofocus'}>`)
+  ).join(''), async form => {
+    let last;
+    for (const [index, {graph}] of graphs.entries()) {
+      const name = form.elements.namedItem('graph-' + index).value.trim();
+      if (!name) throw new Error('Enter a workflow name.');
+      last = await api(`projects/${projectId}/workflows/import`, {method: 'POST', body: TextGraph.encode({...graph, name})});
+    }
     await Promise.all([loadProjects(), loadProjectWorkflows(projectId, true)]);
     await go(`/p/${projectId}/w/${last.id}`);
-  }
+  }, 'Import');
 }

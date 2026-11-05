@@ -4,7 +4,8 @@
 /* ----- Layout ----- */
 .editor {
   position: relative;
-  display: block;
+  display: grid;
+  grid-template-columns: minmax(0, 1fr) auto;
   height: 100%;
 }
 .editor.opening,
@@ -14,70 +15,37 @@
 }
 .toolbar {
   position: absolute;
-  top: 12px;
-  left: 12px;
+  top: 16px;
+  left: 16px;
   z-index: 20;
-  display: flex;
-  align-items: center;
-  gap: 0.25rem;
-  flex-wrap: wrap;
-  max-width: calc(100% - 80px); /* leave room for the floating inspector controls */
-  padding: 0.3rem;
-  border-radius: 21px;
-  background: var(--float);
-  backdrop-filter: var(--blur);
-  box-shadow: var(--shadow);
+  flex-wrap: nowrap;
+  overflow-x: auto;
+  scrollbar-width: none;
+  max-width: calc(100% - 32px);
   cursor: default;
 }
-.toolbar button {
-  flex: none;
-  min-height: 32px;
-}
-.toolbar .icon {
-  width: 32px;
+.toolbar #start {
+  width: var(--tool-size);
+  height: var(--tool-size);
   padding: 0;
 }
-#run-summary {
-  display: flex;
-  align-items: center;
-  gap: 0.4rem;
-  min-width: 0;
-  padding: 0 0.5rem;
-  color: var(--muted);
-  font-size: 0.85rem;
-}
-#run-summary:empty {
-  display: none;
-}
-.toolbar .run {
-  background: var(--accent);
-  color: var(--on-accent);
-  font-weight: 600;
-}
-.toolbar .run.stop {
-  background: var(--bad);
-  color: #fff;
-}
-.toolbar .run.stop:hover:not(:disabled) {
-  background: color-mix(in srgb, var(--bad) 86%, white);
-}
-.toolbar .run:hover:not(:disabled) {
-  background: color-mix(in srgb, var(--accent) 86%, white);
-}
-.toolbar .run:active:not(:disabled) {
-  background: color-mix(in srgb, var(--accent) 88%, black);
+@media (min-width: 761px) {
+  .nav-joined .canvas .toolbar {
+    top: max(0px, calc(var(--join-r) - var(--tool-size) / 2 - 4px));
+  }
 }
 
 /* ----- Canvas ----- */
 .canvas {
   --sw: 1.25px;
+  container: graph / inline-size;
   position: relative;
   width: 100%;
   height: 100%;
   min-width: 0;
   margin: 0;
   border-radius: 0;
-  overflow: hidden;
+  overflow: clip;
   outline: none;
   background-color: transparent;
   cursor: grab;
@@ -160,28 +128,10 @@
 .selection-tools {
   position: absolute;
   z-index: 10;
-  display: flex;
-  gap: 0.2rem;
-  padding: 0.25rem;
-  border-radius: 21px;
-  background: var(--float);
-  backdrop-filter: var(--blur);
-  box-shadow: var(--shadow);
   transform: translateX(-50%);
 }
-.selection-tools button {
-  width: 30px;
-  height: 30px;
-  padding: 0;
-}
-.selection-tools button.active {
-  background: var(--current);
-  color: var(--accent);
-}
 .map {
-  position: absolute;
-  left: 12px;
-  bottom: 12px;
+  flex: none;
   padding: 6px;
   border-radius: 24px;
   background: var(--float);
@@ -364,7 +314,9 @@
   animation: signal-flow 0.55s linear infinite;
 }
 @keyframes signal-flow {
-  to { stroke-dashoffset: -22; }
+  to {
+    stroke-dashoffset: -22;
+  }
 }
 
 /* ----- Nodes ----- */
@@ -927,84 +879,6 @@
   color: var(--muted);
 }
 
-/* Key hints along the bottom of the canvas, and the snap switch. */
-.hints {
-  position: absolute;
-  left: 236px;
-  right: 12px;
-  bottom: 12px;
-  display: flex;
-  align-items: center;
-  gap: 0.4rem;
-  min-width: 0;
-  height: 34px;
-  padding: 0 0.4rem;
-  font-size: 0.75rem;
-  pointer-events: none;
-}
-.hints.collapsed {
-  left: auto;
-}
-.hints > * {
-  pointer-events: auto;
-}
-.hint-list {
-  opacity: 0.55;
-  transition: opacity var(--fast) var(--ease);
-  display: flex;
-  flex: 1;
-  align-items: center;
-  gap: 1rem;
-  min-width: 0;
-  overflow: hidden;
-  white-space: nowrap;
-}
-.hint[hidden] {
-  display: none;
-}
-.hints:hover .hint-list {
-  opacity: 0.9;
-}
-.hint {
-  display: inline-flex;
-  align-items: center;
-  gap: 0.35rem;
-  color: var(--muted);
-}
-.hint.on {
-  color: var(--text);
-}
-.hints kbd {
-  color: var(--text);
-  font-weight: 600;
-}
-.hints .icon {
-  flex: none;
-  width: 26px;
-  height: 26px;
-  min-height: 0;
-  padding: 0;
-  background: none;
-  box-shadow: none;
-  color: var(--muted);
-}
-.hints .icon:hover:not(:disabled) {
-  background: none;
-  color: var(--text);
-}
-.hints .icon[aria-pressed='true'] {
-  color: var(--accent);
-}
-.hints .icon svg {
-  width: 17px;
-  height: 17px;
-}
-@media (max-width: 760px) {
-  .hints {
-    display: none;
-  }
-}
-
 /* Reroute: one dot on a wire. Its edges take incoming and outgoing wires; the middle drags it.
    Only `scale` and colour may animate, or the point would lag behind its wires. */
 .node.reroute {
@@ -1364,11 +1238,14 @@
   border-radius: inherit;
   pointer-events: none;
   --state-glow: #fff;
-  box-shadow: inset 0 0 0 1.5px var(--state-glow),
+  box-shadow:
+    inset 0 0 0 1.5px var(--state-glow),
     0 0 10px color-mix(in srgb, var(--state-glow) 45%, transparent),
     0 0 26px color-mix(in srgb, var(--state-glow) 22%, transparent);
   opacity: 0;
-  transition: opacity 0.18s var(--ease), box-shadow 0.24s var(--ease);
+  transition:
+    opacity 0.18s var(--ease),
+    box-shadow 0.24s var(--ease);
 }
 .node.glow::after,
 .node.s-completed:not(.glow-pending)::after,
@@ -1386,5 +1263,116 @@
   animation: node-working 1.1s ease-in-out infinite;
 }
 @keyframes node-working {
-  50% { opacity: 0.6; }
+  50% {
+    opacity: 0.6;
+  }
 }
+
+.toolbar-divider {
+  width: 1px;
+  height: 20px;
+  background: var(--line);
+  margin: 0 4px;
+  flex: none;
+}
+
+
+.toolbar::-webkit-scrollbar {
+  display: none;
+}
+#view.view-workflow {
+  container-type: inline-size;
+  container-name: workarea;
+}
+
+/* Grid visibility rises smoothly towards the pointer without covering graph content. */
+.canvas-grid {
+  position: absolute;
+  inset: 0;
+  pointer-events: none;
+  --grid-ink: var(--theme-canvas-grid, var(--grid-colour));
+  background-image:
+    radial-gradient(circle, color-mix(in srgb, var(--grid-ink) calc(var(--grid-fine-opacity) * 100%), transparent) var(--grid-fine-radius), transparent calc(var(--grid-fine-radius) + 0.35px)),
+    radial-gradient(circle, color-mix(in srgb, var(--grid-ink) calc(var(--grid-coarse-opacity) * 100%), transparent) var(--grid-coarse-radius), transparent calc(var(--grid-coarse-radius) + 0.35px));
+  background-size: var(--grid-size);
+  background-position: var(--grid-position);
+  opacity: 1;
+}
+.grid-glow {
+  --grid-ink: color-mix(in srgb, var(--text) 26%, transparent);
+  opacity: 0;
+  mask-image: radial-gradient(circle 440px at var(--cursor-x, 50%) var(--cursor-y, 50%), #000, transparent);
+}
+.cursor-inside .grid-glow {
+  opacity: 1;
+}
+.canvas[data-tool='select'], .canvas[data-tool='move'] {
+  cursor: default;
+}
+.canvas[data-tool='delete'] {
+  cursor: crosshair;
+}
+.canvas-tools {
+  position: absolute;
+  left: 16px;
+  top: 50%;
+  z-index: 20;
+  flex-direction: column;
+  transform: translateY(-50%);
+}
+/* The minimap and key hints share a bottom row; only the minimap has a surface. */
+.canvas-footer {
+  position: absolute;
+  left: 12px;
+  right: 12px;
+  bottom: 12px;
+  z-index: 10;
+  display: flex;
+  align-items: flex-end;
+  gap: 16px;
+  overflow: clip;
+  pointer-events: none;
+}
+.canvas-footer > * { pointer-events: auto; }
+.canvas-hints {
+  flex: 1;
+  min-width: 0;
+  display: flex;
+  flex-wrap: wrap;
+  gap: 6px 16px;
+  padding-bottom: 4px;
+  color: var(--muted);
+  font-size: 11px;
+  overflow: clip;
+  cursor: default;
+}
+.canvas-hints span { white-space: normal; }
+.canvas-hints kbd { color: var(--text); font: inherit; font-weight: 600; white-space: nowrap; }
+@container graph (max-width: 520px) {
+  .canvas-footer {
+    left: 64px;
+    flex-direction: column-reverse;
+    align-items: stretch;
+    gap: 8px;
+  }
+  .canvas-footer .map { align-self: flex-start; }
+}
+@container graph (max-width: 360px) {
+  .toolbar {
+    flex-wrap: wrap;
+    overflow: visible;
+  }
+}
+@media (max-width: 760px) {
+  .canvas-tools { left: 8px; }
+  .canvas-footer { left: 8px; right: 8px; bottom: 8px; gap: 8px; }
+  .tool-strip { --tool-size: 40px; }
+}
+@media (max-width: 760px) {
+  @container graph (max-width: 520px) {
+    .canvas-footer { left: 56px; }
+  }
+}
+
+:is(.node, .frame) { transform-origin: top left; }
+.graph-exit { pointer-events: none; }

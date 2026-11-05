@@ -161,11 +161,7 @@ async function copySelection(cut = false) {
     method: 'POST',
     body: wf({node_ids: nodes.map(n => n.id), group_ids: groupIds}),
   });
-  try {
-    localStorage.setItem('agentsys-clipboard', JSON.stringify(bundle));
-  } catch {
-    throw new Error('The browser blocked storage for the clipboard.');
-  }
+  await store.set('agentsys-clipboard', bundle);
   const count = bundle.records.length;
   toast(cut ? 'Cut.' : `Copied ${plural(count || bundle.groups.length, count ? 'node' : 'group')}.`);
   if (cut) await deleteSelection();

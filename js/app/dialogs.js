@@ -91,9 +91,9 @@ function dialog(title, body, submit, label = 'Save', danger = false) {
 }
 const confirmDialog = (title, text, action, label) =>
   dialog(title, `<p class="muted">${esc(text)}</p>`, action, label, true);
-const field = (label, control) => {
+const field = (label, control, help = '') => {
   const tag = control.includes('data-icon-grid') ? 'div' : 'label';
-  return `<${tag} class="field"><span>${esc(label)}</span>${control}</${tag}>`;
+  return `<${tag} class="field"${help ? ` title="${esc(help)}"` : ''}><span>${esc(label)}</span>${control}</${tag}>`;
 };
 const options = (items, selected) =>
   items

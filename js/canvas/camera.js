@@ -22,12 +22,15 @@ function setCamera(x, y, zoom) {
   const fineRadius = spacing / 24,
     coarseRadius = spacing / 6;
   if (zoomChanged) {
-    W.canvas.style.backgroundImage = `radial-gradient(circle, color-mix(in srgb, var(--theme-canvas-grid, var(--grid-colour)) ${fineOpacity * 100}%, transparent) ${fineRadius}px, transparent ${fineRadius + 0.35}px), radial-gradient(circle, color-mix(in srgb, var(--theme-canvas-grid, var(--grid-colour)) ${coarseOpacity * 100}%, transparent) ${coarseRadius}px, transparent ${coarseRadius + 0.35}px)`;
-    W.canvas.style.backgroundSize = `${spacing}px ${spacing}px, ${spacing * 4}px ${spacing * 4}px`;
+    for (const [key, value] of Object.entries({
+      'fine-opacity': fineOpacity, 'coarse-opacity': coarseOpacity,
+      'fine-radius': fineRadius + 'px', 'coarse-radius': coarseRadius + 'px',
+    })) W.canvas.style.setProperty('--grid-' + key, value);
+    W.canvas.style.setProperty('--grid-size', `${spacing}px ${spacing}px, ${spacing * 4}px ${spacing * 4}px`);
     $('#zoom-level').textContent = Math.round(zoom * 100) + '%';
   }
   // CSS gradients center each dot in its tile, so offset both levels to the same world origin.
-  W.canvas.style.backgroundPosition = `${-x * zoom - spacing / 2}px ${-y * zoom - spacing / 2}px, ${-x * zoom - spacing * 2}px ${-y * zoom - spacing * 2}px`;
+  W.canvas.style.setProperty('--grid-position', `${-x * zoom - spacing / 2}px ${-y * zoom - spacing / 2}px, ${-x * zoom - spacing * 2}px ${-y * zoom - spacing * 2}px`);
   onNextFrame('camera', () => {
     drawSelectionTools();
     drawMinimap();
@@ -57,11 +60,7 @@ function fit(ids) {
     y0 = Math.min(...boxes.map(b => b.y)),
     x1 = Math.max(...boxes.map(b => b.x + b.w)),
     y1 = Math.max(...boxes.map(b => b.y + b.h));
-  // The inspector floats now: frame the graph in the unobscured desktop area.
-  const side = $('#side'),
-    width = !narrowSidebar.matches && side?.dataset.collapsed === 'false'
-      ? Math.max(1, side.offsetLeft - 12)
-      : W.canvas.clientWidth;
+  const width = W.canvas.clientWidth;
   const padX = Math.min(120, width * 0.12), // 120px on a wide canvas, less on a phone
     padY = Math.min(120, W.canvas.clientHeight * 0.12);
   const zoom = Math.min(1.1, (width - padX) / (x1 - x0), (W.canvas.clientHeight - padY) / (y1 - y0));

@@ -1,5 +1,5 @@
 'use strict';
-// Plugins, in the manner of Substance Painter: a plugin is a folder in `plugins/` with a `main.js` that exports
+// Plugins, in the manner of Substance Painter: a plugin is a folder in `data/plugins/` with a `main.js` that exports
 // `start(api)` and (optionally) `stop()`. There is no manifest, no sandbox and no permission list: a plugin is trusted
 // code that runs in the server process, like any other program the person installed. Plugins can be turned off and the
 // folder reloaded from the Plugins page.
@@ -115,6 +115,11 @@ function createPluginHost({dir, backend, log = (...args) => console.error(...arg
       },
       secret: async name => (await backend.DB.get('secrets/' + name))?.value,
       library: {
+        addSection(spec) {
+          if (!/^[a-z][a-z0-9-]*$/.test(spec.id ?? '') || spec.id === 'nodes') throw bad('Invalid Library section id');
+          if ([...plugins.values()].some(p => p.sections.has(spec.id))) throw bad('Library section already registered');
+          plugin.sections.set(spec.id, json({...spec, plugin: plugin.id}));
+        },
         async add({name, payload}) {
           const items = await request('GET', 'resources');
           if (items.some(r => r.name === name)) return;
@@ -167,6 +172,7 @@ function createPluginHost({dir, backend, log = (...args) => console.error(...arg
     plugin.started = false;
     for (const off of plugin.cleanup.splice(0)) off();
     plugin.routes.clear();
+    plugin.sections.clear();
     plugin.running = false;
   }
 
@@ -204,6 +210,7 @@ function createPluginHost({dir, backend, log = (...args) => console.error(...arg
           module: null,
           settings: [],
           routes: new Map(),
+          sections: new Map(),
           cleanup: [],
         };
         plugins.set(id, plugin);
@@ -225,6 +232,7 @@ function createPluginHost({dir, backend, log = (...args) => console.error(...arg
       plugins.clear();
       await host.load();
     },
+    sections: () => [...plugins.values()].flatMap(p => [...p.sections.values()]),
     list: () => [...plugins.values()].map(describe),
     /** One plugin with the routes it registered and its README.md, if it has one. */
     async detail(id) {

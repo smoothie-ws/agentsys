@@ -24,7 +24,7 @@ class Editor {
     this.doc = doc;
   }
 
-  // ───── Reading: snapshot, selection, layout and styles ─────
+  // в”Ђв”Ђв”Ђв”Ђв”Ђ Reading: snapshot, selection, layout and styles в”Ђв”Ђв”Ђв”Ђв”Ђ
 
   /** `structure`: nodes, groups and Complex Nodes only, without ports, wires and diagnostics (see buildSnapshot). */
   snapshot(structure = false) {
@@ -154,7 +154,7 @@ class Editor {
     for (const id of Object.keys(this.doc.widgets)) if (predicate(id)) delete this.doc.widgets[id];
   }
 
-  // ───── Layout and style ─────
+  // в”Ђв”Ђв”Ђв”Ђв”Ђ Layout and style в”Ђв”Ђв”Ђв”Ђв”Ђ
 
   saveLayout(positions) {
     if (!isObject(positions) || !Object.keys(positions).length || Object.keys(positions).length > 1000)
@@ -217,7 +217,7 @@ class Editor {
     return {saved: true, pinned, folded, disabled, color: color ? color.toLowerCase() : null};
   }
 
-  // ───── Nodes ─────
+  // в”Ђв”Ђв”Ђв”Ђв”Ђ Nodes в”Ђв”Ђв”Ђв”Ђв”Ђ
 
   /** The name of a Custom node on this workflow (what it is called on the canvas): its title, which belongs to this copy only. */
   renameNode(nodeId, title) {
@@ -237,7 +237,7 @@ class Editor {
 
   saveNode(body, nodeId = null) {
     const type = body.node_type;
-    if (!(type in DEFINITIONS) || !isObject(body.config ?? {})) throw bad('Choose a supported node type');
+    if (!Object.hasOwn(DEFINITIONS, type) || !isObject(body.config ?? {})) throw bad('Choose a supported node type');
     const config = {...clone(DEFINITIONS[type].defaults), ...(body.config || {})};
     if (type === 'custom') validateCustomConfig(config, this.typeTable());
     if (JSON.stringify(config).length > (type === 'custom' ? CUSTOM_CONFIG_LIMIT : 20000))
@@ -268,7 +268,7 @@ class Editor {
     return {id: nodeId};
   }
 
-  // ───── The two bricks the engine is made of: Script and Event (not Library nodes; the Add node menu offers them) ─────
+  // в”Ђв”Ђв”Ђв”Ђв”Ђ The two bricks the engine is made of: Script and Event (not Library nodes; the Add node menu offers them) в”Ђв”Ђв”Ђв”Ђв”Ђ
 
   /** Every type expression a document holds: the ports of its nodes and of its Complex Nodes. */
   retype(map) {
@@ -419,11 +419,11 @@ class Editor {
     const bodyConfig = new Map();
     for (const [id, value] of Object.entries(values)) {
       const port = (stored ? stored.interface[direction] : config[direction]).find(p => p.id === id);
-      if (!port) throw missing(`This node has no ${noun} “${id}”`);
+      if (!port) throw missing(`This node has no ${noun} вЂњ${id}вЂќ`);
       const control = table.control(port.type);
-      if (!control) throw bad(`The ${noun} “${port.name}” has no control: its type does not say how to type it in`);
-      if (direction === 'outputs' && !port.editable) throw bad(`The output “${port.name}” does not show a control`);
-      if (value != null && !fitsControl(value, control)) throw bad(`That is not a value of the type of “${port.name}”`);
+      if (!control) throw bad(`The ${noun} вЂњ${port.name}вЂќ has no control: its type does not say how to type it in`);
+      if (direction === 'outputs' && !port.editable) throw bad(`The output вЂњ${port.name}вЂќ does not show a control`);
+      if (value != null && !fitsControl(value, control)) throw bad(`That is not a value of the type of вЂњ${port.name}вЂќ`);
       set(port, value);
       for (const b of stored ? (port.bound ?? []) : []) {
         const inner = this.doc.nodes.find(n => n.id === b.node_id && n.node_type === 'custom');
@@ -485,7 +485,7 @@ class Editor {
     return {ids: made};
   }
 
-  // ───── Widgets: what the code of a Custom node put on it ─────
+  // в”Ђв”Ђв”Ђв”Ђв”Ђ Widgets: what the code of a Custom node put on it в”Ђв”Ђв”Ђв”Ђв”Ђ
 
   /** The Custom node `nodeId` (a Custom node, not a Complex Node). */
   customNode(nodeId) {
@@ -520,7 +520,7 @@ class Editor {
     const list = this.doc.widgets[nodeId] ?? [];
     for (const [id, value] of Object.entries(values)) {
       const widget = list.find(w => w.id === id);
-      if (!widget) throw missing(`This node has no widget “${id}”`);
+      if (!widget) throw missing(`This node has no widget вЂњ${id}вЂќ`);
       if (!HAS_VALUE.has(widget.kind)) throw bad(`A ${widget.kind} widget has no value`);
       if (JSON.stringify(value ?? null).length > WIDGET_VALUE_LIMIT) throw bad('The widget value is too large');
       widget.value = value ?? null;
@@ -547,7 +547,7 @@ class Editor {
     return {saved: true};
   }
 
-  // ───── Groups and Complex Nodes (a Complex Node is a group with an interface) ─────
+  // в”Ђв”Ђв”Ђв”Ђв”Ђ Groups and Complex Nodes (a Complex Node is a group with an interface) в”Ђв”Ђв”Ђв”Ђв”Ђ
 
   /** Adds or removes the Complex Node wrapper of a group, and changes its ports, collapsed state or compact size. */
   complex(groupId, body, internal = false) {
@@ -627,7 +627,7 @@ class Editor {
     return {saved: true};
   }
 
-  // ───── Slots of a placed Library node ─────
+  // в”Ђв”Ђв”Ђв”Ђв”Ђ Slots of a placed Library node в”Ђв”Ђв”Ђв”Ђв”Ђ
 
   /**
    * The slots of a placed Library node that were added on the workflow (by hand or by a Script: `arbitrary` only decides whether the panel
@@ -789,9 +789,14 @@ class Editor {
       members: [...g.members],
       parent: parents.get(g.id),
     }));
+    // Empty groups need a position before they can appear in the snapshot used by saveLayout.
     for (const group of groups)
-      if (!group.members.length && validPoint(group.position))
+      if (validPoint(group.position) && !this.doc.layout['group:' + group.id])
         this.doc.layout['group:' + group.id] = {x: group.position.x, y: group.position.y};
+    const positions = Object.fromEntries(groups
+      .filter(group => validPoint(group.position))
+      .map(group => ['group:' + group.id, group.position]));
+    if (Object.keys(positions).length) this.saveLayout(positions);
     this.pruneBindings();
     return {saved: true};
   }
@@ -861,7 +866,7 @@ class Editor {
     }
   }
 
-  // ───── Deleting nodes ─────
+  // в”Ђв”Ђв”Ђв”Ђв”Ђ Deleting nodes в”Ђв”Ђв”Ђв”Ђв”Ђ
 
   deleteNodes(ids, dissolve = false, groupPositions = {}) {
     const selected = this.selection(ids);
@@ -923,7 +928,7 @@ class Editor {
     return {deleted: [...removing].sort()};
   }
 
-  // ───── Wires ─────
+  // в”Ђв”Ђв”Ђв”Ђв”Ђ Wires в”Ђв”Ђв”Ђв”Ђв”Ђ
 
   connections(body) {
     const draft = body.draft === true;
@@ -1020,7 +1025,7 @@ class Editor {
     return {saved: true};
   }
 
-  // ───── Library: keeping placed copies in sync ─────
+  // в”Ђв”Ђв”Ђв”Ђв”Ђ Library: keeping placed copies in sync в”Ђв”Ђв”Ђв”Ђв”Ђ
 
   /** Replaces the contents of a placed Library node with its current definition, keeping its wires, values and place. */
   refreshInstance(groupId, bundle, source) {
@@ -1109,7 +1114,7 @@ class Editor {
       } catch {}
   }
 
-  // ───── Clipboard: copy and paste ─────
+  // в”Ђв”Ђв”Ђв”Ђв”Ђ Clipboard: copy and paste в”Ђв”Ђв”Ђв”Ђв”Ђ
 
   copy(ids, groupIds = []) {
     groupIds ??= [];
@@ -1170,7 +1175,7 @@ class Editor {
         pinned: g.pinned,
         folded: !!g.folded,
         disabled: !!g.disabled,
-        ...(g.members.length || g.children.length ? {} : {position: g.position}),
+        ...(g.position ? {position: clone(g.position)} : {}),
       })),
       complex: complexes.map(c => ({
         id: c.id,
@@ -1199,7 +1204,11 @@ class Editor {
     )
       throw bad('Clipboard does not contain graph nodes');
     const records = (bundle.records ?? []).filter(
-      r => isObject(r) && isObject(r.payload) && r.payload.kind === 'function' && r.payload.node_type in DEFINITIONS
+      r =>
+        isObject(r) &&
+        isObject(r.payload) &&
+        r.payload.kind === 'function' &&
+        Object.hasOwn(DEFINITIONS, r.payload.node_type)
     );
     const items = records,
       bundleGroups = bundle.groups ?? [];
@@ -1213,9 +1222,13 @@ class Editor {
       styles = bundle.styles ?? {};
     if (!isObject(positions) || !isObject(styles) || !validPoint(point) || !Object.values(positions).every(validPoint))
       throw bad('Coordinates must be finite numbers');
+    const origins = [
+      ...Object.values(positions),
+      ...(!opts.source ? bundleGroups.map(g => g.position).filter(validPoint) : []),
+    ];
     const origin = {
-      x: Math.min(...Object.values(positions).map(p => p.x), Infinity),
-      y: Math.min(...Object.values(positions).map(p => p.y), Infinity),
+      x: Math.min(...origins.map(p => p.x), Infinity),
+      y: Math.min(...origins.map(p => p.y), Infinity),
     };
     if (!Number.isFinite(origin.x)) {
       origin.x = 0;
@@ -1313,9 +1326,9 @@ class Editor {
         members,
         parent: group.id === rootOld && opts.into ? (opts.parent ?? null) : (fresh.get(group.parent) ?? null),
       };
-      if (!members.length && !hasChildren) {
+      if (group.position || (!members.length && !hasChildren)) {
         const o = group.position || {x: 0, y: 0};
-        next.position = {x: o.x - origin.x + point.x, y: o.y - origin.y + point.y};
+        next.position = {...clone(o), x: o.x - origin.x + point.x, y: o.y - origin.y + point.y};
       }
       existing.push(next);
       copied.push([group, next]);

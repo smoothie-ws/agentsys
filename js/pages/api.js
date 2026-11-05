@@ -29,7 +29,7 @@ function mountApiReference(box, spec = Backend.openapi()) {
   const rows = apiReferenceRows(spec),
     state = Tabs.stateOf('api'),
     open = new Set(state.apiOpen ?? []);
-  box.innerHTML = `<nav class="api-navigation" aria-label="API methods"><label class="api-search"><span>Search methods</span><input id="api-method-search" type="search" placeholder="GET, path or description" aria-label="Search API methods"></label><span class="muted small" data-api-count role="status"></span><div class="api-call-tree"></div></nav><article class="api-method" aria-live="polite"></article>`;
+  box.innerHTML = `<nav class="api-navigation" aria-label="API methods"><label class="api-search"><span>Search methods</span><input id="api-method-search" type="search" placeholder="Search" title="Search by HTTP method, path or description" aria-label="Search API methods"></label><span class="muted small" data-api-count role="status"></span><div class="api-call-tree"></div></nav><article class="api-method" aria-live="polite"></article>`;
   const detail = $('.api-method', box),
     tree = $('.api-call-tree', box),
     search = $('#api-method-search', box);
@@ -49,16 +49,20 @@ function mountApiReference(box, spec = Backend.openapi()) {
         query.every(q => `${row.method} ${row.path} ${row.op.summary}`.toLocaleLowerCase().includes(q))
       );
     const branch = level =>
-      level.calls
-        .map(row => {
-          const index = rows.indexOf(row);
-          return `<a class="api-call" href="${esc(urlOf(apiCallHref(row)))}" data-api-call="${index}" ${index === selected ? 'aria-current="page"' : ''}><span class="method m-${row.method}">${row.method.toUpperCase()}</span><span><code>${esc(row.path)}</code></span></a>`;
-        })
-        .join('') +
+      (level.calls.length
+        ? '<div class="api-calls">' +
+          level.calls
+            .map(row => {
+              const index = rows.indexOf(row);
+              return `<a class="api-call" title="${esc(row.method.toUpperCase() + ' ' + row.path + ' - ' + row.op.summary)}" href="${esc(urlOf(apiCallHref(row)))}" data-api-call="${index}" ${index === selected ? 'aria-current="page"' : ''}><span class="method m-${row.method}">${row.method.toUpperCase()}</span></a>`;
+            })
+            .join('') +
+          '</div>'
+        : '') +
       [...level.children.values()]
         .map(
           child =>
-            `<details data-api-path="${esc(child.path)}" ${query.length || open.has(child.path) ? 'open' : ''}><summary><code>${esc(child.segment)}</code></summary><div>${branch(child)}</div></details>`
+            `<details data-api-path="${esc(child.path)}" ${query.length || open.has(child.path) ? 'open' : ''}><summary title="${esc('/api' + child.path)}"><code>${esc(child.segment)}</code></summary><div>${branch(child)}</div></details>`
         )
         .join('');
     tree.innerHTML = filtered.length ? branch(apiPathTree(filtered)) : '<p class="muted">No matching methods.</p>';
@@ -111,6 +115,7 @@ function mountApiReference(box, spec = Backend.openapi()) {
     select(selected);
   }
   drawTree();
+  $('[aria-current="page"]', tree)?.scrollIntoView({block: 'nearest'});
   return {
     rows,
     spec,
@@ -127,8 +132,8 @@ function mountApiReference(box, spec = Backend.openapi()) {
 PAGES.api = async (view, route) => {
   const spec = DB.mode === 'files' ? await api('openapi.json') : Backend.openapi();
   if (app.route !== route) return;
-  view.innerHTML = `<div class="page api-page">${pageHead({title: 'API reference', menu: '', sub: 'Every action of the app is an API call.', actions: '<button type="button" id="api-download">Download OpenAPI</button>'})}
-    <section id="api-reference"><p class="muted">With the server running: <code>${esc(location.origin)}/api/…</code>.</p><div id="api-box"></div></section></div>`;
+  view.innerHTML = `<div class="page api-page">${pageHead({title: 'API reference', menu: '', sub: 'Every action of the app is an API call.', actions: `<button type="button" id="api-download" title="Download OpenAPI" aria-label="Download OpenAPI">${icon('download')}<span>Download OpenAPI</span></button>`})}
+    <section id="api-reference"><div id="api-box"></div></section></div>`;
   const reference = mountApiReference($('#api-box'), spec);
   app.apiReference = reference;
   $('#api-download', view).onclick = () => reference.download();

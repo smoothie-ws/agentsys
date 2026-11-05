@@ -38,7 +38,8 @@ function parseRoute(path = routePath(), query = routeQuery()) {
     'not-found';
   if (page === 'plugins') return parts.length <= 2 ? {page, id: parts[1]} : {page: 'not-found'};
   if (page !== 'resources') return parts.length === 1 ? {page} : {page: 'not-found'};
-  if (parts.length > 3 || (parts[1] && parts[1] !== 'nodes')) return {page: 'not-found'};
+  if (parts.length > 3 || (parts[1] && parts[1] !== 'nodes' && !/^[a-z][a-z0-9-]*$/.test(parts[1])))
+    return {page: 'not-found'};
   return parts[1] ? {page, section: parts[1], id: parts[2], folder: query.get('folder') ?? undefined} : {page};
 }
 /** A deterministic way out of a deep link, including one opened without browser history. */

@@ -52,7 +52,7 @@ const VALID_KEY = /^(?!.*(?:^|\/)\.\.?($|\/))[A-Za-z0-9:._/-]{1,500}$/;
 const storagePath = key => key.split('/').map(encodeURIComponent).join('/');
 const fileOf = key => {
   if (key.includes('/')) return storagePath(key) + '.json';
-  if (FIXED[key]) return FIXED[key];
+  if (Object.hasOwn(FIXED, key)) return FIXED[key];
   let m = /^wf:lib-(.+)$/.exec(key);
   if (m) return `library/editors/${m[1]}.json`;
   m = /^wf:(.+)$/.exec(key);
@@ -393,9 +393,7 @@ function createServer(options = {}) {
     backendError = error;
   }
   // Plugins (see plugin-host.js) run in this process, next to the backend they extend.
-  const plugins = backend
-    ? createPluginHost({dir: options.pluginsDir || process.env.PLUGINS_DIR || path.join(ROOT, 'plugins'), backend})
-    : null;
+  const plugins = backend ? createPluginHost({dir: path.join(DATA, 'plugins'), backend}) : null;
   if (backend) backend.context.PLUGIN_HOST = plugins;
 
   // Files are watched by comparing stamps: a page open gets the news within a second, and the backend forgets what it
@@ -543,7 +541,7 @@ function createServer(options = {}) {
       result === undefined ? undefined : JSON.parse(JSON.stringify(result))
     );
   }
-  function handleStatic(req, res, url, editor = false) {
+  async function handleStatic(req, res, url, editor = false) {
     let rel = decodeURIComponent(url.pathname);
     const pageRoute = editor && (!path.extname(rel) || /^\/(?:p|library)\//.test(rel));
     if (rel.endsWith('/')) rel += 'index.html';
@@ -569,13 +567,24 @@ function createServer(options = {}) {
     // Serve only public assets, never arbitrary files from the checkout.
     const publicPath = path.relative(ROOT, file).split(path.sep).join('/');
     if (!/^(?:index\.html$|(?:js|css|docs)\/)/.test(publicPath)) return send(res, 404, 'Not found', 'text/plain');
-    fs.readFile(file, (err, data) => {
-      if (err) return send(res, 404, 'Not found', 'text/plain');
-      // The page names its files without a leading path; under /editor/ (at any depth) they are found there.
-      if (editor && file === path.join(ROOT, 'index.html'))
-        data = Buffer.from(String(data).replace(/(\s(?:src|href)=")(js|css)\//g, '$1/editor/$2/'));
-      send(res, 200, data, TYPES[path.extname(file)] || 'application/octet-stream');
-    });
+    let data;
+    try {
+      data = await fs.promises.readFile(file);
+    } catch (error) {
+      if (['ENOENT', 'EISDIR', 'ENOTDIR'].includes(error.code)) return send(res, 404, 'Not found', 'text/plain');
+      throw error;
+    }
+    // Nested editor routes resolve their assets under /editor/ too.
+    if (file === path.join(ROOT, 'index.html')) {
+      const state = JSON.stringify(
+        !hostRefused(req) && (!TOKEN || tokenGiven(req)) && (loopbackBound || TOKEN) ? readKey('ui-state') || {} : {}
+      ).replace(/</g, '\\u003c');
+      data = Buffer.from(
+        String(data).replace('<head>', () => '<head><script>globalThis.AGENTSYS_UI_STORE=' + state + ';</script>')
+      );
+      if (editor) data = Buffer.from(String(data).replace(/(\s(?:src|href)=")(js|css)\//g, '$1/editor/$2/'));
+    }
+    send(res, 200, data, TYPES[path.extname(file)] || 'application/octet-stream');
   }
 
   const server = http.createServer((req, res) => {

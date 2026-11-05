@@ -21,6 +21,7 @@ button,
   transition:
     background-color var(--fast) var(--ease),
     color var(--fast) var(--ease),
+    text-decoration-color var(--fast) var(--ease),
     opacity var(--fast) var(--ease),
     box-shadow var(--base) var(--ease),
     transform var(--fast) var(--ease);
@@ -384,11 +385,6 @@ legend {
   width: 18px;
   min-width: 18px;
 }
-.permission-hint {
-  margin: -0.35rem 0 0;
-  font-size: 0.8rem;
-  line-height: 1.5;
-}
 details > summary {
   cursor: pointer;
   color: var(--muted);
@@ -517,4 +513,37 @@ body .side-tabs button.active:hover:not(:disabled),
 body .selection-tools button.active:hover:not(:disabled),
 body .icon-grid button.active:not(.dashed-action):hover:not(:disabled) {
   color: var(--accent);
+}
+
+.tool-strip {
+  --tool-size: 32px;
+  display: flex;
+  align-items: center;
+  gap: 4px;
+  padding: 4px;
+  border-radius: var(--radius);
+  background: var(--float);
+  backdrop-filter: var(--blur);
+  box-shadow: var(--shadow);
+}
+.tool-strip > button {
+  flex: none;
+  min-height: var(--tool-size);
+}
+:is(.tool-strip, .side-tabs) > .icon {
+  flex: none;
+  width: var(--tool-size, 40px);
+  height: var(--tool-size, 40px);
+  min-height: var(--tool-size, 40px);
+  padding: 0;
+}
+.tool-strip > .icon[aria-pressed='true'],
+.tool-strip > .icon.active {
+  background: var(--current);
+  color: var(--text);
+}
+
+@media (max-width: 760px) {
+  .compact-label { width: 40px; min-width: 40px; padding: 0; }
+  .compact-label > span { display: none; }
 }

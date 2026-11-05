@@ -7,6 +7,13 @@ const trimmedName = (value, label = 'Project') => {
     throw bad(`${label} name must contain 1 to 100 characters`);
   return value.trim();
 };
+/** A name that is not used yet: "Name", then "Name 2", "Name 3"… */
+const freeName = (taken, base) => {
+  let name = base.slice(0, 100),
+    n = 2;
+  while (taken.has(name)) name = base.slice(0, 100 - ` ${n}`.length).trimEnd() + ` ${n++}`;
+  return name;
+};
 async function nextUntitled(c, projects) {
   const meta = await c.ctx.get('meta', {project_number: 0});
   const numbers = projects
@@ -64,11 +71,8 @@ route(
         workflows: project.workflows.map(wf => ({...wf, project_id})),
       };
     if (c.method === 'DELETE') {
-      for (const wf of project.workflows) {
-        await c.ctx.remove('wf:' + wf.id);
-        await deleteGraphRuntime(wf.id);
-        histories.delete(wf.id);
-      }
+      for (const wf of project.workflows) await removeWorkflow(c, wf.id);
+      await c.ctx.remove('policy:' + project_id);
       c.ctx.set(
         'projects',
         projects.filter(p => p !== project)
@@ -89,11 +93,7 @@ route(
 route('POST', 'projects/{project_id}/duplicate', 'Duplicate a project with its workflows', async (c, {project_id}) => {
   const projects = await c.projects(),
     source = await c.project(project_id, true),
-    names = new Set(projects.map(p => p.name));
-  const base = source.name.slice(0, 95) + ' copy';
-  let name = base,
-    n = 2;
-  while (names.has(name)) name = base.slice(0, 95) + ' ' + n++;
+    name = freeName(new Set(projects.map(p => p.name)), source.name.slice(0, 95) + ' copy');
   const id = uid(),
     copy = {id, name, description: source.description || '', created: Date.now() / 1000, workflows: []};
   for (const wf of source.workflows) {
@@ -140,9 +140,7 @@ route(
     if (!wf) throw missing('Record not found');
     if (c.method === 'DELETE') {
       project.workflows = project.workflows.filter(w => w !== wf);
-      await c.ctx.remove('wf:' + workflow_id);
-      await deleteGraphRuntime(workflow_id);
-      histories.delete(workflow_id);
+      await removeWorkflow(c, workflow_id);
       return {deleted: workflow_id};
     }
     const name = trimmedName(c.body.name, 'Workflow');
@@ -163,10 +161,8 @@ route(
       source = project.workflows.find(w => w.id === workflow_id);
     if (!source) throw missing('Record not found');
     const existing = new Set(project.workflows.map(w => w.name)),
-      base = c.body.name != null ? trimmedName(c.body.name, 'Workflow') : source.name + ' copy';
-    let name = base,
-      n = 2;
-    while (existing.has(name)) name = base.slice(0, 100 - ` ${n}`.length).trimEnd() + ` ${n++}`;
+      base = c.body.name != null ? trimmedName(c.body.name, 'Workflow') : source.name.slice(0, 95) + ' copy',
+      name = freeName(existing, base);
     const id = uid();
     project.workflows.push({id, name, created: Date.now() / 1000});
     let ids;

@@ -6,10 +6,28 @@ function wireCanvas() {
   const canvas = W.canvas;
   wireCanvasTouch(canvas);
   let spaceHeld = false;
+  const setTool = tool => {
+    armMarquee(false);
+    W.tool = tool;
+    canvas.dataset.tool = tool;
+    for (const button of $$('[data-canvas-tool]', canvas))
+      button.setAttribute('aria-pressed', String(button.dataset.canvasTool === tool));
+    updateHints();
+  };
+  for (const button of $$('[data-canvas-tool]', canvas)) button.onclick = () => setTool(button.dataset.canvasTool);
+  setTool('select');
+  canvas.addEventListener('pointermove', event => {
+    const rect = canvas.getBoundingClientRect();
+    if (!event.target.closest('.tool-strip,.map,.canvas-hints')) W.pointer = {x: event.clientX, y: event.clientY};
+    canvas.style.setProperty('--cursor-x', (event.clientX - rect.left) + 'px');
+    canvas.style.setProperty('--cursor-y', (event.clientY - rect.top) + 'px');
+    canvas.classList.add('cursor-inside');
+  });
+  canvas.addEventListener('pointerleave', () => canvas.classList.remove('cursor-inside'));
   canvas.addEventListener('click', event => {
-    if (!event.target.closest('[data-empty-add]')) return;
-    const r = event.target.getBoundingClientRect();
-    W.spawn = null;
+    const button = event.target.closest('[data-empty-add]');
+    if (!button) return;
+    const r = button.getBoundingClientRect();
     addMenu(r.left, r.bottom + 4);
   });
   $('#undo').onclick = () => undo(false);
@@ -60,7 +78,7 @@ function wireCanvas() {
   canvas.addEventListener(
     'wheel',
     event => {
-      if (event.target.closest('.toolbar')) return;
+      if (event.target.closest('.toolbar,.canvas-tools,.canvas-hints')) return;
       if (event.target.closest('textarea,.code-editor,.preview-text') && !event.ctrlKey) return;
       event.preventDefault();
       if (event.ctrlKey || event.deltaMode || (Math.abs(event.deltaY) >= 50 && !event.deltaX))
@@ -106,7 +124,7 @@ function wireCanvas() {
   });
   canvas.addEventListener('contextmenu', event => {
     event.preventDefault();
-    if (event.target.closest('.toolbar')) return;
+    if (event.target.closest('.toolbar,.canvas-tools,.canvas-hints')) return;
     const element = event.target.closest('.node'),
       frame = event.target.closest('[data-frame]'),
       edge = event.target.closest('[data-edge]');
@@ -126,7 +144,7 @@ function wireCanvas() {
           {danger: true, icon: 'unlink'},
         ],
       ]);
-    W.spawn = toWorld(event.clientX, event.clientY);
+    W.pointer = {x: event.clientX, y: event.clientY};
     if (edge) {
       if (!W.edges.has(edge.dataset.edge)) selectEdges([edge.dataset.edge]);
       const ids = [...W.edges];
@@ -145,12 +163,7 @@ function wireCanvas() {
     ]);
   });
   canvas.addEventListener('pointerdown', event => {
-    const preview = event.target.closest('.node .preview-text');
-    if (preview) {
-      select([preview.closest('.node').dataset.id]);
-      return;
-    }
-    if (event.target.closest('input,textarea,select,button,.map,.toolbar,.md-view a')) return;
+    if (event.target.closest('input,textarea,select,button,.map,.toolbar,.canvas-tools,.canvas-hints,.md-view a')) return;
     canvas.focus({preventScroll: true});
     if (W.marqueeArmed && event.button === 0) {
       armMarquee(false);
@@ -162,6 +175,21 @@ function wireCanvas() {
       edge = event.target.closest('[data-edge]');
     if (event.button === 1 || (event.button === 0 && spaceHeld)) return startPan(event);
     if (event.button !== 0) return;
+    if (W.tool === 'pan') return startPan(event);
+    if (W.tool === 'delete') {
+      if (edge) disconnectMany([edge.dataset.edge]).catch(fail);
+      else if (element) {
+        const id = element.classList.contains('frame') ? 'frame:' + element.dataset.frame : element.dataset.id;
+        select([id]);
+        deleteSelection().catch(fail);
+      }
+      return;
+    }
+    const preview = event.target.closest('.node .preview-text');
+    if (preview && W.tool === 'select') {
+      select([preview.closest('.node').dataset.id]);
+      return;
+    }
     const binding = event.target.closest('[data-binding-group]');
     if (binding) {
       // A binding wire starts at the dot of its slot: pressing on the dot itself drags a new wire from it (an input may be bound to more ports).
@@ -178,18 +206,26 @@ function wireCanvas() {
     const framePort = element?.classList.contains('frame') ? event.target.closest('.frame-ports .port') : null;
     if (framePort && element) return startWire(event, element.dataset.id, framePort.querySelector('.sock.external'));
     if (socket && element) return startWire(event, element.dataset.id, socket);
+    if (W.tool === 'move' && (handle || element?.classList.contains('node'))) {
+      const id = handle ? 'frame:' + handle.dataset.frameHandle : element.dataset.id;
+      if (!W.selected.has(id)) select([id], event.shiftKey || event.ctrlKey || event.metaKey);
+      return startSelectionMove(event);
+    }
     if (handle) return startFrameDrag(event, handle.dataset.frameHandle);
     if (element?.classList.contains('node')) return startNodeDrag(event, element.dataset.id);
     if (edge) {
       selectEdges([edge.dataset.edge], event.shiftKey || event.ctrlKey || event.metaKey);
       return;
     }
+    if (W.tool === 'move' && W.selected.size && !event.shiftKey && !event.ctrlKey) {
+      return startSelectionMove(event);
+    }
     if (event.shiftKey || event.ctrlKey) return startMarquee(event);
     if (W.selected.size || W.edges.size) {
       W.edges.clear();
       select([]);
     }
-    startPan(event);
+    startMarquee(event);
   });
   const inlineEdits = new Map();
   const queueInline = event => {
@@ -266,7 +302,7 @@ function wireCanvas() {
     }
   });
   canvas.addEventListener('keydown', event => {
-    if (event.target.closest('input,textarea,select')) return;
+    if (event.target.closest('input,textarea,select,[contenteditable]:not([contenteditable="false"])')) return;
     if (
       event.target.closest('.preview-text') &&
       (event.ctrlKey || event.metaKey) &&
@@ -311,9 +347,13 @@ function wireCanvas() {
       togglePanel: () => Inspector.toggle(),
       disable: () => toggleDisabled(),
       fold: () => toggleFolded(),
-      fold: () => toggleFolded(),
       snap: () => setSnap(!W.snap),
       hints: () => setHintsShown(!W.hintsShown),
+      toolSelect: () => setTool('select'),
+      toolMove: () => setTool('move'),
+      toolPan: () => setTool('pan'),
+      toolDelete: () => setTool('delete'),
+      toolAdd: () => $('.canvas-tools [data-empty-add]', canvas).click(),
       cancel: () => {
         armMarquee(false);
         select([]);
@@ -388,6 +428,53 @@ function startPan(event) {
       ),
     () => W.canvas.classList.remove('panning')
   );
+}
+
+/** The Move tool translates all selected nodes and groups, including a drag from empty space. */
+function startSelectionMove(event) {
+  const ids = new Set(selectedNodes().filter(node => !isPinned(node.id)).map(node => node.id)),
+    groups = new Map();
+  for (const gid of selectedGroupIds()) {
+    const group = W.groups.get(gid);
+    if (group.pinned || groupChainOf(gid).some(g => g.pinned)) continue;
+    const content = frameContent(gid);
+    for (const id of content.ids) if (!isPinned(id)) ids.add(id);
+    for (const g of content.groups)
+      if (!g.pinned && !groupChainOf(g.id).some(parent => parent.pinned)) groups.set(g.id, g);
+  }
+  const origins = new Map([...ids].filter(id => W.pos.has(id)).map(id => [id, {...W.pos.get(id)}]));
+  for (const group of groups.values())
+    if (group.position?.width || (!group.members.length && !group.children.length)) {
+      const pos = group.position || W.pos.get('frame:' + group.id);
+      if (pos) origins.set('group:' + group.id, {...pos});
+    }
+  if (!origins.size) return;
+  const start = toWorld(event.clientX, event.clientY), anchor = origins.values().next().value;
+  let moved = false;
+  W.drag = {ids};
+  setHintMode('move');
+  drag(event, e => {
+    const point = toWorld(e.clientX, e.clientY);
+    if (!moved && Math.hypot(point.x - start.x, point.y - start.y) * W.camera.zoom < 3) return;
+    moved = true;
+    const {dx, dy} = snapMove(anchor, point.x - start.x, point.y - start.y);
+    for (const [id, origin] of origins) {
+      const x = Math.round(origin.x + dx), y = Math.round(origin.y + dy);
+      if (id.startsWith('group:')) {
+        const group = W.groups.get(id.slice(6));
+        group.position = {...group.position, x, y};
+      } else {
+        Object.assign(W.pos.get(id), {x, y});
+        W.elements.get(id)?.style.setProperty('transform', `translate(${x}px,${y}px)`);
+      }
+    }
+    W.sceneRevision++;
+    onNextFrame('drag', () => { drawFrames(); drawWires(); });
+  }, async () => {
+    W.drag = null;
+    setHintMode(null);
+    if (moved) await savePositions([...origins.keys()]);
+  });
 }
 
 function startNodeDrag(event, id) {
@@ -800,7 +887,7 @@ async function savePositions(ids) {
   scheduleReload(50);
 }
 
-/** True when the segment p–q touches the rectangle (its sides included). */
+/** True when the segment pвЂ“q touches the rectangle (its sides included). */
 function segmentHitsRect(p, q, rect) {
   let near = 0,
     far = 1;

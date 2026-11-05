@@ -14,7 +14,6 @@ function drawNotifications() {
   if (!bell) return;
   bell.classList.toggle('has', Notifications.total > 0);
   bell.setAttribute('aria-label', Notifications.total ? `Notifications, ${Notifications.total}` : 'Notifications');
-  const panel = $('#notifications-panel');
   if (!Notifications.open) return;
   $('#notifications-list').innerHTML = Notifications.items.length
     ? Notifications.items

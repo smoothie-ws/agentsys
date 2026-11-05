@@ -1,15 +1,79 @@
 /* App shell: sidebar, top strip with tabs, page frame, panel resizers. */
 
+/* The header spans both navigation columns and the page. */
+body {
+  --rail-width: var(--sidebar-width, 56px);
+  --section-width: var(--subnav-width, 232px);
+  --header-height: 48px;
+  display: grid;
+  grid-template-columns: auto auto minmax(0, 1fr);
+  grid-template-rows: var(--header-height) minmax(0, 1fr);
+}
+body.sidebar-hidden {
+  --rail-width: 56px;
+}
+body.subnav-collapsed {
+  --section-width: 56px;
+}
+body:has(#subnav[hidden]) {
+  --section-width: 0px;
+}
+#sidebar {
+  grid-column: 1;
+  grid-row: 2;
+}
+#subnav {
+  grid-column: 2;
+  grid-row: 2;
+  min-height: 0;
+}
+main {
+  grid-column: 3;
+  grid-row: 2;
+  min-height: 0;
+}
+#topstrip > .icon {
+  flex: none;
+  width: 40px;
+  height: 40px;
+  margin-inline: 4px;
+}
+/* Keep the full hit target, but use a smaller circular visual highlight. */
+#topstrip > button.icon {
+  position: relative;
+  isolation: isolate;
+  background: transparent;
+}
+#topstrip > button.icon::before {
+  content: '';
+  position: absolute;
+  width: 32px;
+  height: 32px;
+  inset: 50% auto auto 50%;
+  border-radius: 50%;
+  transform: translate(-50%, -50%);
+  background: transparent;
+  transition: background-color var(--fast) var(--ease);
+  pointer-events: none;
+  z-index: -1;
+}
+#topstrip > button.icon:hover:not(:disabled),
+#topstrip > button.icon:active:not(:disabled) { background: transparent; }
+#topstrip > button.icon:hover:not(:disabled)::before,
+#topstrip > button.icon:focus-visible::before { background: var(--hover); }
+#topstrip > button.icon:active:not(:disabled)::before { background: var(--press); }
+
+
 /* ----- Sidebar ----- */
 #sidebar {
   position: relative;
   z-index: 2;
   flex: none;
-  width: var(--sidebar-width, 232px);
+  width: var(--rail-width);
   display: flex;
   flex-direction: column;
   gap: 0.2rem;
-  padding: 1rem 0.65rem;
+  padding: 1rem 0.4rem;
   background: none;
   overflow: clip;
   overflow-clip-margin: 8px; /* the resize handle sits just outside */
@@ -32,40 +96,63 @@
 .sidebar-will-collapse #sidebar {
   opacity: 0.5;
 }
-.brand {
+.sidebar-item {
+  position: relative;
   display: flex;
   align-items: center;
-  gap: 0.65rem;
-  box-sizing: border-box;
-  height: 44px;
-  margin-bottom: 0.6rem;
-  padding: 0 0.6rem 0 calc(0.6rem - 3px); /* the mark's centre sits over the icons of the rows below */
+  min-width: 0;
   border-radius: var(--nav-radius);
-  font-size: 1.08rem;
-  font-weight: 740;
-  letter-spacing: -0.018em;
-  text-decoration: none;
-  white-space: nowrap;
-  transition: opacity var(--fast) var(--ease);
+  transition: background-color var(--fast) var(--ease), color var(--fast) var(--ease);
 }
-.brand:hover {
-  opacity: 0.8;
+.sidebar-top .sidebar-item > a,
+.sidebar-footer .sidebar-item > a {
+  flex: 1;
+  min-width: 0;
+}
+.sidebar-item:hover {
+  background: var(--hover);
+  color: var(--text);
+}
+.sidebar-item:hover > a,
+.sidebar-item.active > a { color: var(--text); }
+.sidebar-item.active {
+  background: var(--current);
+  color: var(--text);
+}
+.sidebar-item > button.icon {
+  position: absolute;
+  right: 0.25rem;
+  z-index: 2;
+  width: 26px;
+  height: 26px;
+  padding: 0;
+  opacity: 0;
+  transition: opacity var(--fast) var(--ease), color var(--fast) var(--ease), background-color var(--fast) var(--ease);
+}
+.sidebar-item > button.icon svg { width: 14px; height: 14px; }
+.sidebar-item:hover > button.icon,
+.sidebar-item > button.icon:focus-visible {
+  opacity: 1;
+}
+.sidebar-item:has(> a.brand) > a {
+  font-weight: 650;
 }
 .brand-mark {
-  width: 24px;
-  height: 24px;
-  border-radius: 12px;
+  flex: none;
+  width: 16px;
+  height: 16px;
+  border-radius: 50%;
   background: linear-gradient(140deg, var(--accent) 0 48%, color-mix(in srgb, var(--accent) 35%, #3f6bff) 48%);
 }
 
 /* Sections: Projects and Library above, Settings and API below; no lists inside, those live in the second panel. */
-.sidebar-top a,
-.sidebar-footer a {
+.sidebar-top .sidebar-item > a,
+.sidebar-footer .sidebar-item > a {
   display: flex;
   align-items: center;
   gap: 0.55rem;
   height: 36px; /* the same folded and unfolded */
-  padding: 0 0.6rem;
+  padding: 0 0.6rem 0 calc(56px - 0.4rem - 8px);
   border-radius: var(--nav-radius);
   color: color-mix(in srgb, var(--text) 82%, var(--background));
   text-decoration: none;
@@ -76,20 +163,6 @@
     color var(--fast) var(--ease),
     transform var(--fast) var(--ease);
 }
-.sidebar-top a:hover,
-.sidebar-footer a:hover {
-  background: var(--hover);
-  color: var(--text);
-}
-.sidebar-top a:active,
-.sidebar-footer a:active {
-  background: var(--press);
-}
-.sidebar-top a.active,
-.sidebar-footer a.active {
-  background: var(--current);
-  color: var(--text);
-}
 .sidebar-top,
 .sidebar-footer {
   display: grid;
@@ -99,16 +172,88 @@
   margin-top: auto;
   padding-top: 0.6rem;
 }
-.sidebar-hidden .sidebar-top a > span,
-.sidebar-hidden .sidebar-footer a > span,
-.sidebar-hidden .brand > span:last-child {
+.sidebar-hidden .sidebar-top .sidebar-item > a > span:not(.brand-mark),
+.sidebar-hidden .sidebar-footer .sidebar-item > a > span:not(.brand-mark) {
   display: none;
 }
-.sidebar-hidden .brand,
-.sidebar-hidden .sidebar-top a,
-.sidebar-hidden .sidebar-footer a {
-  justify-content: center;
+.sidebar-hidden .sidebar-top .sidebar-item > a,
+.sidebar-hidden .sidebar-footer .sidebar-item > a {
   padding-inline: 0;
+}
+@media (min-width: 761px) {
+  body { padding: 8px; }
+  .sidebar-item > a > :is(svg, .brand-mark) {
+    position: absolute;
+    left: calc(20px - 0.4rem);
+    top: 50%;
+    transform: translateY(-50%);
+  }
+  #topstrip > #toggle-subnav { margin-left: 8px; }
+  body #topstrip { padding-right: 0; }
+  body:not(.nav-joined) .sidebar-item > a,
+  body:not(.nav-joined) .subnav-row { height: 40px; }
+  body:not(.nav-joined):not(.sidebar-hidden) #sidebar .sidebar-item:hover:not(.active),
+  body:not(.nav-joined):not(.subnav-collapsed) #subnav .subnav-row:hover:not(.active) { background: transparent; }
+  body:not(.nav-joined):not(.sidebar-hidden) #sidebar .sidebar-item:not(.active)::before,
+  body:not(.nav-joined):not(.subnav-collapsed) #subnav .subnav-row:not(.active)::before {
+    content: '';
+    position: absolute;
+    /* The flat folded rail has padding on both sides. */
+    inset: 4px calc((56px - 0.8rem - 32px) / 2);
+    border-radius: 16px;
+    background: var(--hover);
+    opacity: 0;
+    pointer-events: none;
+    transition: opacity var(--fast) var(--ease), background-color var(--fast) var(--ease);
+  }
+  body:not(.nav-joined):not(.sidebar-hidden) #sidebar .sidebar-item:hover:not(.active)::before,
+  body:not(.nav-joined):not(.subnav-collapsed) #subnav .subnav-row:hover:not(.active)::before { opacity: 1; }
+  body:not(.nav-joined):not(.sidebar-hidden) #sidebar .sidebar-item:active:not(.active)::before,
+  body:not(.nav-joined):not(.subnav-collapsed) #subnav .subnav-row:active:not(.active)::before { background: var(--press); }
+  body.sidebar-hidden:not(.nav-joined) #sidebar .sidebar-item:is(.active, :hover),
+  body.subnav-collapsed:not(.nav-joined) #subnav .subnav-row:is(.active, :hover) { background: transparent; }
+  body.sidebar-hidden:not(.nav-joined) #sidebar .sidebar-item::before,
+  body.subnav-collapsed:not(.nav-joined) #subnav .subnav-row::before {
+    content: '';
+    position: absolute;
+    top: 50%;
+    left: 50%;
+    width: 32px;
+    height: 32px;
+    transform: translate(-50%, -50%);
+    border-radius: 50%;
+    pointer-events: none;
+    background: transparent;
+    transition: background-color var(--fast) var(--ease);
+  }
+  body.sidebar-hidden:not(.nav-joined) #sidebar .sidebar-item:hover:not(.active)::before,
+  body.subnav-collapsed:not(.nav-joined) #subnav .subnav-row:hover:not(.active)::before { background: var(--hover); }
+  body.sidebar-hidden:not(.nav-joined) #sidebar .sidebar-item.active::before,
+  body.subnav-collapsed:not(.nav-joined) #subnav .subnav-row.active::before { background: var(--current); }
+  body:not(.nav-joined) .side-tabs > button.icon {
+    position: relative;
+    isolation: isolate;
+    background: transparent;
+  }
+  body:not(.nav-joined) .side-tabs > button.icon::before {
+    content: '';
+    position: absolute;
+    inset: 50% auto auto 50%;
+    width: 32px;
+    height: 32px;
+    transform: translate(-50%, -50%);
+    border-radius: 50%;
+    z-index: -1;
+    pointer-events: none;
+    background: transparent;
+    transition: background-color var(--fast) var(--ease);
+  }
+  body:not(.nav-joined) .side-tabs > button.icon:is(.active, :hover):not(:disabled) { background: transparent; }
+  body:not(.nav-joined) .side-tabs > button.icon:hover:not(.active, :disabled)::before { background: var(--hover); }
+  body:not(.nav-joined) .side-tabs > button.icon.active:not(:disabled)::before { background: var(--current); }
+}
+.sidebar-hidden .sidebar-item > button.icon {
+  display: none;
 }
 
 /* ----- The second panel: a tree of rows for the open section (projects, Library kinds, settings sections, API calls) ----- */
@@ -121,7 +266,7 @@
   width: var(--subnav-width, 232px);
   padding: 1rem 0.65rem 0.65rem;
   background: var(--dither), var(--glass-card);
-  border-radius: 21px;
+  border-radius: var(--radius);
   /* No backdrop blur: the panel lies on the plain page background, where a blur shows nothing, but it would smear the dither away and repaint the whole panel whenever a colour changes. */
   transition:
     width var(--slow) var(--ease),
@@ -135,17 +280,9 @@
   align-items: center;
   justify-content: space-between;
   flex: none;
-  height: 44px; /* centred on the logo's row in the sidebar */
+  height: 44px;
   margin: 0 0 0.2rem;
   padding: 0 0.1rem 0 0.6rem;
-}
-.subnav-head h2 {
-  margin: 0;
-  color: var(--muted);
-  font-size: 0.72rem;
-  font-weight: 650;
-  letter-spacing: 0.07em;
-  text-transform: uppercase;
 }
 /* The list scrolls in its box; the sliding highlight (.nav-pill) lives in the box too, outside the list, so it survives the list being redrawn. */
 #subnav-body {
@@ -281,6 +418,7 @@
   height: 26px;
   padding: 0;
   opacity: 0;
+  transition: opacity var(--fast) var(--ease), background-color var(--fast) var(--ease), color var(--fast) var(--ease);
 }
 .subnav-row:hover .subnav-menu,
 .subnav-menu:focus-visible {
@@ -302,7 +440,7 @@
 .subnav-branch {
   display: grid;
   grid-template-rows: 0fr;
-  margin-left: 14px;
+  margin-left: 22px;
   visibility: hidden;
   transition:
     grid-template-rows var(--base) var(--ease),
@@ -340,16 +478,20 @@ main {
   min-width: 0;
   display: flex;
   flex-direction: column;
-  border-radius: 21px;
+  border-radius: var(--radius);
   overflow: clip;
 }
 #topstrip {
+  grid-column: 1 / -1;
+  grid-row: 1;
+  z-index: 20;
   display: flex;
   align-items: center;
   flex: none;
   justify-content: flex-start;
   min-height: 48px;
-  padding: 0 0.6rem;
+  min-width: 0;
+  padding: 0 8px 0 0;
   gap: 0.3rem;
 }
 /* Search sits at the right end of the strip. */
@@ -381,10 +523,6 @@ main {
 .search-button:hover:not(:disabled) {
   color: var(--text);
 }
-.search-button kbd {
-  margin-left: 0.2rem;
-  background: var(--field);
-}
 #view {
   flex: 1;
   min-height: 0;
@@ -392,7 +530,7 @@ main {
   scrollbar-gutter: stable;
 }
 #view.view-workflow {
-  overflow: hidden;
+  overflow: clip;
   scrollbar-gutter: auto;
 }
 
@@ -468,6 +606,16 @@ main {
   flex: none;
   width: 14px;
   height: 14px;
+}
+.tab-title,
+.tab .tab-sub {
+  display: flex;
+  align-items: center;
+  align-self: center;
+  line-height: 1;
+  min-width: 0;
+  overflow: hidden;
+  text-overflow: ellipsis;
 }
 /* Only the open tab shows the project name; the close / pin button of the others slides in on hover. */
 .tab .tab-sub {
@@ -581,10 +729,8 @@ main {
   width: 56px;
   padding-inline: 0.4rem;
 }
-.subnav-collapsed .subnav-head h2,
-.subnav-collapsed #subnav-actions,
 .subnav-collapsed .subnav-row > span,
-.subnav-collapsed .subnav-row > a > span,
+.subnav-collapsed .subnav-row > a > span:not(.brand-mark),
 .subnav-collapsed .subnav-static > span,
 .subnav-collapsed .subnav-menu,
 .subnav-collapsed .subnav-toggle,
@@ -614,8 +760,7 @@ main {
   }
 }
 @media (max-width: 900px) {
-  .search-button span,
-  .search-button kbd {
+  .search-button span {
     display: none;
   }
 }
@@ -626,25 +771,21 @@ main {
   position: relative;
 }
 
-.notif-button {
+#topstrip > .icon {
   position: relative;
-  flex: none;
-  color: var(--muted);
-  border-radius: 999px;
-  padding: 0.42rem 0.55rem;
 }
 
-.notif-button:hover:not(:disabled),
-.notif-button[aria-expanded='true'] {
+#topstrip > .icon:hover:not(:disabled),
+#topstrip > .icon[aria-expanded='true'] {
   color: var(--text);
 }
 
-.notif-button svg {
+#topstrip > .icon svg {
   width: 18px;
   height: 18px;
 }
 
-.notif-button.has::after {
+.icon.has::after {
   content: '';
   position: absolute;
   top: 5px;
@@ -666,7 +807,8 @@ main {
   display: flex;
   flex-direction: column;
   border-radius: var(--radius, 14px);
-  background: var(--panel);
+  background: var(--float);
+  backdrop-filter: var(--blur);
   box-shadow: var(--shadow-lg, 0 12px 40px #0006);
   overflow: hidden;
 }
@@ -721,6 +863,7 @@ main {
   gap: 0.5rem;
   padding: 0.5rem 0.4rem;
   border-radius: 10px;
+  transition: background-color var(--fast) var(--ease);
 }
 
 .notif:hover {
@@ -767,6 +910,7 @@ main {
 .notif .icon {
   flex: none;
   opacity: 0;
+  transition: opacity var(--fast) var(--ease), color var(--fast) var(--ease), background-color var(--fast) var(--ease);
 }
 
 .notif:hover .icon,
@@ -778,3 +922,36 @@ main {
   padding: 1.5rem 1rem;
   text-align: center;
 }
+
+.tab.is-running {
+  color: var(--ok);
+  box-shadow: none;
+}
+.tab.is-running > svg {
+  color: var(--ok);
+}
+.tab.is-paused {
+  box-shadow: none;
+}
+.tab.is-running,
+.nav-joined .tab.is-running,
+.nav-joined .tab.is-running:hover {
+  background: linear-gradient(
+    90deg,
+    color-mix(in srgb, var(--ok) 24%, transparent),
+    color-mix(in srgb, var(--ok) 7%, transparent)
+  );
+}
+.tab.is-running.active,
+.tab.is-running.active:hover,
+.nav-joined .tab.is-running.active,
+.nav-joined .tab.is-running.active:hover {
+  background: var(--dither),
+    linear-gradient(
+      90deg,
+      color-mix(in srgb, var(--ok) 30%, var(--background)),
+      color-mix(in srgb, var(--ok) 10%, var(--background))
+    );
+}
+
+.subnav-head { display: none; }

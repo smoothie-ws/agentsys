@@ -134,7 +134,8 @@ const validBound = list =>
 const signalsFirst = ports => [...ports.filter(p => p.type === 'signal'), ...ports.filter(p => p.type !== 'signal')];
 /** Checks a list of ports. Signal ports are moved to the front; names keep their declared spelling. */
 function checkPorts(items, {custom = false, types = NO_TYPES} = {}) {
-  if (!Array.isArray(items) || items.length > MAX_PORTS) throw bad(`Use at most ${MAX_PORTS} ports per direction`);
+  if (!Array.isArray(items) || items.length > MAX_PORTS || items.some(item => !isObject(item)))
+    throw bad(`Use at most ${MAX_PORTS} ports per direction`);
   items.splice(0, items.length, ...signalsFirst(items));
   const ids = new Set(),
     names = new Set(),
@@ -234,7 +235,7 @@ function schema(node) {
     const config = node.config || {};
     return {inputs: (config.inputs || []).map(p => ({...p})), outputs: (config.outputs || []).map(p => ({...p}))};
   }
-  if (node.node_type in DEFINITIONS) return DEFINITIONS[node.node_type];
+  if (Object.hasOwn(DEFINITIONS, node.node_type)) return DEFINITIONS[node.node_type];
   if (node.kind === 'complex') return {inputs: node.interface?.inputs || [], outputs: node.interface?.outputs || []};
   return {inputs: [], outputs: []};
 }

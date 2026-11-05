@@ -53,7 +53,7 @@ route(
       const move = p => (underPath(p, path) ? target + p.slice(path.length) : p);
       next = folders.map(move);
       for (const k of Object.keys(icons))
-        if (underPath(k, path)) {
+        if (underPath(k, path) && move(k) !== k) {
           icons[move(k)] = icons[k];
           delete icons[k];
         }
@@ -64,7 +64,11 @@ route(
       next = folders.filter(p => !underPath(p, path));
       for (const k of Object.keys(icons)) if (underPath(k, path)) delete icons[k];
       const doomed = items.filter(r => underPath(String(r.payload.folder || ''), path));
-      for (const r of doomed) await c.ctx.remove('wf:lib-' + r.id);
+      if (doomed.length) c.libraryTouched = true;
+      for (const r of doomed) {
+        await removeWorkflow(c, 'lib-' + r.id);
+        await c.ctx.remove('policy:lib-' + r.id);
+      }
       items = items.filter(r => !doomed.includes(r));
     } else throw bad('Unknown action');
     c.ctx.set('node_folders', next);
@@ -175,12 +179,11 @@ route(
     const items = await c.ctx.get('resources', []),
       item = items.find(r => r.id === resource_id);
     if (!item) throw missing('Record not found');
-    let name = item.name + ' copy';
-    for (let n = 2; items.some(r => r.name === name); n++) name = `${item.name} copy ${n}`;
+    const name = freeName(new Set(items.map(r => r.name)), item.name.slice(0, 95) + ' copy');
     const payload = clone(item.payload),
       top = payload.bundle?.groups?.find(g => !g.parent);
-    if (top) top.name = name.slice(0, 100);
-    const copy = saveResource(c, items, null, name.slice(0, 100), payload);
+    if (top) top.name = name;
+    const copy = saveResource(c, items, null, name, payload);
     return {id: copy.id, name: copy.name};
   },
   {body: {}}

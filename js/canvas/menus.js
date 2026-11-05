@@ -2,8 +2,9 @@
 'use strict';
 
 function spawnPoint() {
-  const view = viewRect();
-  return W.spawn || {x: Math.round(view.x + view.w / 2 - 120), y: Math.round(view.y + view.h / 3)};
+  const rect = W.canvas.getBoundingClientRect();
+  const pointer = W.pointer || {x: rect.left + rect.width / 2, y: rect.top + rect.height / 2};
+  return toWorld(pointer.x, pointer.y);
 }
 
 /** Everything that can be added to the canvas, as popup items. */

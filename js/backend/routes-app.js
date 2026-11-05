@@ -1,6 +1,19 @@
 // Routes: session, settings, search, and the Library nodes.
 'use strict';
 
+// UI clients write only changed preferences; the writer queue merges edits from independent tabs.
+route('PUT', 'ui-state', 'Save changed interface state', async c => {
+  const values = c.body.values;
+  if (
+    !isObject(values) ||
+    Object.keys(values).some(key => !/^(?:agentsys-|fieldHeights:)[A-Za-z0-9:._/-]{1,200}$/.test(key))
+  )
+    throw bad('values must contain interface state keys');
+  const state = {...(await c.ctx.get('ui-state', {})), ...values};
+  c.ctx.set('ui-state', state);
+  return state;
+});
+
 // ----- application -----
 route('GET', 'session', 'Read the session', async c => ({
   preferences: await c.prefs(),
@@ -138,7 +151,8 @@ route(
         'resources',
         items.filter(r => r !== item)
       );
-      await c.ctx.remove('wf:lib-' + item.id);
+      await removeWorkflow(c, 'lib-' + item.id);
+      await c.ctx.remove('policy:lib-' + item.id);
       c.libraryTouched = true;
       return {deleted: true};
     }

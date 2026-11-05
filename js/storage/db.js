@@ -90,9 +90,9 @@ const DB = (() => {
   };
   const ready = (async () => {
     if (external) return;
-    idb = await openIdb();
     files = await probe();
     if (!files) {
+      idb = await openIdb();
       // No server: everything stays in this browser, shared between its tabs.
       if ('BroadcastChannel' in self) {
         channel = new BroadcastChannel('agentsys');
@@ -136,17 +136,13 @@ const DB = (() => {
       await ready;
       const keys = Object.keys(changes);
       if (!keys.length) return;
-      if (external)
-        await external.commit({
+      if (external || files) {
+        const transaction = {
           set: Object.fromEntries(keys.filter(k => changes[k] !== undefined).map(k => [k, changes[k]])),
           remove: keys.filter(k => changes[k] === undefined),
-        });
-      else if (files)
-        await post({
-          set: Object.fromEntries(keys.filter(k => changes[k] !== undefined).map(k => [k, changes[k]])),
-          remove: keys.filter(k => changes[k] === undefined),
-        });
-      else if (idb)
+        };
+        await (external ? external.commit(transaction) : post(transaction));
+      } else if (idb)
         await transaction('readwrite', store => {
           for (const key of keys) changes[key] === undefined ? store.delete(key) : store.put(changes[key], key);
         });

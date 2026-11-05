@@ -31,6 +31,11 @@ const DEFAULT_SHORTCUTS = {
   fold: 'KeyF',
   snap: 'KeyG',
   hints: 'KeyH',
+  toolSelect: 'Digit1',
+  toolMove: 'Digit2',
+  toolPan: 'Digit3',
+  toolDelete: 'Digit4',
+  toolAdd: 'Digit5',
 };
 const SHORTCUT_PATTERN =
   /^(?:(?:Ctrl|Alt|Shift|Meta)\+)*(?:Key[A-Z]|Digit[0-9]|F(?:[1-9]|1[0-2])|Arrow(?:Left|Right|Up|Down)|Space|Enter|Escape|Delete|Backspace|Home|End|PageUp|PageDown|Equal|Minus|BracketLeft|BracketRight|Backslash|Semicolon|Quote|Comma|Period|Slash|Backquote|Shift|Control|Alt|Meta)$/;
@@ -39,14 +44,21 @@ const GRAPH_RANGES = {node_radius: [0, 42], group_radius: [0, 54], wire_width: [
 const WIRE_STYLE_IDS = ['bezier', 'linear', 'step', 'rounded'];
 
 function validateShortcuts(value) {
-  if (!isObject(value) || Object.keys(value).some(k => !(k in DEFAULT_SHORTCUTS))) throw bad('Unknown shortcut action');
+  if (!isObject(value) || Object.keys(value).some(k => !Object.hasOwn(DEFAULT_SHORTCUTS, k)))
+    throw bad('Unknown shortcut action');
   for (const binding of Object.values(value)) {
     if (typeof binding !== 'string' || (binding && !SHORTCUT_PATTERN.test(binding)))
       throw bad('Invalid physical-key shortcut');
     const parts = binding.split('+');
     if (parts.length !== new Set(parts).size) throw bad('A modifier cannot occur twice');
   }
-  const used = Object.values({...DEFAULT_SHORTCUTS, ...value})
+  const effective = {...DEFAULT_SHORTCUTS, ...value};
+  // Existing custom bindings take precedence over newly introduced tool defaults.
+  for (const action of ['toolSelect', 'toolMove', 'toolPan', 'toolDelete', 'toolAdd']) {
+    if (!Object.hasOwn(value, action) && Object.entries(value).some(([key, binding]) => key !== action && binding === effective[action]))
+      effective[action] = '';
+  }
+  const used = Object.values(effective)
     .filter(Boolean)
     .map(v =>
       v

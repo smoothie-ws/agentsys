@@ -9,7 +9,7 @@ body .mobile-only,
     --mobile-primary: calc(56px + env(safe-area-inset-bottom, 0px));
     --mobile-secondary: 50px;
     --radius: 27px; /* buttons, fields, chips */
-    --nav-radius: 30px; /* highlights of the open row, tabs, the bottom rails */
+    --nav-radius: var(--radius);
   }
   html,
   body,
@@ -44,6 +44,12 @@ body .mobile-only,
     overflow: hidden;
     transition: none;
   }
+  body.mobile-sidebar-hidden {
+    --mobile-primary: 0px;
+  }
+  body.mobile-sidebar-hidden #sidebar {
+    display: none;
+  }
   #sidebar hr,
   body .panel-resize,
   #subnav-body > .nav-pill,
@@ -51,20 +57,17 @@ body .mobile-only,
   .nav-joined main::after {
     display: none;
   }
-  #sidebar .brand {
-    min-width: 0;
-    margin: 0;
-    height: 48px;
-    padding: 5px 2px;
-    justify-content: center;
-    border-radius: 18px;
-  }
-  #sidebar .brand > span:last-child {
-    display: none;
-  }
   #sidebar .sidebar-top,
   #sidebar .sidebar-footer {
     display: contents;
+  }
+  #sidebar .sidebar-item {
+    position: relative;
+    min-width: 0;
+    min-height: 48px;
+    height: 48px;
+    justify-content: center;
+    border-radius: var(--nav-radius);
   }
   #sidebar .sidebar-top a,
   #sidebar .sidebar-footer a {
@@ -76,27 +79,33 @@ body .mobile-only,
     flex-direction: column;
     justify-content: center;
     gap: 4px;
-    border-radius: 18px;
+    border-radius: var(--nav-radius);
     font-size: 0.72rem;
     line-height: 1.2;
   }
-  #sidebar .sidebar-top a > span,
-  #sidebar .sidebar-footer a > span {
+  #sidebar .sidebar-top a > span:not(.brand-mark),
+  #sidebar .sidebar-footer a > span:not(.brand-mark) {
     display: none;
   }
   #sidebar svg {
     width: 21px;
     height: 21px;
   }
+  #sidebar .brand-mark { width: 21px; height: 21px; }
+  #sidebar .sidebar-item > button.icon {
+    display: none;
+  }
   body #sidebar a.active,
   body #sidebar a.active:hover {
     background: var(--current);
     color: var(--text);
   }
+  body.nav-joined #sidebar a.active,
+  body.nav-joined #sidebar a.active:hover { background: transparent; }
   body main,
   body.nav-joined main {
     width: 100%;
-    height: calc(100dvh - var(--mobile-primary) - var(--mobile-secondary));
+    height: calc(100dvh - 50px - env(safe-area-inset-top, 0px) - var(--mobile-primary) - var(--mobile-secondary));
     min-height: 0;
     border-radius: 0;
     overflow: hidden;
@@ -104,8 +113,7 @@ body .mobile-only,
   #topstrip {
     height: calc(50px + env(safe-area-inset-top, 0px));
     min-height: calc(50px + env(safe-area-inset-top, 0px));
-    padding: 0 8px;
-    padding-top: env(safe-area-inset-top, 0px);
+    padding: env(safe-area-inset-top, 0px) 4px 0 0;
     gap: 4px;
   }
   #topstrip .search-button {
@@ -140,7 +148,8 @@ body .mobile-only,
   .page {
     width: 100%;
     max-width: 100%;
-    padding: 1rem 1rem 2rem;
+    --page-inset: 1rem;
+    padding: var(--page-inset);
   }
   .page-head {
     flex-direction: row;
@@ -254,8 +263,9 @@ body .mobile-only,
     height: min(70dvh, 600px);
     max-height: calc(var(--visual-height, 100dvh) - 80px);
     padding: 0.65rem 0.8rem 0.8rem;
-    border-radius: 51px 51px 0 0;
-    background: var(--surface);
+    border-radius: var(--radius);
+    background: var(--float);
+    backdrop-filter: var(--blur);
     box-shadow:
       inset 0 0 0 1px transparent,
       var(--shadow-lg);
@@ -280,15 +290,6 @@ body .mobile-only,
     margin: 0 0 0.7rem;
     gap: 8px;
   }
-  #subnav .subnav-head h2 {
-    flex: 1;
-    font-size: 0.85rem;
-  }
-  #subnav-actions {
-    display: flex;
-    align-items: center;
-  }
-  #subnav-actions > button,
   #mobile-subnav-close {
     width: 44px;
     height: 44px;
@@ -305,6 +306,7 @@ body .mobile-only,
     min-height: 44px;
     height: auto;
   }
+  #subnav .subnav-branch { margin-left: 36px; }
   #subnav .subnav-row > a,
   #subnav .subnav-static {
     min-height: 44px;
@@ -327,28 +329,9 @@ body .mobile-only,
     border-radius: 0;
   }
   .toolbar {
-    top: 8px;
-    left: 8px;
-    max-width: calc(100% - 76px);
+    top: 16px;
+    left: 16px;
     gap: 2px;
-  }
-  .toolbar button,
-  .toolbar .icon {
-    min-height: 40px;
-    min-width: 40px;
-  }
-  .toolbar #run-summary {
-    position: absolute;
-    top: calc(100% + 8px);
-    left: 0;
-    font-size: 0.75rem;
-    background: var(--surface);
-    padding: 5px 8px;
-    border-radius: 12px;
-  }
-  .selection-tools button {
-    width: 40px;
-    height: 40px;
   }
   .sock::after {
     content: '';
@@ -367,8 +350,6 @@ body .mobile-only,
     padding: 1rem;
   }
   .map {
-    bottom: 8px;
-    left: 8px;
     max-width: calc(100% - 16px);
     border-radius: 36px;
   }
@@ -407,10 +388,14 @@ body .mobile-only,
   .menu-items {
     max-height: calc(var(--visual-height, 100dvh) - 90px);
   }
+  #subnav .subnav-head {
+    display: flex;
+    justify-content: flex-end;
+  }
   dialog {
     width: calc(100vw - 1rem);
     max-height: calc(var(--visual-height, 100dvh) - 1rem);
-    border-radius: 45px;
+    border-radius: var(--radius);
   }
   dialog form {
     max-height: calc(var(--visual-height, 100dvh) - 1rem);
@@ -434,6 +419,7 @@ body .mobile-only,
     max-width: 100%;
   }
   /* The two bottom rails join upwards, so both their curves and fades turn with them. */
+  body.nav-joined { --join-r: 36px; }
   body.nav-joined #sidebar {
     padding-left: max(var(--join-r), env(safe-area-inset-left, 0px));
     padding-right: max(var(--join-r), env(safe-area-inset-right, 0px));
@@ -450,7 +436,7 @@ body .mobile-only,
     padding-right: max(var(--join-r), env(safe-area-inset-right, 0px));
   }
   body.nav-joined #subnav {
-    background: var(--j-2);
+    background: var(--float);
   }
   body.mobile-subnav-open #sidebar {
     z-index: 90;
@@ -526,26 +512,41 @@ body .mobile-only,
     z-index: 1;
   }
   body.nav-joined #sidebar a.active,
-  body.nav-joined #sidebar a.active:hover,
+  body.nav-joined #sidebar a.active:hover { background: transparent; }
   body.nav-joined #mobile-secondary > .nav-seam,
   body.nav-joined #subnav > .nav-seam,
   body.nav-joined main > .nav-seam {
-    inset: auto 0 0;
-    width: 100%;
+    inset: auto auto 0 calc(var(--x, 0px) - var(--host-w, 0px));
+    width: calc(var(--w, 0px) + 2 * var(--host-w, 0px));
     max-width: none;
     height: min(100%, var(--tail));
+    transform: none;
+    mask-image: linear-gradient(90deg, transparent, #000 var(--host-w, 0px), #000 calc(var(--host-w, 0px) + var(--w, 0px)), transparent);
     z-index: -1;
     --dir: 0deg;
   }
   body.nav-joined #mobile-secondary > .nav-seam {
     --join: var(--join-sidebar);
   }
+  body.nav-joined #mobile-secondary::before,
+  body.nav-joined #subnav::before,
+  body.nav-joined main::before {
+    content: '';
+    position: absolute;
+    inset: auto 0 0;
+    z-index: 0;
+    width: auto;
+    height: min(100%, var(--tail));
+    pointer-events: none;
+    background: var(--dither);
+    mask-image: linear-gradient(0deg, #000, transparent);
+  }
   .keyboard-open #sidebar,
   .keyboard-open #mobile-secondary {
     visibility: hidden;
   }
   .keyboard-open main {
-    height: var(--visual-height, 100dvh);
+    height: calc(var(--visual-height, 100dvh) - 50px - env(safe-area-inset-top, 0px));
   }
   .keyboard-open #subnav {
     bottom: max(0px, calc(100dvh - var(--visual-height, 100dvh)));
@@ -557,51 +558,25 @@ body .mobile-only,
     bottom: auto;
     margin-block: 0;
   }
-}
-/* Rounder corners on a phone: bigger targets under a thumb read better with softer shapes, and everything shares one family of radii. */
-@media (max-width: 760px) {
-  body.nav-joined {
-    --join-r: 36px; /* the curves where the rails join the sheet above them */
-  }
-  body #sidebar .sidebar-top a,
-  body #sidebar .sidebar-footer a,
-  #mobile-browse {
-    border-radius: var(--nav-radius);
-  }
-  .card {
-    border-radius: max(var(--node-radius, 16px), 45px);
-  }
-  .page pre.code,
-  .api pre.code {
-    border-radius: 33px;
-  }
-  .node {
-    border-radius: max(var(--node-radius, 16px), 39px);
-  }
-  .frame {
-    border-radius: max(var(--frame-radius, 33px), 48px);
-  }
-  .preview-stack .preview-layer,
-  #minimap,
-  .icon-grid button {
-    border-radius: 24px;
-  }
-  .toolbar,
-  .selection-tools {
-    border-radius: 36px;
-  }
-  .toolbar #run-summary,
-  .tab {
-    border-radius: 27px;
-  }
-}
 
-@media (max-width: 760px) {
+  #mobile-browse { border-radius: var(--nav-radius); }
+
   .notif-panel {
     right: 8px;
   }
-  #topstrip .notif-button {
+  #topstrip > .icon {
     min-width: 44px;
     min-height: 44px;
   }
+  body #topstrip { padding-right: 0; }
+  #topstrip > #open-notifications { margin-right: 2px; }
+
+/* Keep the complete canvas command row clear of the inspector on phones. */
+
+  .toolbar {
+    max-width: calc(100% - 32px);
+  }
+
+  .brand > span:last-child { display: none; }
+
 }

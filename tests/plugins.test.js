@@ -5,21 +5,55 @@ const test = require('node:test'),
   path = require('node:path');
 const {write, withServer, scriptRunner} = require('./plugin-setup');
 
-test('the bundled plugin starts: it adds a Library node and answers its route', async () => {
-  const hello = fs.readFileSync(path.join(__dirname, '..', 'plugins', 'hello', 'main.js'), 'utf8');
-  await withServer({hello}, async ({call, pluginsDir}) => {
-    fs.writeFileSync(path.join(pluginsDir, 'hello', 'README.md'), '# Hello\nA readme.');
+test('AI registers Providers only while running and retains provider data across reloads', async () => {
+  const ai = fs.readFileSync(path.join(__dirname, '..', 'data', 'plugins', 'ai', 'main.js'), 'utf8');
+  await withServer({ai}, async ({call}) => {
     const list = (await call('GET', 'plugins')).body;
-    assert.deepEqual(list, [
-      {id: 'hello', title: 'AI', description: list[0].description, icon: 'sparkles', enabled: true, running: true, error: null},
-    ]);
-    assert.ok((await call('GET', 'resources')).body.some(r => r.name === 'Hello'));
-    assert.deepEqual((await call('GET', 'plugins/hello/greet', undefined, {name: 'Ann'})).body, {text: 'Hello, Ann!'});
-    assert.equal((await call('GET', 'plugins/hello/missing')).status, 404);
-    const detail = (await call('GET', 'plugins/hello')).body;
-    assert.deepEqual(detail.routes, ['GET greet']);
-    assert.match(detail.readme, /Hello/);
-    assert.equal((await call('GET', 'plugins/nothing')).status, 404);
+    assert.equal(list[0].id, 'ai');
+    assert.equal(list[0].running, true);
+    assert.equal(
+      list.some(p => p.id === 'hello'),
+      false
+    );
+    assert.equal(
+      (await call('GET', 'resources')).body.some(r => r.name === 'Hello'),
+      false
+    );
+    const sections = (await call('GET', 'library/sections')).body;
+    assert.equal(sections[0].id, 'providers');
+    assert.equal(sections[0].title, 'Providers');
+    const created = await call('POST', 'plugins/ai/providers', {
+      providerId: 'local',
+      baseURL: 'http://localhost:11434/v1',
+      apiKey: 'private',
+    });
+    assert.equal(created.status, 200);
+    assert.equal(created.body.hasApiKey, true);
+    assert.equal('apiKey' in created.body, false);
+    const id = created.body.id;
+    assert.equal(
+      (await call('POST', 'plugins/ai/providers', {providerId: 'local', baseURL: 'https://example.org'})).status,
+      400
+    );
+    assert.equal((await call('POST', 'plugins/ai/providers', {providerId: 'bad', baseURL: 'file:///tmp'})).status, 400);
+    await call('PUT', 'plugins/ai/providers', {
+      id,
+      providerId: 'local',
+      baseURL: 'https://example.org/v1',
+      model: 'test',
+      apiKey: '',
+    });
+    await call('PUT', 'plugins/ai', {enabled: false});
+    assert.deepEqual((await call('GET', 'library/sections')).body, []);
+    assert.equal((await call('GET', 'plugins/ai/providers')).status, 404);
+    await call('PUT', 'plugins/ai', {enabled: true});
+    await call('POST', 'plugins/reload');
+    const saved = (await call('GET', 'plugins/ai/providers')).body;
+    assert.equal(saved[0].model, 'test');
+    assert.equal(saved[0].hasApiKey, true);
+    assert.equal((await call('GET', 'library/sections')).body.length, 1);
+    assert.equal((await call('DELETE', 'plugins/ai/providers', undefined, {id})).body.deleted, true);
+    assert.deepEqual((await call('GET', 'plugins/ai/providers')).body, []);
   });
 });
 

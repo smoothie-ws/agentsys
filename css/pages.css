@@ -3,13 +3,18 @@
 /* ----- Page frame ----- */
 .page {
   --page-gap: 1.5rem;
+  --page-inset: 2rem;
   display: flex;
   flex-direction: column;
   gap: var(--page-gap);
   width: 100%;
   max-width: 1080px;
   margin: 0 auto;
-  padding: 2rem 2rem 4rem;
+  padding: var(--page-inset);
+}
+@media (min-width: 761px) {
+  /* The header takes up space only at the top of the viewport. */
+  .page { padding-bottom: calc(var(--page-inset) + var(--header-height)); }
 }
 .page > * {
   flex-shrink: 0;
@@ -18,10 +23,10 @@
 }
 .page-head {
   display: flex;
-  align-items: flex-start;
+  align-items: center;
   justify-content: space-between;
   gap: 1rem;
-  min-height: 4.4rem;
+  min-height: 40px;
 }
 .page-head .actions {
   display: flex;
@@ -36,9 +41,6 @@
 }
 .page-head > .actions {
   flex: none;
-}
-.page-description {
-  margin: 0.35rem 0 0;
 }
 .page-title {
   display: flex;
@@ -72,29 +74,28 @@
 .cards:empty {
   display: none;
 }
+.card,
+.tile,
+.welcome-panel {
+  --card-fill: color-mix(in srgb, var(--text) 6%, var(--glass-card));
+  --card-gradient: linear-gradient(145deg, color-mix(in srgb, var(--text) 9%, transparent), color-mix(in srgb, var(--text) 1%, transparent));
+  border-radius: var(--node-radius, 16px);
+  background: var(--card-gradient), var(--card-fill);
+  backdrop-filter: var(--blur-sm);
+  box-shadow: var(--card-shadow);
+  transition: background-color var(--base) var(--ease), box-shadow var(--base) var(--ease);
+}
 .card {
   position: relative;
-  border-radius: var(--node-radius, 16px);
   color: var(--text);
-  background: color-mix(in srgb, var(--text) 6%, var(--glass-card));
-  backdrop-filter: var(--blur-sm);
-  box-shadow:
-    inset 0 0 0 1px transparent,
-    var(--card-shadow);
   overflow: hidden;
   transition:
     background-color var(--base) var(--ease),
     box-shadow var(--base) var(--ease);
 }
-.card:hover {
-  background: color-mix(in srgb, var(--text) 10%, var(--glass-card));
-}
-/* Made of other nodes, like a Complex Node on the canvas. */
-.card.k-complex {
-  background: color-mix(in srgb, var(--accent) 12%, var(--glass-card));
-}
-.card.k-complex:hover {
-  background: color-mix(in srgb, var(--accent) 16%, var(--glass-card));
+.card:hover,
+a.tile:hover {
+  --card-fill: color-mix(in srgb, var(--text) 10%, var(--glass-card));
 }
 .card.drop-over {
   box-shadow:
@@ -108,21 +109,18 @@
 }
 .card-main {
   display: grid;
-  gap: 0.55rem;
+  gap: 12px;
   align-content: start;
-  padding: 0.65rem 0.75rem 0.75rem;
+  padding: 12px;
   color: inherit;
   text-decoration: none;
-}
-.card-main:focus-visible {
-  outline: none;
 }
 .card-head {
   display: flex;
   align-items: center;
   gap: 0.45rem;
-  min-height: 24px;
-  padding-right: 2.4rem; /* the menu button */
+  min-height: 32px;
+  padding-right: 36px; /* the menu button */
 }
 .card .head-icon :is(svg, img) {
   width: 13px;
@@ -145,14 +143,16 @@
 }
 .card-actions {
   position: absolute;
-  top: 0.55rem;
-  right: 0.5rem;
+  top: 12px;
+  right: 12px;
   z-index: 5;
   display: flex;
   gap: 0.1rem;
 }
 .card-actions button.icon {
-  padding: 0.22rem;
+  width: 32px;
+  height: 32px;
+  padding: 0;
 }
 .card-facts {
   margin: 0;
@@ -304,79 +304,108 @@
 /* ----- Library item ----- */
 
 /* ----- API reference: method tree and search stay beside the documentation ----- */
+#view.view-api {
+  overflow: hidden;
+  container-type: inline-size;
+  container-name: api-reference-area;
+}
+.api-page {
+  height: 100%;
+  min-height: 0;
+}
+.api-page > #api-reference {
+  flex: 1;
+  min-height: 0;
+}
 #api-box {
   display: grid;
-  grid-template-columns: minmax(15rem, 20rem) minmax(0, 1fr);
-  gap: 2rem;
-  align-items: start;
+  grid-template-columns: minmax(220px, 28%) minmax(0, 1fr);
+  gap: 0;
+  height: 100%;
+  min-height: 0;
 }
 .api-navigation {
-  position: sticky;
-  top: 0;
+  border-right: 1px solid var(--line);
+  padding-right: 20px;
   display: flex;
   flex-direction: column;
-  gap: 0.7rem;
-  max-height: calc(100dvh - 170px);
+  gap: 0.5rem;
   min-width: 0;
+  min-height: 0;
 }
 .api-search {
   display: grid;
-  gap: 0.4rem;
+  gap: 0.3rem;
   font-size: 0.8rem;
 }
 .api-call-tree {
+  flex: 1;
   overflow: auto;
   min-height: 0;
-  padding-right: 0.5rem;
+  padding-right: 0.3rem;
+  overscroll-behavior: contain;
 }
 .api-call-tree details > div {
-  margin-left: 0.55rem;
+  margin-left: 0.4rem;
   border-left: 1px solid var(--line);
   padding-left: 0.35rem;
 }
 .api-call-tree summary {
-  padding: 0.55rem 0.2rem;
-  overflow-wrap: anywhere;
-  font-size: 0.78rem;
+  margin: 0;
+  min-height: 28px;
+  padding: 4px 2px;
+  line-height: 20px;
+  font-size: 13px;
   cursor: pointer;
+  white-space: nowrap;
+  overflow: hidden;
+  text-overflow: ellipsis;
+}
+.api-calls {
+  display: flex;
+  flex-wrap: wrap;
+  gap: 4px;
+  padding: 2px 0 6px 12px;
 }
 .api-call {
-  display: flex;
-  gap: 0.45rem;
-  padding: 0.6rem 0.4rem;
+  display: inline-flex;
+  align-items: center;
+  justify-content: center;
+  min-width: 42px;
+  min-height: 26px;
+  padding: 4px 7px;
   color: inherit;
   text-decoration: none;
-  border-radius: 8px;
+  border-radius: 7px;
+  background: color-mix(in srgb, var(--text) 4%, transparent);
+  transition: background-color var(--fast) var(--ease), color var(--fast) var(--ease);
 }
 .api-call:hover {
   background: var(--hover);
 }
 .api-call[aria-current] {
-  background: color-mix(in srgb, var(--accent) 15%, transparent);
+  background: color-mix(in srgb, var(--accent) 18%, transparent);
 }
-.api-call > span:last-child {
-  min-width: 0;
+.api-navigation .method {
+  width: auto;
+  font-size: 11px;
 }
-.api-call code {
-  font-size: 0.72rem;
-  overflow-wrap: anywhere;
-}
-.api-call small {
-  display: block;
-  color: var(--muted);
-  margin-top: 0.3rem;
-  font-size: 0.72rem;
-}
-@media (max-width: 800px) {
+@container api-reference-area (max-width: 720px) {
   #api-box {
     grid-template-columns: minmax(0, 1fr);
-    gap: 1rem;
+    grid-template-rows: minmax(0, 2fr) minmax(0, 3fr);
+    gap: 0;
   }
   .api-navigation {
-    position: relative;
-    max-height: 40dvh;
+    border-right: 0;
+    border-bottom: 1px solid var(--line);
+    padding: 0 0 12px;
+  }
+  .api-page .api-method {
+    padding: 16px 0 0;
   }
 }
+
 .method {
   width: 3.6rem;
   flex: none;
@@ -398,17 +427,30 @@
 }
 .api-method {
   min-width: 0;
-  padding: 0.3rem 0 3rem;
+  min-height: 0;
+  overflow: auto;
+  overscroll-behavior: contain;
+  padding: 0 0 16px 24px;
 }
 .api-method-heading {
   display: flex;
   align-items: baseline;
   gap: 0.8rem;
-  margin-bottom: 1rem;
+  margin-bottom: 16px;
+  min-height: 36px;
   overflow-wrap: anywhere;
 }
 .api-method h3 {
-  margin-top: 1.6rem;
+  margin: 24px 0 12px;
+}
+.api-method-heading + h3 {
+  margin-top: 0;
+}
+.api-method pre.code {
+  margin: 0 0 20px;
+}
+.api-method table {
+  margin-bottom: 20px;
 }
 .api-responses {
   display: grid;
@@ -442,7 +484,7 @@
 
 @media (max-width: 1100px) {
   .page {
-    padding: 1.5rem 1.5rem 3rem;
+    --page-inset: 1.5rem;
   }
 }
 
@@ -506,13 +548,8 @@
   display: grid;
   gap: 0.15rem;
   padding: 0.8rem 0.9rem;
-  border-radius: var(--node-radius, 16px);
   color: inherit;
   text-decoration: none;
-  background: color-mix(in srgb, var(--text) 6%, var(--glass-card));
-}
-a.tile:hover {
-  background: color-mix(in srgb, var(--text) 10%, var(--glass-card));
 }
 .tile-value {
   font-size: 1.8rem;
@@ -541,10 +578,6 @@ a.tile:hover {
 .welcome-panel {
   padding: 24px;
   margin: 0;
-  border-radius: var(--node-radius, 16px);
-  background: color-mix(in srgb, var(--text) 6%, var(--glass-card));
-  backdrop-filter: var(--blur-sm);
-  box-shadow: var(--card-shadow);
 }
 .welcome-panel p {
   max-width: 62ch;
@@ -667,4 +700,49 @@ a.tile:hover {
 .plugin-routes code {
   min-width: 0;
   overflow-wrap: anywhere;
+}
+
+.page-head .icon {
+  width: 36px;
+  height: 36px;
+  padding: 0;
+}
+#api-download {
+  min-height: 36px;
+  gap: 8px;
+}
+#api-download svg {
+  width: 16px;
+  height: 16px;
+}
+@media (max-width: 760px) {
+  .page-head {
+    gap: 12px;
+    min-height: 44px;
+    flex-wrap: nowrap;
+  }
+  .page-head > :first-child {
+    flex: 1 1 auto;
+  }
+  .page-title {
+    font-size: 24px;
+    line-height: 1.25;
+  }
+  .page-head .icon,
+  #api-download {
+    width: 44px;
+    height: 44px;
+    min-height: 44px;
+  }
+  #api-download {
+    padding: 0;
+  }
+  #api-download span {
+    display: none;
+  }
+}
+
+.api-page .api-method pre.code {
+  border-radius: 12px;
+  line-height: 1.6;
 }

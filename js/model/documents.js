@@ -4,7 +4,7 @@
 // (the widgets code put on nodes: {node ID: [{id, kind, label, value, ...}]}), types (see model/types.js),
 // and library_nodes (the Library resource IDs included in this workflow's Add menu; empty by default).
 // A group is only a visual frame around nodes (and other groups). A Complex Node wraps one group: it adds ports
-// bound to ports inside the group and is shown as one node. docs/concepts.md describes the data model.
+// bound to ports inside the group and is shown as one node. docs/architecture.md describes the data model.
 'use strict';
 
 const emptyDoc = () => ({

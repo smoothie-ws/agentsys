@@ -46,7 +46,8 @@ function popup(x, y, items, {search = false, searchItems = items} = {}) {
         button.setAttribute('aria-checked', String(!!meta.checked));
       }
       const glyph = meta.icon || ('checked' in meta ? null : children ? 'folder' : 'play');
-      button.innerHTML = `<span class="menu-label">${glyph ? icon(glyph) : ''}<span>${esc(label)}</span></span>${children ? icon('chevron') : meta.hint ? `<kbd>${esc(meta.hint)}</kbd>` : ''}`;
+      button.innerHTML = `<span class="menu-label">${glyph ? icon(glyph) : ''}<span>${esc(label)}</span></span>${children ? icon('chevron') : ''}`;
+      if (meta.hint) button.title = meta.hint;
       row.append(button);
       root.append(row);
       if (children) {

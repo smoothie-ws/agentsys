@@ -183,8 +183,8 @@ const creationActions = folder =>
       ]
     : [];
 /** Menu of the Library itself, and the "+" of its second panel. */
-const nodesActions = () => [
-  ...creationActions(''),
+const nodesActions = (includeCreation = true) => [
+  ...(includeCreation ? creationActions('') : []),
   ['Import…', () => importFiles(), {icon: 'download'}],
   ['Export all', () => exportResources(app.resources, 'Library'), {icon: 'upload', disabled: !app.resources.length}],
   null,
@@ -305,7 +305,7 @@ const itemCard = r =>
     glyph: resourceIcon(r),
     title: r.name,
     preview: `<div class="preview-layer">${previewSVG(graphFromBundle(r.payload.bundle))}</div>`,
-    facts: r.payload.description ? esc(r.payload.description) : '',
+    attrs: `title="${esc(r.payload.description || '')}"`,
     menu: 'resource:' + r.id,
     tint: 'k-complex',
     extra: developerMode() ? `draggable="true" data-drag="${esc(r.id)}"` : '',
@@ -339,10 +339,10 @@ function libraryOverview(view) {
       title: 'Nodes',
       preview: cardList(rows),
       previewClass: 'card-note',
-      facts: 'Reusable Custom Nodes',
+      attrs: 'title="Reusable Custom Nodes"',
       menu: 'nodes:',
     }
-  )}</div></div>`;
+  )}${(app.librarySections || []).map(s => card({href: '/library/' + s.id, glyph: s.icon || 'plug', title: s.title, menu: 'collection:' + s.id, attrs: `title="${esc(s.description || '')}"`})).join('')}</div></div>`;
 }
 
 /** The Nodes section, or one group of it: its groups and nodes as cards. */
@@ -379,7 +379,95 @@ PAGES.resources = async (view, route) => {
   await loadLibrary();
   if (app.route !== route) return;
   if (!route.section) return libraryOverview(view);
+  if (route.section !== 'nodes') return pluginLibrarySection(view, route);
   if (!route.id) return libraryList(view, route);
   if (!developerMode() || !app.resources.some(r => r.id === route.id)) return go('/library', true);
   await openNodeEditor(route.id, '', true).catch(fail); // a node opens as a graph
 };
+
+/** Plugin-owned collections share Library navigation and the application's form controls. */
+async function pluginLibrarySection(view, route) {
+  const section = (app.librarySections || []).find(s => s.id === route.section);
+  if (!section || route.id) {
+    view.innerHTML = `<div class="page">${notFound('Section', '/library', 'Back to Library')}</div>`;
+    return;
+  }
+  const endpoint = `plugins/${encodeURIComponent(section.plugin)}/${encodeURIComponent(section.route)}`;
+  const items = await api(endpoint);
+  if (app.route !== route) return;
+  const edit = (item = {}) =>
+    dialog(
+      item.id ? 'Edit provider' : 'New provider',
+      section.fields
+        .map(f =>
+          field(
+            f.label,
+            `<input name="${esc(f.key)}" type="${f.type === 'password' ? 'password' : 'text'}" ${f.required ? 'required' : ''} value="${esc(item[f.key] || '')}" ${f.type === 'password' ? 'autocomplete="new-password" title="Leave empty to keep saved key"' : ''}>`
+          )
+        )
+        .join(''),
+      async form => {
+        await api(endpoint, {
+          method: item.id ? 'PUT' : 'POST',
+          body: {
+            id: item.id,
+            ...Object.fromEntries(section.fields.map(f => [f.key, form.elements.namedItem(f.key).value])),
+          },
+        });
+        await pluginLibrarySection(view, route);
+      },
+      'Save'
+    );
+  const remove = item =>
+    confirmDialog(
+      'Delete provider?',
+      `Remove ${item.providerId}?`,
+      async () => {
+        await api(endpoint, {method: 'DELETE', query: {id: item.id}});
+        await pluginLibrarySection(view, route);
+      },
+      'Delete'
+    );
+  app.libraryCollection = {section: section.id, items, edit, remove};
+  view.innerHTML = `<div class="page">${pageHead({title: esc(section.title), sub: esc(section.description || ''), crumbs: [['Library', '/library']], menu: 'collection:' + section.id})}
+    <div class="cards">${items
+      .map(item =>
+        card({
+          glyph: section.icon || 'plug',
+          title: item.name || item.providerId,
+          facts: esc(item.providerId),
+          menu: 'provider:' + item.id,
+          previewClass: 'card-note',
+          preview: cardList([['server', item.baseURL], ...(item.model ? [['sparkles', item.model]] : [])]),
+        })
+      )
+      .join('')}</div>
+    ${items.length ? '' : '<div class="empty small"><h2>No providers yet</h2></div>'}</div>`;
+}
+
+function collectionActions(section) {
+  if (!(app.librarySections || []).some(item => item.id === section)) return [];
+  return [
+    [
+      'New provider',
+      async () => {
+        if (app.libraryCollection?.section !== section || app.route?.section !== section)
+          await go('/library/' + section);
+        app.libraryCollection.edit();
+      },
+      {icon: 'plus'},
+    ],
+  ];
+}
+function providerActions(id) {
+  const collection = app.libraryCollection;
+  if (!collection || collection.section !== app.route?.section) return [];
+  const item = collection.items.find(item => item.id === id);
+  return item
+    ? [
+        ['Edit', () => collection.edit(item), {icon: 'pencil'}],
+        null,
+        ['Delete', () => collection.remove(item), {icon: 'trash', danger: true}],
+      ]
+    : [];
+}

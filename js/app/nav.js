@@ -34,15 +34,14 @@ const SECTION_TITLES = {
 const Subnav = {
   changed: false,
   html: '',
-  set(section, {title, actions = '', body = ''}) {
+  set(section, {title, body = ''}) {
     const panel = $('#subnav'),
       area = $('#subnav-body'),
       list = $('#subnav-list'),
       scroll = area.scrollTop,
       changed = panel.dataset.section !== section;
     panel.dataset.section = section;
-    $('#subnav-title').textContent = title;
-    $('#subnav-actions').innerHTML = actions;
+    panel.setAttribute('aria-label', title + ' navigation');
     if (typeof body !== 'string') {
       list.replaceChildren(body);
       this.html = '';
@@ -77,7 +76,7 @@ function navRow(n, active) {
   const row = `<div class="subnav-row ${here ? 'active' : ''}" data-key="${esc(n.key)}"${n.drop !== undefined ? ` data-drop-folder="${esc(n.drop)}"` : ''}${n.drag ? ` draggable="true" data-drag="${esc(n.drag)}"` : ''}>${
     group
       ? `<button type="button" class="subnav-toggle" aria-label="Show or hide" aria-expanded="${open}">${icon('chevron')}</button>`
-      : '<span class="subnav-pad"></span>'
+      : ''
   }${n.href ? `<a href="${esc(n.href)}" data-link title="${esc(n.label)}" ${here ? 'aria-current="page"' : ''}>${icon(n.icon)}<span>${esc(n.label)}</span></a>` : `<div class="subnav-static">${icon(n.icon)}<span>${esc(n.label)}</span></div>`}${n.menu ? `<button type="button" class="icon subnav-menu" data-menu="${esc(n.menu)}" aria-label="Actions of ${esc(n.label)}">${icon('dots')}</button>` : ''}</div>`;
   if (!group) return row;
   const kids = n.children ? n.children.map(c => navRow(c, active)).join('') : '';
@@ -160,7 +159,6 @@ function panelTree(section) {
         label,
         icon: glyph,
         href: sectionHref(section, key),
-        menu: sectionActions(section).length ? 'section:' + section : undefined,
       })),
   };
 }
@@ -224,20 +222,29 @@ const NAV_TREES = {
         : route.section
           ? route.folder
             ? folderKey(route.folder)
-            : 's:nodes'
+            : 's:' + route.section
           : 'overview:library',
       rows: () => [
         {key: 's:nodes', label: 'Nodes', icon: 'complex', href: NODES_PATH, menu: 'nodes:', children: folderRows('')},
+        ...(app.librarySections || []).map(s => ({
+          key: 's:' + s.id,
+          label: s.title,
+          icon: s.icon || 'plug',
+          href: '/library/' + s.id,
+          menu: 'collection:' + s.id,
+        })),
       ],
     };
   },
 };
 function pageMenu(route = app.route || {}) {
+  if (route.page === 'resources' && !route.section) return '';
+  if (route.page === 'resources' && route.section !== 'nodes') return 'collection:' + route.section;
   if (route.page === 'resources')
     return route.id ? 'resource:' + route.id : route.folder ? 'folder:' + route.folder : 'nodes:';
   if (route.page === 'plugins' && route.id) return 'plugin:' + route.id;
   if (route.project) return route.workflow ? `workflow:${route.project}:${route.workflow}` : 'project:' + route.project;
-  return route.page === 'home' ? '' : 'section:' + route.page;
+  return '';
 }
 let shownSection = '',
   shownTarget = '';
@@ -257,7 +264,6 @@ function renderSubnav(route) {
   const rows = tree.rows();
   Subnav.set(section, {
     title: SECTION_TITLES[section],
-    actions: sectionActions(section).length ? actionButton('section:' + section, 'Section actions') : '',
     body: `<nav class="subnav-tree" aria-label="${esc(SECTION_TITLES[section])}">${rows.map(n => navRow(n, tree.active)).join('')}${rows.length ? '' : `<p class="muted small">Nothing here yet.</p>`}</nav>`,
   });
 }
@@ -294,7 +300,7 @@ function settle(el, jump) {
 }
 /** What makes two rows "the same row" even when the list was redrawn between them. */
 const rowId = el =>
-  el.dataset.key || el.dataset.section || el.dataset.sideTab || el.dataset.method || el.textContent.trim();
+  el.dataset.key || el.dataset.section || el.dataset.sideTab || el.dataset.method || el.querySelector('a[data-section]')?.dataset.section || el.textContent.trim();
 const GLIDE_MS = 340; // a little more than the transition (--slow)
 /**
  * Puts `pill` (inside `box`) over `row`, and the seam of the next panel (`host`) at the same height.
@@ -303,11 +309,13 @@ const GLIDE_MS = 340; // a little more than the transition (--slow)
  */
 function placePill(pill, row, box, instant, host) {
   const seam = host && navSeam(host);
+  const outgoing = box.closest('#subnav');
   if (!row || !row.offsetParent) {
     pill.classList.add('off');
     seam?.classList.add('off');
-    host?.style.removeProperty('--row-top');
-    host?.style.removeProperty('--row-bottom');
+    host?.classList.remove('join-in-top', 'join-in-bottom');
+    outgoing?.classList.remove('join-out-top', 'join-out-bottom');
+    pill.classList.remove('join-top', 'join-bottom');
     return;
   }
   const r = row.getBoundingClientRect(),
@@ -316,8 +324,6 @@ function placePill(pill, row, box, instant, host) {
     id = rowId(row),
     other = pill.rowId !== id;
   pill.rowId = id;
-  pill.style.setProperty('--space-before', Math.max(0, r.top - b.top) + 'px');
-  pill.style.setProperty('--space-after', Math.max(0, b.bottom - r.bottom) + 'px');
   pill.style.setProperty('--x', r.left - b.left + box.scrollLeft - box.clientLeft + 'px');
   let jump = instant || pill.classList.contains('off');
   if (other && !jump) pill.glideUntil = now + GLIDE_MS;
@@ -331,14 +337,27 @@ function placePill(pill, row, box, instant, host) {
   // A row scrolled out of its list keeps its pill (it scrolls along) but sends no glow into the next panel.
   if (r.bottom <= b.top || r.top >= b.bottom) {
     seam.classList.add('off');
+    host.classList.remove('join-in-top', 'join-in-bottom');
+    outgoing?.classList.remove('join-out-top', 'join-out-bottom');
+    pill.classList.remove('join-top', 'join-bottom');
     return;
   }
   const h = host.getBoundingClientRect();
-  host.style.setProperty('--row-top', Math.max(0, r.top - h.top) + 'px');
-  host.style.setProperty('--row-bottom', Math.max(0, h.bottom - r.bottom) + 'px');
+  const atTop = Math.abs(r.top - h.top) < 1;
+  const atBottom = Math.abs(r.bottom - h.bottom) < 1;
+  pill.classList.toggle('join-top', atTop);
+  pill.classList.toggle('join-bottom', atBottom);
+  host.classList.toggle('join-in-top', atTop);
+  host.classList.toggle('join-in-bottom', atBottom);
+  outgoing?.classList.toggle('join-out-top', atTop);
+  outgoing?.classList.toggle('join-out-bottom', atBottom);
   settle(seam, jump || seam.classList.contains('off'));
   seam.style.setProperty('--y', r.top - h.top - host.clientTop + 'px');
   seam.style.setProperty('--h', r.height + 'px');
+  seam.style.setProperty('--host-h', h.height + 'px');
+  seam.style.setProperty('--x', r.left - h.left - host.clientLeft + 'px');
+  seam.style.setProperty('--w', r.width + 'px');
+  seam.style.setProperty('--host-w', h.width + 'px');
   seam.classList.remove('off');
 }
 /** A row inside a closed group (or in the folded panel) is represented by the group's own row. */
@@ -360,12 +379,12 @@ function placePills(list = false, all = false) {
     const host = sheet ? $('#subnav') : $('#mobile-secondary');
     const inactive = sheet ? $('#mobile-secondary') : $('#subnav');
     $(':scope > .nav-seam', inactive)?.classList.add('off');
-    placePill(navPills.side, $('#sidebar a.active'), $('#sidebar'), all, host);
+    placePill(navPills.side, $('#sidebar a.active')?.closest('.sidebar-item') || $('#sidebar a.active'), $('#sidebar'), all, host);
     placePill(navPills.mobile, $('#mobile-browse'), $('#mobile-secondary'), list || all, $('main'));
     navPills.sub.classList.add('off');
     return;
   }
-  placePill(navPills.side, $('#sidebar a.active'), $('#sidebar'), all, $('#subnav'));
+  placePill(navPills.side, $('#sidebar a.active')?.closest('.sidebar-item') || $('#sidebar a.active'), $('#sidebar'), all, $('#subnav'));
   placePill(navPills.sub, shownRow($('#subnav .subnav-row.active')), $('#subnav-body'), list || all, $('main'));
 }
 /** The Properties panel's icon rail has its own pill (it flows left into the panel); the editor calls this when the open section changes. */
@@ -419,9 +438,10 @@ $('#subnav-body').addEventListener('scroll', () => {
 function renderSidebar() {
   const route = app.route || {},
     section = sectionOf(route);
-  for (const link of $$('#sidebar [data-section]')) {
+  for (const link of $$('#sidebar [data-section], #brand')) {
     const on = link.dataset.section === section;
     link.classList.toggle('active', on);
+    link.closest('.sidebar-item')?.classList.toggle('active', on);
     if (on) link.setAttribute('aria-current', 'page');
     else link.removeAttribute('aria-current');
   }
@@ -466,6 +486,8 @@ async function resolveMenuItems(spec, owner) {
   }
   if (type === 'section') return sectionActions(arg);
   if (type === 'nodes') return nodesActions();
+  if (type === 'collection') return collectionActions(arg);
+  if (type === 'provider') return providerActions(arg);
   if (type === 'resource')
     return resourceActions(
       app.resources.find(r => r.id === arg),
@@ -476,7 +498,7 @@ async function resolveMenuItems(spec, owner) {
 }
 
 function sectionActions(section) {
-  if (section === 'library') return nodesActions();
+  if (section === 'library') return nodesActions(false);
   if (section === 'projects')
     return [
       ['New project', newProjectDialog, {icon: 'plus'}],
@@ -503,7 +525,7 @@ document.addEventListener('click', event => {
 const plainNavigationLink = target => {
   const link = target.closest?.('a[data-link]');
   if (!link || link.closest('#tabs')) return false;
-  return !link.closest('.card,.subnav-row')?.querySelector('[data-menu]');
+  return !link.closest('.card,.subnav-row,.sidebar-item')?.querySelector('[data-menu]');
 };
 // Text is the exception to every other menu: right-click on a text field (or on selected text) always opens the text menu.
 const TEXT_FIELD =
@@ -551,7 +573,6 @@ function textMenuItems(field, selected) {
 document.addEventListener(
   'contextmenu',
   event => {
-    if (plainNavigationLink(event.target)) return;
     event.preventDefault();
     const field = event.target.closest?.(TEXT_FIELD),
       selection = getSelection();
@@ -581,7 +602,7 @@ document.addEventListener('contextmenu', event => {
   const custom = event.target.closest('[data-context-menu]');
   if (custom) return custom.click();
   if (!event.target.closest('[data-menu]') && event.target.closest('#canvas, #tabs, .popup')) return;
-  const owner = event.target.closest('[data-menu], .card, .subnav-row');
+  const owner = event.target.closest('[data-menu], .card, .subnav-row, .sidebar-item');
   const button = owner?.matches('[data-menu]') ? owner : owner?.querySelector('[data-menu]');
   if (!button) return;
   menuItems(button.dataset.menu, button)

@@ -16,6 +16,41 @@ function onNextFrame(key, work) {
   });
 }
 
+/** One motion policy for every node and group. Layout transforms remain untouched while dragging. */
+function animateGraphElement(element, mode) {
+  const enabled = document.documentElement.dataset.motion !== 'false' &&
+    !matchMedia('(prefers-reduced-motion: reduce)').matches;
+  element.graphAnimation?.cancel();
+  if (!enabled) {
+    if (mode === 'exit') element.remove();
+    return;
+  }
+  const frames = mode === 'exit'
+    ? [{opacity: 1, translate: '0 0'}, {opacity: 0, translate: '0 3px'}]
+    : mode === 'reshape'
+      ? [{opacity: 0.58, translate: '0 0'}, {opacity: 1, translate: '0 0'}]
+      : [{opacity: 0, translate: '0 3px'}, {opacity: 1, translate: '0 0'}];
+  const animations = W.graphAnimations;
+  const animation = element.animate(frames, {
+    duration: mode === 'reshape' ? 130 : 150,
+    easing: 'cubic-bezier(.2,.75,.25,1)',
+  });
+  element.graphAnimation = animation;
+  animations.add(animation);
+  animation.finished.catch(() => {}).finally(() => {
+    animations.delete(animation);
+    if (element.graphAnimation === animation) element.graphAnimation = null;
+    if (mode === 'exit') element.remove();
+  });
+}
+
+function retireGraphElement(element) {
+  element.inert = true;
+  element.classList.add('graph-exit');
+  for (const name of ['data-id', 'data-frame', 'data-complex']) element.removeAttribute(name);
+  animateGraphElement(element, 'exit');
+}
+
 function draw() {
   if (!W.snapshot || !W.canvas?.isConnected) return;
   const nodes = visibleNodes(),
@@ -57,6 +92,8 @@ function draw() {
       node.folded ? foldedPorts(node).map(ports => ports.map(p => p.id)) : null,
     ]);
     let element = W.elements.get(node.id);
+    const created = !element;
+    const foldedChanged = element && element.dataset.folded !== String(!!node.folded);
     if (!W.drag || !W.drag.ids?.has(node.id)) {
       const p = position(node);
       W.pos.set(node.id, {...(W.pos.get(node.id) || {}), ...p});
@@ -131,12 +168,14 @@ function draw() {
       W.dirtyGeometry.add(node.id);
     }
     if (node.folded && W.dirtyGeometry.has(node.id)) layoutFoldedPorts(element);
+    element.dataset.folded = String(!!node.folded);
+    if (created || foldedChanged) animateGraphElement(element, created ? 'enter' : 'reshape');
   }
   for (const [id, element] of W.elements)
     if (!alive.has(id)) {
       forgetFieldHeights(element);
       W.nodeObserver?.unobserve(element);
-      element.remove();
+      retireGraphElement(element);
       W.elements.delete(id);
       forgetSockets(id);
       W.sceneRevision++;
@@ -180,7 +219,8 @@ function measureSockets(id, element) {
   const keys = [];
   W.socketKeys.set(id, keys);
   const origin = element.getBoundingClientRect(),
-    zoom = W.camera?.zoom || 1;
+    zoomX = origin.width / element.offsetWidth || W.camera?.zoom || 1,
+    zoomY = origin.height / element.offsetHeight || W.camera?.zoom || 1;
   for (const socket of element.querySelectorAll('.sock')) {
     // A Reroute point is one dot: wires come in and leave from its centre (layout size, so hover scaling does not move them).
     if (element.classList.contains('reroute')) {
@@ -196,8 +236,8 @@ function measureSockets(id, element) {
     const key = `${id}|${socket.dataset.dir}|${socket.dataset.port}${socket.dataset.face ? '|' + socket.dataset.face : ''}`;
     keys.push(key);
     W.sockets.set(key, {
-      dx: (r.left + r.width / 2 - origin.left) / zoom,
-      dy: (r.top + r.height / 2 - origin.top) / zoom,
+      dx: (r.left + r.width / 2 - origin.left) / zoomX,
+      dy: (r.top + r.height / 2 - origin.top) / zoomY,
     });
   }
 }
@@ -478,10 +518,17 @@ function widgetHTML(w) {
       return `<div class="widget wide"><span class="widget-text">${esc(w.text ?? w.label ?? '')}</span></div>`;
     case 'html':
       // A sandboxed frame without access to the page: its scripts can only post {value} to set the widget.
-      return `<div class="widget wide"><iframe class="widget-html" sandbox="allow-scripts" data-widget-frame="${id}" style="height:${w.height ?? 120}px" srcdoc="${esc(w.html ?? '')}" title="${esc(label)}"></iframe></div>`;
+      // Context menus inside this opaque-origin document do not bubble to the editor.
+      return `<div class="widget wide"><iframe class="widget-html" sandbox="allow-scripts" data-widget-frame="${id}" style="height:${w.height ?? 120}px" srcdoc="${esc(widgetFrameDocument(w.html ?? ''))}" title="${esc(label)}"></iframe></div>`;
     default:
       return `<div class="widget${name ? '' : ' bare'}">${name}<input type="text" ${attrs} placeholder="${esc(w.placeholder ?? '')}" value="${esc(w.value ?? '')}"></div>`;
   }
+}
+
+function widgetFrameDocument(html) {
+  const suppress = `<script>window.addEventListener('contextmenu', function(event) { event.preventDefault(); }, true);</script>`;
+  const doctype = /^\s*<!doctype\s+[^>]*>/i.exec(html);
+  return doctype ? doctype[0] + suppress + html.slice(doctype[0].length) : suppress + html;
 }
 
 /** The widgets of a node (or, on a Library node placed on the canvas, of the nodes inside it), one block for each node that has some. */
@@ -632,8 +679,18 @@ function drawFrames() {
       template.innerHTML = markup;
       const next = template.firstElementChild;
       next.renderMarkup = markup;
-      element ? element.replaceWith(next) : container.append(next);
-      element = next;
+      const created = !element;
+      const foldedChanged = element && element.classList.contains('folded') !== next.classList.contains('folded');
+      if (element) {
+        element.className = next.className;
+        element.style.cssText = next.style.cssText;
+        element.replaceChildren(...next.childNodes);
+        element.renderMarkup = markup;
+      } else {
+        container.append(next);
+        element = next;
+      }
+      if (created || foldedChanged) animateGraphElement(element, created ? 'enter' : 'reshape');
       W.frameElements.set(id, element);
       changed.push([id, element]);
       W.sceneRevision++;
@@ -641,7 +698,7 @@ function drawFrames() {
   }
   for (const [id, element] of W.frameElements)
     if (!alive.has(id)) {
-      element.remove();
+      retireGraphElement(element);
       W.frameElements.delete(id);
       W.pos.delete('frame:' + id);
       if (!W.elements.has('complex:' + id)) forgetSockets('complex:' + id);
