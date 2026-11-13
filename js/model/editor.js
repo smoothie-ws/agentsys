@@ -41,16 +41,12 @@ class Editor {
   }
   /** Follows Complex Node ports down to the node ports they are bound to: [[node ID, port ID], ...] (an unbound port stays on the wrapper; only an input is bound to several). */
   static resolveAll(nodes, nodeId, portId, direction, seen = new Set()) {
-    const address = key(nodeId, portId);
-    if (seen.has(address)) throw bad('Cyclic interface binding');
-    const node = nodes.get(nodeId);
-    if (node.kind !== 'complex') return [[nodeId, portId]];
-    const item = node.interface[direction].find(p => p.id === portId);
-    if (!item) throw bad('Complex Node port not found');
-    if (!item.bound?.length) return [[nodeId, portId]];
-    return item.bound.flatMap(b =>
-      Editor.resolveAll(nodes, b.node_id, b.port_id, direction, new Set(seen).add(address))
-    );
+    try {
+      return resolvePort(nodes, nodeId, portId, direction, seen);
+    } catch (error) {
+      // Graph edits report invalid bindings as bad requests; the resolver itself is shared with the interpreter.
+      throw bad(error.message);
+    }
   }
   /** The first port a Complex Node port is bound to (the only one of an output). */
   static resolve(nodes, nodeId, portId, direction) {

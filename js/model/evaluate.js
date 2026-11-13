@@ -1,5 +1,23 @@
 // The current graph is indexed for port lookup. Nodes are interpreted on demand; the graph stays live.
 'use strict';
+/**
+ * Follows Complex Node ports down to the node ports they are bound to: [[node ID, port ID], ...].
+ * One unbound port stays on the wrapper; only an input may be bound to several ports. The editor
+ * wraps its errors as ApiError; the interpreter uses the messages as they are. The Worker source
+ * carries this function (js/backend/scripts.js), so it must not use anything outside its arguments.
+ */
+function resolvePort(nodes, nodeId, portId, direction, seen = new Set()) {
+  const address = nodeId + '|' + portId;
+  if (seen.has(address)) throw Error('Cyclic interface binding');
+  const node = nodes.get(nodeId);
+  if (!node) throw Error('Node not found: ' + nodeId);
+  if (node.kind !== 'complex') return [[nodeId, portId]];
+  const item = node.interface[direction].find(p => p.id === portId);
+  if (!item) throw Error('Complex Node port not found: ' + portId);
+  return item.bound?.length
+    ? item.bound.flatMap(b => resolvePort(nodes, b.node_id, b.port_id, direction, new Set(seen).add(address)))
+    : [[nodeId, portId]];
+}
 function createGraphView(document, {context = {}} = {}) {
   const key = (node, port) => node + '|' + port;
   const isSignal = type => type === 'signal',
@@ -14,21 +32,8 @@ function createGraphView(document, {context = {}} = {}) {
       new Map(
         [...s.nodes, ...s.complex.map(c => ({...c, id: 'complex:' + c.id, kind: 'complex'}))].map(n => [n.id, n])
       ),
-    resolveAll(nodes, id, port, direction, seen = new Set()) {
-      const k = key(id, port);
-      if (seen.has(k)) throw Error('Cyclic interface binding');
-      const node = nodes.get(id);
-      if (!node) throw Error('Node not found: ' + id);
-      if (node.kind !== 'complex') return [[id, port]];
-      const item = node.interface[direction].find(p => p.id === port);
-      if (!item) throw Error('Port not found: ' + port);
-      return item.bound?.length
-        ? item.bound.flatMap(b => Editor.resolveAll(nodes, b.node_id, b.port_id, direction, new Set(seen).add(k)))
-        : [[id, port]];
-    },
-    resolve(nodes, id, port, direction) {
-      return this.resolveAll(nodes, id, port, direction)[0];
-    },
+    resolveAll: (nodes, id, port, direction, seen = new Set()) => resolvePort(nodes, id, port, direction, seen),
+    resolve: (nodes, id, port, direction) => resolvePort(nodes, id, port, direction)[0],
   };
   class TypeTable {
     constructor(list) {

@@ -73,6 +73,7 @@ ${WORKER_FREEZE}
 const AsyncFunction=Object.getPrototypeOf(async function(){}).constructor;
 ${displayPart}
 ${displayText}
+${resolvePort}
 ${createGraphView}
 ${createGraphInterpreter}
 const pending=new Map(),gate={paused:false,waiters:[]};let serial=0,runtime;
