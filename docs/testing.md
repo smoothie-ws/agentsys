@@ -4,6 +4,8 @@
 
 `python tests/browser_suite.py` runs the browser scenarios with Playwright and Chromium (set `PLAYWRIGHT_CHROMIUM_EXECUTABLE` if needed). Name scenarios to run a subset, e.g. `python tests/browser_suite.py smoke`.
 
+`node tools/smoke.js --mobile` is the dependency-free alternative: it starts a temporary server with a copy of `data/`, opens Dashboard, Projects, Library, Settings, Plugins, a project and its workflow canvas in a local Chrome or Edge through the DevTools protocol, checks that each page rendered without console errors, and saves screenshots to `node_modules/.cache/agentsys/smoke`. Pass `--url` to reuse a running server, `--chrome` to choose the executable, and `--out` to choose the screenshot folder. It never writes to the real data folder.
+
 - `browser_smoke.py`: navigation, Library, Custom Nodes, tabs, wire styles and the main editor flows.
 - `browser_execution_ui.py`: Run/Pause/Stop, state and previews across tabs and reloads, action menus.
 - `browser_plugins.py`: the Plugins page.
