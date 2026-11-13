@@ -57,4 +57,6 @@ Stop terminates the host and aborts its outstanding checked network operations. 
 
 Ordinary execution has no configured Script timeout, chain-depth, concurrency, result-size or total-result quota. Infinite synchronous code can occupy the host until Stop terminates it. Hardware, JavaScript and storage/transport behavior still determine what can be represented. Permissions and graph/JSON validity remain enforced.
 
+An idle runtime may be released after ten minutes without a signal, or when more than sixteen workflows are idle: its host is closed and the next read rebuilds `state`, `outputs`, `displays` and errors from the saved JSON. Active, paused, stopping or saving runtimes are kept. A release never discards durable values, and Run after it starts a fresh host initialized from them.
+
 Removing a node or stopping its host rejects its late state and API writes. Stop acts on the workflow's shared Worker, so it ends every signal call of that workflow.

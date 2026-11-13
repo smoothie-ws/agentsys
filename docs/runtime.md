@@ -25,6 +25,8 @@ The canvas uses white for active work and briefly holds short passes before sett
 
 JSON mutations and previews are sent to the host and writes are serialized/coalesced. A call with `wait: true` and Stop wait for outstanding persistence. On restart, active node marks become stopped; no pending calls are replayed. The saved pause gate is retained. Output and preview entries for deleted nodes are pruned.
 
+A failed write keeps the change dirty and is reported as `storage_error`; the next save writes the current state. `wait: true` reports that error instead of rejecting the dispatch. Idle runtimes may be released (see [engine](engine.md)); the saved runtime is what a later read restores.
+
 Workflow/project export includes `document.runtime` with `{state, outputs, displays}`. Import restores it. Duplication copies shared JSON and remaps node IDs in output/preview maps. Execution stacks, live globals, timers and external requests are not exportable graph data. Undo/redo changes the graph definition and does not roll back runtime state or external actions.
 
 Storage failures are reported by awaited requests or in `storage_error`.

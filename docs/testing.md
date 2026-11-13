@@ -12,3 +12,5 @@
 Interpreter tests cover concurrent Run signals, live edits while paused, Stop of synchronous code, restart persistence, JSON export/import and chains deeper than a thousand nodes. `graph-primitives.test.js` covers the Graph nodes through the real runtime, including concurrent child instances and permission checks. A focused run: `node --test tests/execution.test.js`.
 
 Test behavior, not appearance: no pixel, gradient or timing assertions.
+
+`node tools/bench.js` measures the graph read sizes, the runtime read, a 5 000-assignment Script loop, database commits, idle runtimes and Library type lookup against a fresh in-memory backend; `--json` prints the same numbers for before/after records. The baseline and the measurement method are in [baseline](baseline.md).

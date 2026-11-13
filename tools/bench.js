@@ -56,6 +56,10 @@ function directorySize(dir) {
   return {bytes, files};
 }
 
+// The bench measures the backend call itself: unlike tests/harness.js's api(), it does not copy the
+// result out of the vm realm (the editor calls Backend.request in-process, with no JSON round trip).
+const backendGet = (app, path, query = {}) => app.Backend.request('GET', path, {body: {}, query});
+
 async function addTypes(app, project) {
   await app.api('PUT', `projects/${project.id}/types`, {types: Object.values(TYPES)});
 }
@@ -121,6 +125,15 @@ function filesUnder(dir, extension) {
   return found;
 }
 
+async function groupedGraph(app, size = 800, groupSize = 4) {
+  const {project, ids} = await makeGraph(app, size, 'Bench grouped');
+  const groups = [];
+  for (let i = 0; i < ids.length; i += groupSize)
+    groups.push({id: 'g' + i, name: 'Group ' + i, members: ids.slice(i, i + groupSize)});
+  await app.api('PUT', `projects/${project.id}/groups`, {groups});
+  return {project, path: `projects/${project.id}/workflow`};
+}
+
 async function main() {
   const json = process.argv.includes('--json');
   const store = memoryStore();
@@ -131,14 +144,17 @@ async function main() {
       const {project} = await makeGraph(app, size, `Bench ${size}`);
       report.workflow_get[size] = await timed(
         READS,
-        () => app.api('GET', `projects/${project.id}/workflow`)
+        () => backendGet(app, `projects/${project.id}/workflow`)
       );
     }
 
     const {project: large, ids} = await makeGraph(app, 800, 'Bench runtime');
     const path800 = `projects/${large.id}/execution`;
-    await app.api('GET', path800);
-    report.execution_get[800] = await timed(RUNTIME_READS, () => app.api('GET', path800));
+    await backendGet(app, path800);
+    report.execution_get[800] = await timed(RUNTIME_READS, () => backendGet(app, path800));
+
+    const grouped = await groupedGraph(app);
+    report.grouped_get = await timed(5, () => backendGet(app, grouped.path));
 
     // 2 500 assignments to context.state and 2 500 to a Script output: five wait:true dispatches,
     // the median is the measurement.
@@ -233,6 +249,7 @@ async function main() {
     console.log(`  ${pad(size + ' nodes', 10)} ${pad(item.median + ' ms', 10)}  ${pad(item.per + ' ms/read', 14)}`);
   }
   console.log(`\nGET execution (${RUNTIME_READS} reads, 800 nodes): ${report.execution_get[800].ms} ms (${report.execution_get[800].per} ms/read)`);
+  console.log(`\nGET workflow (800 nodes, 200 groups): ${report.grouped_get.median} ms/read`);
   console.log(
     `\nScript loop (${report.loop.assignments} assignments, median of ${report.loop.runs.length}): ${report.loop.ms} ms, ${report.loop.commits} DB commits`
   );
