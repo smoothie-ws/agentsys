@@ -171,12 +171,18 @@ class Call {
   }
   /** Whether a workflow or the editor of a Custom Node mentions the Library type `id`. */
   async typeInUse(id) {
-    const mentions = value => JSON.stringify(value ?? null).includes('t:' + id);
-    for (const project of await this.projects())
-      for (const wf of project.workflows) if (mentions(await this.ctx.get('wf:' + wf.id, emptyDoc()))) return true;
-    for (const r of await this.ctx.get('resources', []))
-      if (mentions(await this.ctx.get('wf:lib-' + r.id, null))) return true;
-    return false;
+    // The used ids are collected once per request: the caller checks many types against the same data.
+    if (!this.usedTypes) {
+      const used = new Set();
+      const collect = value => {
+        for (const match of JSON.stringify(value ?? null).matchAll(/"t:([A-Za-z0-9_-]+)"/g)) used.add(match[1]);
+      };
+      for (const project of await this.projects())
+        for (const wf of project.workflows) collect(await this.ctx.get('wf:' + wf.id, emptyDoc()));
+      for (const r of await this.ctx.get('resources', [])) collect(await this.ctx.get('wf:lib-' + r.id, null));
+      this.usedTypes = used;
+    }
+    return this.usedTypes.has(id);
   }
   /**
    * The types of the Library are the types the Custom Nodes define, kept once, in one list. After the Library's nodes changed (saved by the

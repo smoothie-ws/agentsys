@@ -141,22 +141,41 @@ function createGraphView(document, {context = {}} = {}) {
   function instanceScopes(document) {
     const scopes = new Map();
     const composites = [...document.complex].sort((a, b) => b.depth - a.depth);
+    // One pass over the groups: the closest copy around each node, its data interface, and the
+    // placed nodes that grant it permissions (deepest first, as before).
+    const closest = new Map(),
+      placedAround = new Map(),
+      shared = new Map();
+    for (const c of composites) {
+      shared.set(c.id, {
+        group: c.id,
+        instance_id: 'complex:' + c.id,
+        widgets: c.members.filter(m => !m.startsWith('complex:') && document.widgets?.[m]?.length),
+        // What a Script of the copy reads: every data input of the node. What it writes: the data outputs no node inside feeds. What it fires
+        // with emit(name): the signal outputs no node inside feeds.
+        inputs: c.interface.inputs.filter(p => !isSignal(p.type)),
+        outputs: c.interface.outputs.filter(p => !isSignal(p.type) && !p.bound?.length),
+        signals: c.interface.outputs.filter(p => isSignal(p.type) && !p.bound?.length),
+      });
+      for (const member of c.members) {
+        if (!closest.has(member)) closest.set(member, c.id);
+        if (c.source) {
+          const placed = placedAround.get(member) ?? [];
+          placed.push(c);
+          placedAround.set(member, placed);
+        }
+      }
+    }
     for (const node of document.nodes) {
-      const c = composites.find(cx => cx.members.includes(node.id));
-      if (c)
-        scopes.set(node.id, {
-          group: c.id,
-          instance_id: 'complex:' + c.id,
-          widgets: c.members.filter(m => !m.startsWith('complex:') && document.widgets?.[m]?.length),
-          // What a Script of the copy reads: every data input of the node. What it writes: the data outputs no node inside feeds. What it fires
-          // with emit(name): the signal outputs no node inside feeds.
-          inputs: c.interface.inputs.filter(p => !isSignal(p.type)),
-          outputs: c.interface.outputs.filter(p => !isSignal(p.type) && !p.bound?.length),
-          signals: c.interface.outputs.filter(p => isSignal(p.type) && !p.bound?.length),
-          resource_id: composites.find(cx => cx.source && cx.members.includes(node.id))?.source.resource_id ?? null,
-          // The permissions of every placed node around it, the closest first: it can do only what all of them allow.
-          grant_chain: composites.filter(cx => cx.source && cx.members.includes(node.id)).map(cx => cx.grants ?? []),
-        });
+      const group = closest.get(node.id);
+      if (!group) continue;
+      const placed = placedAround.get(node.id) ?? [];
+      scopes.set(node.id, {
+        ...shared.get(group),
+        resource_id: placed[0]?.source.resource_id ?? null,
+        // The permissions of every placed node around it, the closest first: it can do only what all of them allow.
+        grant_chain: placed.map(cx => cx.grants ?? []),
+      });
     }
     return scopes;
   }

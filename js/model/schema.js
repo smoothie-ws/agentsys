@@ -131,7 +131,12 @@ const validBound = list =>
   new Set(list.map(b => b.node_id + '|' + b.port_id)).size === list.length;
 
 /** Signal ports come first, in their own order; data ports follow. */
-const signalsFirst = ports => [...ports.filter(p => p.type === 'signal'), ...ports.filter(p => p.type !== 'signal')];
+const signalsFirst = ports => {
+  const signals = [],
+    data = [];
+  for (const p of ports) (p.type === 'signal' ? signals : data).push(p);
+  return signals.concat(data);
+};
 /** Checks a list of ports. Signal ports are moved to the front; names keep their declared spelling. */
 function checkPorts(items, {custom = false, types = NO_TYPES} = {}) {
   if (!Array.isArray(items) || items.length > MAX_PORTS || items.some(item => !isObject(item)))
