@@ -91,10 +91,16 @@ async function makeGraph(app, size, name) {
 
 async function timed(times, work, warmup = true) {
   if (warmup) await work(0);
+  const samples = [];
   const started = performance.now();
-  for (let i = 0; i < times; i++) await work(i);
+  for (let i = 0; i < times; i++) {
+    const at = performance.now();
+    await work(i);
+    samples.push(performance.now() - at);
+  }
   const ms = performance.now() - started;
-  return {times, ms: round(ms), per: round(ms / times)};
+  samples.sort((a, b) => a - b);
+  return {times, ms: round(ms), per: round(ms / times), median: round(samples[Math.floor(samples.length / 2)])};
 }
 
 const round = value => Math.round(value * 1000) / 1000;
@@ -134,23 +140,30 @@ async function main() {
     await app.api('GET', path800);
     report.execution_get[800] = await timed(RUNTIME_READS, () => app.api('GET', path800));
 
-    // 2 500 assignments to context.state and 2 500 to a Script output: one wait:true dispatch.
+    // 2 500 assignments to context.state and 2 500 to a Script output: five wait:true dispatches,
+    // the median is the measurement.
     const loopProject = await app.api('POST', 'projects', {name: 'Bench loop'});
     const writer = await fn(app, loopProject.id, {}, {
       code: 'for(let i=0;i<2500;i++){context.state.count=i;node.output.value=i;}',
       outputs: ['value'],
     });
-    store.stats.commits = 0;
-    const loopStarted = performance.now();
-    const loopResult = await app.api('POST', `projects/${loopProject.id}/execution`, {
-      node_ids: [writer.id],
-      wait: true,
-    });
+    const loopTimes = [];
+    for (let i = 0; i < 5; i++) {
+      store.stats.commits = 0;
+      const loopStarted = performance.now();
+      const loopResult = await app.api('POST', `projects/${loopProject.id}/execution`, {
+        node_ids: [writer.id],
+        wait: true,
+      });
+      loopTimes.push(round(performance.now() - loopStarted));
+      if (loopResult.dispatch_status !== 'completed') throw Error('loop dispatch ' + loopResult.dispatch_status);
+    }
+    const sorted = [...loopTimes].sort((a, b) => a - b);
     report.loop = {
       assignments: 5000,
-      ms: round(performance.now() - loopStarted),
+      ms: sorted[Math.floor(sorted.length / 2)],
+      runs: loopTimes,
       commits: store.stats.commits,
-      status: loopResult.dispatch_status,
     };
 
     // Idle runtimes: visit 20 workflows (one per project) and count what the server kept.
@@ -159,7 +172,41 @@ async function main() {
       const project = await app.api('POST', 'projects', {name: 'Idle visit ' + i});
       await app.api('GET', `projects/${project.id}/execution`);
     }
-    report.runtimes = {visited: IDLE_VISITS, before, live: app.eval('GRAPH_RUNTIMES.size')};
+    report.runtimes = {
+      visited: IDLE_VISITS,
+      before,
+      live: app.eval('GRAPH_RUNTIMES.size'),
+      non_idle: app.eval(
+        `[...GRAPH_RUNTIMES.values()].filter(e=>e.pending.size||e.paused||e.detached.size||e.stopping||e.saving||e.dirty||e.deleted)
+          .map(e=>({workflow:e.workflow,pending:e.pending.size,paused:e.paused,saving:!!e.saving,dirty:e.dirty,stopping:!!e.stopping}))`
+      ),
+    };
+
+    // Library type cleanup checks many unused ids against every workflow. It should read the
+    // workflows once, not once per id (V12).
+    const typeIds = Array.from({length: 20}, (_, i) => 'f'.repeat(31) + i.toString(16)),
+      unusedIds = Array.from({length: 20}, (_, i) => 'e'.repeat(31) + i.toString(16));
+    for (let i = 0; i < 6; i++) {
+      const project = await app.api('POST', 'projects', {name: 'Typed ' + i});
+      await app.api('POST', `projects/${project.id}/typed-nodes`, {
+        node_type: 'custom',
+        config: {
+          ...nodes.script(typeIds.map((id, j) => `const ref${i}_${j} = "${'t:' + id}";`).join('\n')),
+          title: 'Typed ' + i,
+        },
+        position: {x: 0, y: 0},
+      });
+    }
+    report.type_in_use = {
+      ids: unusedIds.length,
+      workflows: 6,
+      ms: round(
+        await app.eval(
+          `(async()=>{const ids=${JSON.stringify(unusedIds)};const call=new Call('GET',{},{workflow_id:null},null);
+            const started=Date.now();for(const id of ids)await call.typeInUse(id);return Date.now()-started;})()`
+        )
+      ),
+    };
 
     const data = directorySize(path.join(root, 'data'));
     report.data = {bytes: data.bytes, files: data.files, human: (data.bytes / 1024 / 1024).toFixed(1) + ' MB'};
@@ -180,13 +227,18 @@ async function main() {
   }
   const pad = (value, width) => String(value).padStart(width);
   console.log(`AgentSys bench (Node ${report.node})`);
-  console.log('\nGET workflow (10 reads, one warm-up):');
+  console.log('\nGET workflow (10 reads, one warm-up; median read):');
   for (const size of SIZES) {
     const item = report.workflow_get[size];
-    console.log(`  ${pad(size + ' nodes', 10)} ${pad(item.ms + ' ms', 10)}  ${pad(item.per + ' ms/read', 14)}`);
+    console.log(`  ${pad(size + ' nodes', 10)} ${pad(item.median + ' ms', 10)}  ${pad(item.per + ' ms/read', 14)}`);
   }
   console.log(`\nGET execution (${RUNTIME_READS} reads, 800 nodes): ${report.execution_get[800].ms} ms (${report.execution_get[800].per} ms/read)`);
-  console.log(`\nScript loop (${report.loop.assignments} assignments): ${report.loop.ms} ms, ${report.loop.commits} DB commits, ${report.loop.status}`);
+  console.log(
+    `\nScript loop (${report.loop.assignments} assignments, median of ${report.loop.runs.length}): ${report.loop.ms} ms, ${report.loop.commits} DB commits`
+  );
+  console.log(
+    `Library type lookup (${report.type_in_use.ids} ids over ${report.type_in_use.workflows} workflows): ${report.type_in_use.ms} ms`
+  );
   console.log(`Idle runtimes after ${report.runtimes.visited} workflow visits: ${report.runtimes.live} (was ${report.runtimes.before})`);
   console.log(`data/: ${report.data.human} in ${report.data.files} files`);
   console.log(
