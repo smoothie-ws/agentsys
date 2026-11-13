@@ -116,10 +116,15 @@
 
 ## 6. Проверки
 
-- `npm test` три раза подряд: **245 pass / 0 fail**, 10,1 / 9,5 / 9,5 с
-  (логи: `node_modules/.cache/agentsys/final-test-{1,2,3}.log`).
-- `node tools/bench.js`: финальные числа в таблице; JSON —
-  `node_modules/.cache/agentsys/cmp4-after-*.json`.
+- `npm test` три раза подряд: **245 pass / 0 fail**, 13,5 / 11,6 / 10,2 с
+  (логи: `node_modules/.cache/agentsys/final-test-{1,2,3}.log`). На загруженной
+  машине время колеблется; в тихом окне те же тесты шли 9,5–10,1 с, отдельный
+  четвёртый прогон — 11,2 с. Цель ≤11 с выдерживается не на каждой загрузке.
+- `node tools/bench.js`: сравнимые числа в таблице; JSON —
+  `node_modules/.cache/agentsys/cmp4-after-*.json`. Финальный прогон при
+  `LoadPercentage` ≈73 % дал более высокие абсолютные значения (800 узлов —
+  34,9 мс, цикл — 87 мс), поэтому для выводов использованы замеры до/после в
+  одинаковых тихих условиях, а не этот прогон.
 - Стресс (ad-hoc, workers): 1 100 сигналов в одной цепи — `count=1100`,
   `completed`, 0 ошибок; 50 параллельных Run — `started=50`, `finished=50`,
   `idle`; после shutdown `terminated=2`, `exited=2`, RSS 291 → 188 МБ,
