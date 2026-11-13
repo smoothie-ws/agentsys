@@ -15,13 +15,13 @@ body.nav-joined {
 }
 
 .nav-joined #sidebar {
-  --edge: 0.4rem;
+  --edge: 0;
   --join: var(--join-sidebar);
   --own: var(--j-1);
   background: none;
   border-radius: 0;
 }
-.nav-joined.sidebar-hidden #sidebar { --edge: 0.4rem; }
+.nav-joined.sidebar-hidden #sidebar { --edge: 0; }
 .nav-joined #subnav {
   --edge: 0.65rem;
   --join: var(--join-subnav);
@@ -305,8 +305,9 @@ body.nav-joined #mobile-secondary > .nav-pill {
    enough room for both full-size corners. */
 @media (min-width: 761px) {
   body.nav-joined { --nav-radius: var(--join-r); }
-  body.nav-joined #topstrip > #toggle-subnav { margin-left: calc(8px + 0.2rem); }
-  .nav-joined .sidebar-item > a > :is(svg, .brand-mark) { left: calc(20px - 0.2rem); }
+  /* The toggle sits on the rail's icon column, like in the flat rail. */
+  body.nav-joined #topstrip > #toggle-subnav { margin-left: 8px; }
+  .nav-joined .sidebar-item > a > :is(svg, .brand-mark) { left: 20px; }
   .nav-joined .sidebar-item > a { padding-left: calc(56px - 0.2rem - 8px); }
   .nav-joined #sidebar,
   .nav-joined.sidebar-hidden #sidebar { padding-right: 0; }
@@ -344,8 +345,8 @@ body.nav-joined #mobile-secondary > .nav-pill {
     position: absolute;
     top: 50%;
     /* Match the space around a 32px highlight in the folded 56px rail. */
-    left: calc((56px - 0.4rem - 32px) / 2);
-    right: calc((56px - 0.4rem - 32px) / 2);
+    left: calc((56px - 32px) / 2);
+    right: calc((56px - 32px) / 2);
     height: calc(100% - 10px);
     border-radius: 16px;
     transform: translateY(-50%);

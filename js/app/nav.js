@@ -16,6 +16,7 @@ const applyNavJoined = (on, layoutKey = '') => {
 
 /** Which primary section owns a route; Dashboard contains its overview and API. */
 function sectionOf(route) {
+  if (route.page === 'ext') return 'ext:' + route.plugin;
   if (route.project?.startsWith('lib-')) return 'library'; // a Custom Node is edited as a workflow
   if (route.project || route.page === 'projects') return 'projects';
   return {resources: 'library', plugins: 'plugins', settings: 'settings', api: 'home'}[route.page] || 'home';
@@ -28,6 +29,11 @@ const SECTION_TITLES = {
   settings: 'Settings',
   api: 'API reference',
 };
+/** A plugin page's section is named after its plugin. */
+const sectionTitle = section =>
+  section.startsWith('ext:') && typeof Extensions !== 'undefined'
+    ? Extensions.sectionTitle(section)
+    : SECTION_TITLES[section];
 
 // ----- the second panel -----
 /** The second panel's content: a section fills it from its tree (below), Settings from its page (`mount`). */
@@ -75,7 +81,7 @@ function navRow(n, active) {
     here = n.key === active;
   const row = `<div class="subnav-row ${here ? 'active' : ''}" data-key="${esc(n.key)}"${n.drop !== undefined ? ` data-drop-folder="${esc(n.drop)}"` : ''}${n.drag ? ` draggable="true" data-drag="${esc(n.drag)}"` : ''}>${
     group
-      ? `<button type="button" class="subnav-toggle" aria-label="Show or hide" aria-expanded="${open}">${icon('chevron')}</button>`
+      ? `<button type="button" class="subnav-toggle" aria-label="Show or hide ${esc(n.label)}" aria-expanded="${open}">${icon('chevron')}</button>`
       : ''
   }${n.href ? `<a href="${esc(n.href)}" data-link title="${esc(n.label)}" ${here ? 'aria-current="page"' : ''}>${icon(n.icon)}<span>${esc(n.label)}</span></a>` : `<div class="subnav-static">${icon(n.icon)}<span>${esc(n.label)}</span></div>`}${n.menu ? `<button type="button" class="icon subnav-menu" data-menu="${esc(n.menu)}" aria-label="Actions of ${esc(n.label)}">${icon('dots')}</button>` : ''}</div>`;
   if (!group) return row;
@@ -87,7 +93,6 @@ function navRow(n, active) {
 function setGroupOpen(group, open, remember = true) {
   group.classList.toggle('open', open);
   $(':scope > .subnav-row > .subnav-toggle', group)?.setAttribute('aria-expanded', String(open));
-  $(':scope > .subnav-row > [data-toggle]', group)?.setAttribute('aria-expanded', String(open));
   if (remember) {
     open ? navOpen.add(group.dataset.group) : navOpen.delete(group.dataset.group);
   }
@@ -238,6 +243,7 @@ const NAV_TREES = {
   },
 };
 function pageMenu(route = app.route || {}) {
+  if (route.page === 'ext') return '';
   if (route.page === 'resources' && !route.section) return '';
   if (route.page === 'resources' && route.section !== 'nodes') return 'collection:' + route.section;
   if (route.page === 'resources')
@@ -248,9 +254,23 @@ function pageMenu(route = app.route || {}) {
 }
 let shownSection = '',
   shownTarget = '';
+/** The second panel of a plugin section: the pages that plugin registered. */
+function extensionTree(route) {
+  if (typeof Extensions === 'undefined') return null;
+  return {
+    active: 'x:' + route.id,
+    rows: () =>
+      Extensions.pagesOf(route.plugin).map(page => ({
+        key: 'x:' + page.id,
+        label: page.title,
+        icon: page.icon || 'plug',
+        href: Extensions.pageHref(route.plugin, page.id),
+      })),
+  };
+}
 function renderSubnav(route) {
   const section = sectionOf(route),
-    tree = NAV_TREES[section]?.(route),
+    tree = section.startsWith('ext:') ? extensionTree(route) : NAV_TREES[section]?.(route),
     target = Tabs.keyOf(route) + (route.page === 'api' ? ':' + (routeQuery().get('call') || '') : ''),
     changed = section !== shownSection || target !== shownTarget;
   $('#subnav').hidden = false;
@@ -259,12 +279,13 @@ function renderSubnav(route) {
   }
   shownSection = section;
   shownTarget = target;
-  if (!tree) return Subnav.set(section, {title: SECTION_TITLES[section] || 'Navigation'});
+  const title = sectionTitle(section) || 'Navigation';
+  if (!tree) return Subnav.set(section, {title});
   if (changed && section === 'projects' && route.project) navOpen.add('p:' + route.project);
   const rows = tree.rows();
   Subnav.set(section, {
-    title: SECTION_TITLES[section],
-    body: `<nav class="subnav-tree" aria-label="${esc(SECTION_TITLES[section])}">${rows.map(n => navRow(n, tree.active)).join('')}${rows.length ? '' : `<p class="muted small">Nothing here yet.</p>`}</nav>`,
+    title,
+    body: `<nav class="subnav-tree" aria-label="${esc(title)}">${rows.map(n => navRow(n, tree.active)).join('')}${rows.length ? '' : `<p class="muted small">Nothing here yet.</p>`}</nav>`,
   });
 }
 
@@ -438,8 +459,11 @@ $('#subnav-body').addEventListener('scroll', () => {
 function renderSidebar() {
   const route = app.route || {},
     section = sectionOf(route);
+  if (typeof Extensions !== 'undefined') Extensions.renderSidebar();
   for (const link of $$('#sidebar [data-section], #brand')) {
-    const on = link.dataset.section === section;
+    const on =
+      link.dataset.section === section &&
+      (!link.dataset.extPage || link.dataset.extPage === (route.page === 'ext' ? route.id : ''));
     link.classList.toggle('active', on);
     link.closest('.sidebar-item')?.classList.toggle('active', on);
     if (on) link.setAttribute('aria-current', 'page');
@@ -469,6 +493,14 @@ async function menuItems(spec, owner) {
   });
 }
 async function resolveMenuItems(spec, owner) {
+  const items = await resolveBuiltinMenuItems(spec, owner);
+  const extra = typeof Extensions === 'undefined' ? [] : Extensions.menuItems(spec);
+  if (!extra.length) return items;
+  if (!items?.length) return extra;
+  return [...items, null, ...extra];
+}
+/** What the application itself puts in a menu; plugins add theirs after it (see Extensions.menuItems). */
+async function resolveBuiltinMenuItems(spec, owner) {
   const colon = spec.indexOf(':'),
     type = spec.slice(0, colon),
     arg = spec.slice(colon + 1),
@@ -610,7 +642,7 @@ document.addEventListener('contextmenu', event => {
     .catch(fail);
 });
 $('#subnav').addEventListener('click', event => {
-  const toggle = event.target.closest('.subnav-toggle, [data-toggle]');
+  const toggle = event.target.closest('.subnav-toggle');
   if (!toggle) return;
   event.preventDefault();
   const group = toggle.closest('.subnav-group');

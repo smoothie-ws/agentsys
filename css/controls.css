@@ -168,8 +168,13 @@ textarea:hover {
 input:focus,
 select:focus,
 textarea:focus {
-  outline: none;
   background: color-mix(in srgb, var(--accent) 9%, var(--hover));
+}
+/* The browser's own ring stays away from mouse clicks; the keyboard ring (tokens.css) remains. */
+input:focus:not(:focus-visible),
+select:focus:not(:focus-visible),
+textarea:focus:not(:focus-visible) {
+  outline: none;
 }
 input::placeholder,
 textarea::placeholder {

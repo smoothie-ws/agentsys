@@ -352,12 +352,10 @@ function libraryList(view, route) {
     items = app.resources.filter(r => (r.payload.folder || '') === folder);
   if (folder && !app.nodeFolders.includes(folder))
     return void (view.innerHTML = `<div class="page">${notFound('Group', NODES_PATH, 'Back to Nodes')}</div>`);
-  const chain = folder.split('/').map((name, i, parts) => [name, folderHref(parts.slice(0, i + 1).join('/'))]);
   const content = path =>
     app.resources.filter(r => (r.payload.folder || '') === path).map(r => [resourceIcon(r), r.name]);
   const spec = folder ? 'folder:' + folder : 'nodes:';
   view.innerHTML = `<div class="page">${pageHead({
-    crumbs: [['Library', '/library'], ...(folder ? [['Nodes', NODES_PATH], ...chain.slice(0, -1)] : [])],
     title: esc(folder ? baseName(folder) : 'Nodes'),
     sub: folder ? '' : 'Reusable Custom Nodes.',
     menu: spec,
@@ -429,7 +427,7 @@ async function pluginLibrarySection(view, route) {
       'Delete'
     );
   app.libraryCollection = {section: section.id, items, edit, remove};
-  view.innerHTML = `<div class="page">${pageHead({title: esc(section.title), sub: esc(section.description || ''), crumbs: [['Library', '/library']], menu: 'collection:' + section.id})}
+  view.innerHTML = `<div class="page">${pageHead({title: esc(section.title), sub: esc(section.description || ''), menu: 'collection:' + section.id})}
     <div class="cards">${items
       .map(item =>
         card({

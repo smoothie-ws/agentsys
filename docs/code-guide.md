@@ -7,7 +7,7 @@
 - `js/backend/scripts.js`: Worker isolation and the checked Script bridge.
 - `js/backend/builtin-nodes.js`, `graph-nodes.js`, `routes-builtin.js`: the built-in Library (flow, values, Graph nodes).
 - `js/app`, `js/pages`, `js/canvas`, `js/inspector`: application shell, pages and the graph editor.
-- `plugin-host.js`, `js/backend/routes-plugins.js`, `js/pages/plugins.js`, `data/plugins/`: the plugin host, its API routes, the Plugins page and the bundled example.
+- `plugin-host.js`, `js/backend/routes-plugins.js`, `js/pages/plugins.js`, `js/app/extensions.js`, `js/pages/ext.js`, `data/plugins/`: the server plugin host, its API routes, the Plugins page, the browser extension host and plugin pages, and the bundled examples (AI and Hello UI).
 - `server.js`, `headless.js`: file-backed HTTP hosting and the same backend loaded in Node.
 
 All browser scripts are plain globals loaded by `index.html`; that list is also what `headless.js` loads for tests, so a new file is registered in one place.

@@ -29,6 +29,10 @@
 //
 // `exports.settings = [{key, label, type, default, options, help}]` makes a form on the plugin's page. Types: text, textarea,
 // password (never sent back to the page), number, boolean, select (give `options`). The values are saved by the host.
+//
+// A plugin may also carry `client.js`: a browser module the page loads with `activate(api)` / `deactivate()` and the
+// official interface tools (`api.ui`, `api.commands`) described in docs/plugins.md. The server serves its source; the
+// page keeps what it registered and removes it when the plugin stops or the folder is reloaded.
 const fs = require('node:fs');
 const path = require('node:path');
 
@@ -143,6 +147,7 @@ function createPluginHost({dir, backend, log = (...args) => console.error(...arg
     plugin.title = loaded.title || plugin.id;
     plugin.description = loaded.description || '';
     plugin.icon = /^[a-z][a-z0-9-]*$/.test(loaded.icon ?? '') ? loaded.icon : 'plug';
+    plugin.client = fs.existsSync(path.join(dir, plugin.id, 'client.js'));
     plugin.settings = checkSchema(loaded.settings);
     if (typeof loaded.start !== 'function') throw new Error('main.js must export start(api)');
     plugin.module = loaded;
@@ -184,6 +189,7 @@ function createPluginHost({dir, backend, log = (...args) => console.error(...arg
     enabled: p.enabled,
     running: p.running,
     error: p.error,
+    client: !!p.client,
   });
 
   const host = {
@@ -209,6 +215,7 @@ function createPluginHost({dir, backend, log = (...args) => console.error(...arg
           error: null,
           module: null,
           settings: [],
+          client: false,
           routes: new Map(),
           sections: new Map(),
           cleanup: [],
@@ -234,6 +241,18 @@ function createPluginHost({dir, backend, log = (...args) => console.error(...arg
     },
     sections: () => [...plugins.values()].flatMap(p => [...p.sections.values()]),
     list: () => [...plugins.values()].map(describe),
+    /** The browser module of a plugin (`client.js`), read fresh so a reload picks up an edited file. */
+    clientSource(id) {
+      const plugin = plugins.get(id);
+      if (!plugin?.client) return undefined;
+      const file = path.join(dir, id, 'client.js');
+      try {
+        const stat = fs.statSync(file);
+        return {code: fs.readFileSync(file, 'utf8'), path: `data/plugins/${id}/client.js`, modified: stat.mtimeMs};
+      } catch {
+        return undefined;
+      }
+    },
     /** One plugin with the routes it registered and its README.md, if it has one. */
     async detail(id) {
       const plugin = plugins.get(id);

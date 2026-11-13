@@ -110,7 +110,6 @@ PAGES.project = async (view, route) => {
   const {project, workflows} = await api(`projects/${route.project}`);
   if (app.route !== route) return;
   view.innerHTML = `<div class="page">${pageHead({
-    crumbs: [['Projects', '/projects']],
     title: esc(project.name),
     sub: esc(project.description || ''),
   })}

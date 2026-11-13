@@ -543,7 +543,7 @@ function createServer(options = {}) {
   }
   async function handleStatic(req, res, url, editor = false) {
     let rel = decodeURIComponent(url.pathname);
-    const pageRoute = editor && (!path.extname(rel) || /^\/(?:p|library)\//.test(rel));
+    const pageRoute = editor && (!path.extname(rel) || /^\/(?:p|library|ext)\//.test(rel));
     if (rel.endsWith('/')) rel += 'index.html';
     let file = path.join(ROOT, rel);
     // Windows resolves directory names case-insensitively and ignores trailing dots/spaces.

@@ -24,6 +24,21 @@ async def check(base):
             assert await page.evaluate("""() => { const header=document.querySelector('#topstrip').getBoundingClientRect(),
               main=document.querySelector('main').getBoundingClientRect();
               return Math.abs(header.left-8)<1 && Math.abs(header.top-8)<1 && Math.abs(innerHeight-main.bottom-8)<1; }""")
+            assert await page.evaluate("""() => { const item=document.querySelector('#sidebar .sidebar-item').getBoundingClientRect(),
+              icon=document.querySelector('#sidebar .brand-mark').getBoundingClientRect();
+              return Math.abs(item.left-8)<1 && Math.abs((item.left+item.right)/2-(icon.left+icon.right)/2)<1; }""")
+            assert await page.evaluate("""() => { const toggle=document.querySelector('#toggle-subnav svg').getBoundingClientRect(),
+              brand=document.querySelector('#sidebar .brand-mark').getBoundingClientRect(),
+              bell=document.querySelector('#open-notifications svg').getBoundingClientRect(),
+              rail=document.querySelector('.side-tabs .icon svg');
+              return Math.abs((toggle.left+toggle.right)/2-(brand.left+brand.right)/2)<1 &&
+                (!rail || Math.abs((bell.left+bell.right)/2-(rail.left+rail.right)/2)<1); }""")
+            assert await page.evaluate(
+                "[...document.querySelectorAll('#subnav .subnav-toggle')].every(b => b.getAttribute('aria-label').length > 'Show or hide'.length)"
+            )
+            assert await page.evaluate("""() => { const main=document.querySelector('main').getBoundingClientRect(),
+              seam=document.querySelector('main > .nav-seam'), y=parseFloat(seam.style.getPropertyValue('--y'));
+              return !seam.classList.contains('off') && y >= 0 && y <= main.height; }""")
         await page.evaluate('toggleSidebar(true)')
         await page.wait_for_timeout(350)
         tabs_x = await page.locator('#tabs').evaluate('el=>el.getBoundingClientRect().x')

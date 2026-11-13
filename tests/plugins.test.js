@@ -115,6 +115,28 @@ test('turning a plugin off stops it, removes its routes and stays off after a re
   delete globalThis.__stopped;
 });
 
+test('a plugin carries an optional browser module the API serves to the page', async () => {
+  await withServer({ui: `exports.start = () => {};`}, async ({call, pluginsDir}) => {
+    assert.equal((await call('GET', 'plugins/ui/client')).status, 404);
+    assert.equal((await call('GET', 'plugins')).body[0].client, false);
+    fs.writeFileSync(
+      path.join(pluginsDir, 'ui', 'client.js'),
+      `exports.activate = api => api.commands.register('hi', () => 'hello', {title: 'Hi'});`
+    );
+    await call('POST', 'plugins/reload');
+    const plugin = (await call('GET', 'plugins')).body[0];
+    assert.equal(plugin.client, true);
+    assert.equal((await call('GET', 'plugins/ui')).body.client, true);
+    const source = (await call('GET', 'plugins/ui/client')).body;
+    assert.equal(source.path, 'data/plugins/ui/client.js');
+    assert.match(source.code, /commands\.register/);
+    await call('PUT', 'plugins/ui', {enabled: false});
+    assert.equal((await call('GET', 'plugins/ui')).body.client, true, 'metadata is read while disabled');
+    assert.equal((await call('GET', 'plugins/ui/client')).status, 200, 'the source stays readable while disabled');
+    await call('PUT', 'plugins/ui', {enabled: true});
+  });
+});
+
 test('a plugin that fails to start shows its error and does not stop the others', async () => {
   await withServer(
     {
@@ -131,6 +153,14 @@ test('a plugin that fails to start shows its error and does not stop the others'
       assert.equal((await call('GET', 'plugins/fine/x')).body, 1);
     }
   );
+});
+
+test('the Hello UI example has both halves and a client module that parses', () => {
+  const folder = path.join(__dirname, '..', 'data', 'plugins', 'hello-ui');
+  for (const name of ['main.js', 'client.js', 'README.md']) assert.ok(fs.existsSync(path.join(folder, name)), name);
+  const client = fs.readFileSync(path.join(folder, 'client.js'), 'utf8');
+  assert.doesNotThrow(() => new Function('exports', 'module', 'api', client));
+  assert.match(client, /api\.ui\.addPage/);
 });
 
 test('reload picks up new and edited plugins; api.request and api.on reach the application', async () => {

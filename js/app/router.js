@@ -27,6 +27,12 @@ function parseRoute(path = routePath(), query = routeQuery()) {
     return {page: 'not-found'};
   }
   if (!parts.length) return {page: 'home'};
+  if (parts[0] === 'ext') {
+    // A page a plugin registered with api.ui.addPage (see js/app/extensions.js).
+    return parts.length === 3 && /^[A-Za-z0-9][A-Za-z0-9._-]*$/.test(parts[1]) && /^[A-Za-z0-9][A-Za-z0-9._-]*$/.test(parts[2])
+      ? {page: 'ext', plugin: parts[1], id: parts[2]}
+      : {page: 'not-found'};
+  }
   if (parts[0] === 'p' && parts[1]) {
     if (parts.length === 4 && parts[2] === 'w') return {page: 'workflow', project: parts[1], workflow: parts[3]};
     if (parts.length === 2 || (parts.length === 3 && parts[2] === 'settings'))
@@ -61,6 +67,7 @@ function parentPage(route) {
     return ['Library', '/library'];
   }
   if (route.page === 'plugins' && route.id) return ['Plugins', '/plugins'];
+  if (route.page === 'ext') return ['Plugins', '/plugins'];
   return ['Dashboard', '/'];
 }
 let navigationRevision = 0,
@@ -134,7 +141,7 @@ async function render() {
   }
 }
 async function showMissingPage(view) {
-  view.innerHTML = `<div class="page">${pageHead({title: 'Page not found', crumbs: [['Dashboard', '/']]})}<p class="muted">This address does not match a page.</p></div>`;
+  view.innerHTML = `<div class="page">${pageHead({title: 'Page not found'})}<p class="muted">This address does not match a page.</p></div>`;
 }
 // Links are written as plain paths; give them their real address so middle-click and "copy link" work too.
 const linkPath = link => {

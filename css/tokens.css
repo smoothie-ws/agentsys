@@ -190,7 +190,8 @@ kbd {
   color: var(--warn);
 }
 
-/* Keyboard focus only: a soft ring that never appears on mouse clicks. */
+/* Keyboard focus: a soft ring. The browser keeps it on a text field even when the
+   field is clicked, since typing there is the point. */
 :focus-visible {
   outline: 2px solid var(--ring);
   outline-offset: 2px;

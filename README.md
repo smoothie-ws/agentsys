@@ -17,7 +17,7 @@ On Windows, `start.bat 3000` selects a port. `PORT`, `HOST` and `DATA_DIR` are s
 - Shared durable JSON at `context.state`, kept across Run, Stop, navigation and restart.
 - A graph can edit itself: `agentsys(method, path, body)` calls the same checked API as the editor, and the Library's Graph nodes (Add Node, Remove Node, Connect, Get Nodes, Invoke Node) wrap it. Recursion and macros are ordinary graphs.
 - Undo/redo, copy/paste, import/export, project permissions and secrets.
-- [Plugins](docs/plugins.md): a folder in `data/plugins/` with a `main.js` exporting `start(api)` and `stop()`, as in Substance Painter. A plugin can add Library nodes, answer API routes, keep settings and react to changes.
+- [Plugins](docs/plugins.md): a folder in `data/plugins/` with a `main.js` exporting `start(api)` and `stop()`, as in Substance Painter, and an optional `client.js` that extends the interface through the official tools, as a VS Code extension does. A plugin can add Library nodes, answer API routes, keep settings, react to changes, and add pages, commands, toolbar and sidebar entries, menus, dashboard cards and styles.
 
 The Node server stores definitions, layout, scripts and runtime JSON as files in `data/`. JSON state and previews survive a restart; JavaScript stacks, timers and pending external work do not resume.
 

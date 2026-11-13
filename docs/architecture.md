@@ -28,7 +28,7 @@ Scripts read `node.input`, write `node.output`, emit named signals and use `cont
 
 `js/storage` is the single persistence boundary. Definitions, layout and script sources use `agentsys.text/1`; runtime JSON (shared state, port values, previews) is stored beside them. Version checks guard concurrent writes. JavaScript stacks, globals, timers and pending external work are not persisted.
 
-Plugins are folders in `data/plugins/` with a `main.js` (`start(api)`, `stop()`). The server loads them into its own process: trusted code that can add Library nodes, register API routes and observe changes. The core does not depend on any plugin; see [plugins](plugins.md).
+Plugins are folders in `data/plugins/` with a `main.js` (`start(api)`, `stop()`) and optionally a `client.js` that extends the interface. The server loads `main.js` into its own process: trusted code that can add Library nodes, register API routes and observe changes. The page loads `client.js` into the browser: trusted code that adds pages, commands, toolbar buttons, menu items and styles through the official `api.ui` tools. The core does not depend on any plugin; see [plugins](plugins.md).
 
 Calls a Script makes to the API need both the enclosing instances' grants and the project policy. Workers have no direct network or storage access, generated code is quarantined, credentials stay behind checked host operations, and late writes after Stop or deletion are rejected.
 

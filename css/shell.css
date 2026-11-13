@@ -152,7 +152,7 @@ main {
   align-items: center;
   gap: 0.55rem;
   height: 36px; /* the same folded and unfolded */
-  padding: 0 0.6rem 0 calc(56px - 0.4rem - 8px);
+  padding: 0 0.6rem 0 calc(56px - 0.2rem - 8px);
   border-radius: var(--nav-radius);
   color: color-mix(in srgb, var(--text) 82%, var(--background));
   text-decoration: none;
@@ -182,13 +182,19 @@ main {
 }
 @media (min-width: 761px) {
   body { padding: 8px; }
+  /* The rail keeps the frame's margin on every side: its rows start at the edge like the
+     rows above and below them, and its icons sit in the middle of the rail. */
+  #sidebar,
+  .sidebar-hidden #sidebar { padding-left: 0; }
   .sidebar-item > a > :is(svg, .brand-mark) {
     position: absolute;
-    left: calc(20px - 0.4rem);
+    left: 20px;
     top: 50%;
     transform: translateY(-50%);
   }
   #topstrip > #toggle-subnav { margin-left: 8px; }
+  /* The bell sits on the column of the side panel's icons below it. */
+  #topstrip > #open-notifications { margin-right: 4px; }
   body #topstrip { padding-right: 0; }
   body:not(.nav-joined) .sidebar-item > a,
   body:not(.nav-joined) .subnav-row { height: 40px; }
@@ -199,7 +205,7 @@ main {
     content: '';
     position: absolute;
     /* The flat folded rail has padding on both sides. */
-    inset: 4px calc((56px - 0.8rem - 32px) / 2);
+    inset: 4px calc((56px - 32px) / 2);
     border-radius: 16px;
     background: var(--hover);
     opacity: 0;
@@ -369,7 +375,6 @@ main {
   background: none; /* the row itself is lit */
 }
 .subnav-row:active:not(:disabled) {
-  background: var(--hover);
   background: var(--press);
 }
 .subnav-row.active,
@@ -404,10 +409,6 @@ main {
 }
 .subnav-group.open > .subnav-row > .subnav-toggle svg {
   transform: rotate(90deg);
-}
-.subnav-pad {
-  flex: none;
-  width: 22px;
 }
 
 /* The "⋯" menu button of a row shows while the row is hovered. */
@@ -734,7 +735,6 @@ main {
 .subnav-collapsed .subnav-static > span,
 .subnav-collapsed .subnav-menu,
 .subnav-collapsed .subnav-toggle,
-.subnav-collapsed .subnav-pad,
 .subnav-collapsed .subnav-branch,
 .subnav-collapsed #subnav-list > input,
 .subnav-collapsed .subnav-tree > .muted,
@@ -955,3 +955,36 @@ main {
 }
 
 .subnav-head { display: none; }
+
+/* ----- Plugin contributions (js/app/extensions.js) -----
+   The tools a client.js registers: toolbar buttons in the top strip, sidebar sections, dashboard cards. */
+.toolbar-slot {
+  display: flex;
+  align-items: center;
+  flex: none;
+  gap: 2px;
+}
+.toolbar-slot[hidden] { display: none; }
+.toolbar-slot > button.icon {
+  width: 32px;
+  height: 32px;
+  margin-inline: 1px;
+  border-radius: 50%;
+}
+.toolbar-slot > button.icon:hover:not(:disabled) { background: var(--hover); }
+.toolbar-slot > button.icon:disabled { opacity: 0.45; }
+#sidebar-extensions:not([hidden]) {
+  margin-top: 0.35rem;
+  padding-top: 0.35rem;
+  border-top: 1px solid var(--line);
+}
+#sidebar-extensions[hidden] { display: none; }
+#sidebar-extensions .sidebar-item { min-width: 0; }
+.ext-home .cards { margin-top: 0.5rem; }
+.ext-home .card { min-height: 0; }
+.ext-body { max-width: 70rem; }
+.plugin-contributions {
+  margin: 0.3rem 0 0.8rem;
+  padding-left: 1.2rem;
+}
+

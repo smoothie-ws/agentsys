@@ -212,7 +212,7 @@ const Tabs = {
           el = old.get(key) || Object.assign(document.createElement('a'), {role: 'tab'}),
           sub = tab.library || tab.project.startsWith('lib-') ? 'Library' : tab.sub;
         old.delete(key);
-        const html = `${icon(tab.icon || (tab.library ? 'complex' : 'node'))}<span class="tab-title">${esc(tab.title)}</span>${sub ? `<span class="tab-sub">${esc(sub)}</span>` : ''}${tab.pinned ? `<span class="tab-pin" title="Pinned">${icon('pin')}</span>` : `<button class="icon tab-close" data-close-tab="${esc(key)}" title="Close" aria-label="Close tab">${icon('x')}</button>`}`;
+        const html = `${icon(tab.icon || (tab.library ? 'complex' : 'node'))}<span class="tab-title">${esc(tab.title)}</span>${sub ? `<span class="tab-sub">${esc(sub)}</span>` : ''}${tab.pinned ? `<span class="tab-pin" title="Pinned">${icon('pin')}</span>` : `<button type="button" class="icon tab-close" data-close-tab="${esc(key)}" title="Close" aria-label="Close tab">${icon('x')}</button>`}`;
         el.dataset.tab = key;
         el.draggable = false;
         el.toggleAttribute('data-link', true);

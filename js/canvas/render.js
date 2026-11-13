@@ -329,7 +329,7 @@ function nodeHTML(node) {
   if (node.disabled || node.muted) classes.push('off');
   const pin = node.pinned ? `<span class="pinned" title="Pinned">${icon('pin')}</span>` : '';
   // Auxiliary marks sit above the right edge; execution uses the node's glow.
-  const fold = `<button class="icon fold" data-fold="${esc(node.id)}" title="${node.folded ? 'Expand' : 'Collapse'}" aria-label="${node.folded ? 'Expand node' : 'Collapse node'}" aria-expanded="${!node.folded}">${icon('chevron')}</button>`;
+  const fold = `<button type="button" class="icon fold" data-fold="${esc(node.id)}" title="${node.folded ? 'Expand' : 'Collapse'}" aria-label="${node.folded ? 'Expand node' : 'Collapse node'}" aria-expanded="${!node.folded}">${icon('chevron')}</button>`;
   const head = (title, glyph, extra = '') =>
     `<header>${extra}<span class="head-icon">${icon(glyph)}</span><span class="title" title="${esc(title)}">${esc(title)}</span>${fold}</header><div class="node-marks">${stateHTML}${node.disabled || node.muted ? `<span class="switched-off" title="${node.disabled ? 'Disabled' : 'Disabled by its group'}: a run skips this node">${icon('power')}</span>` : ''}${pin}</div>`;
   if (node.node_type === 'reroute')
@@ -372,7 +372,7 @@ function nodeHTML(node) {
         customIcon(node) || 'complex',
         node.locked
           ? ''
-          : `<button class="icon expand" data-expand="${esc(node.group_id)}" title="Expand Complex Node" aria-label="Expand Complex Node">${icon('chevron')}</button>`
+          : `<button type="button" class="icon expand" data-expand="${esc(node.group_id)}" title="Expand Complex Node" aria-label="Expand Complex Node">${icon('chevron')}</button>`
       ) +
       portsHTML(node) +
       widgetsHTML(node) +
@@ -652,13 +652,13 @@ function drawFrames() {
       off = group.disabled || group.muted,
       foldButton = cx
         ? ''
-        : `<button class="icon fold" data-fold-group="${esc(group.id)}" title="${folded ? 'Expand' : 'Collapse'}" aria-label="${folded ? 'Expand group' : 'Collapse group'}" aria-expanded="${!folded}">${icon('chevron')}</button>`,
+        : `<button type="button" class="icon fold" data-fold-group="${esc(group.id)}" title="${folded ? 'Expand' : 'Collapse'}" aria-label="${folded ? 'Expand group' : 'Collapse group'}" aria-expanded="${!folded}">${icon('chevron')}</button>`,
       offMark = off
         ? `<span class="switched-off" title="${group.disabled ? 'Disabled' : 'Disabled by its group'}: a run skips everything in it">${icon('power')}</span>`
         : '';
     const collapse =
       cx && !(W.library && group.id === W.snapshot.root)
-        ? `<button class="icon collapse" data-collapse="${esc(group.id)}" title="Collapse into a node" aria-label="Collapse Complex Node">${icon('chevron')}</button>`
+        ? `<button type="button" class="icon collapse" data-collapse="${esc(group.id)}" title="Collapse into a node" aria-label="Collapse Complex Node">${icon('chevron')}</button>`
         : '';
     html.push(`<div class="frame ${group.color ? 'colored' : ''} ${cx ? 'complex' : ''} ${folded ? 'folded' : ''} ${off ? 'off' : ''} ${W.library && group.id === W.snapshot.root ? 'root' : ''} ${W.selected.has('frame:' + group.id) ? 'selected' : ''}" data-frame="${esc(group.id)}" data-id="${cx ? 'complex:' : 'group:'}${esc(group.id)}" ${cx ? 'data-complex="true"' : ''} style="transform:translate(${box.x}px,${box.y}px);width:${box.r - box.x}px;height:${box.b - box.y}px;${group.color ? `--node-color:${esc(group.color)};--node-ink:${inkOn(group.color)}` : ''}">
       <header data-frame-handle="${esc(group.id)}">${collapse}${cx ? icon((W.library && group.id === W.snapshot.root && libraryIcon()) || 'complex') : ''}<span class="title">${esc(group.name)}</span>${offMark}${group.pinned ? icon('pin') : ''}${foldButton}</header>${ports}${group.pinned || folded ? '' : resizeHandles()}</div>`);

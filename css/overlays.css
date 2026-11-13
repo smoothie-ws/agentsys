@@ -59,15 +59,23 @@ dialog h2 {
   margin-top: 0.6rem;
   overflow: auto;
 }
-.search-results a {
+.search-results a,
+.search-results button {
   display: grid;
   grid-template-columns: 1fr auto;
   padding: 0.55rem 0.7rem;
   border-radius: 15px;
+  border: 0;
+  background: none;
+  color: inherit;
+  font: inherit;
+  text-align: left;
   text-decoration: none;
+  cursor: pointer;
   transition: background-color var(--fast) var(--ease);
 }
-.search-results a:hover {
+.search-results a:hover,
+.search-results button:hover {
   background: var(--hover);
 }
 .search-results .small {

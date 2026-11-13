@@ -159,10 +159,10 @@ const Inspector = {
     ]
       .map(
         ([id, label, glyph]) =>
-          `<button class="icon ${this.tab === id && root.dataset.collapsed !== 'true' ? 'active' : ''}" data-side-tab="${id}" title="${label}" aria-label="${label}" aria-pressed="${this.tab === id && root.dataset.collapsed !== 'true'}">${icon(glyph)}</button>`
+          `<button type="button" class="icon ${this.tab === id && root.dataset.collapsed !== 'true' ? 'active' : ''}" data-side-tab="${id}" title="${label}" aria-label="${label}" aria-pressed="${this.tab === id && root.dataset.collapsed !== 'true'}">${icon(glyph)}</button>`
       )
       .join('')}
-      </nav><div class="side-content"><div class="side-heading"><span id="side-heading"></span><button class="icon" data-side-close title="Close section" aria-label="Close section">${icon('x')}</button></div><div class="side-body" id="side-body"><section id="side-workflow" aria-label="Workflow"></section><section id="side-selection" aria-label="Selection"></section></div><footer class="side-actions" id="side-actions" hidden></footer></div>`;
+      </nav><div class="side-content"><div class="side-heading"><span id="side-heading"></span><button type="button" class="icon" data-side-close title="Close section" aria-label="Close section">${icon('x')}</button></div><div class="side-body" id="side-body"><section id="side-workflow" aria-label="Workflow"></section><section id="side-selection" aria-label="Selection"></section></div><footer class="side-actions" id="side-actions" hidden></footer></div>`;
     for (const type of ['input', 'change', 'click', 'focusout'])
       $('#side-body', root).addEventListener(type, event => {
         if (event.target.closest?.('#node-connections, .conn-host, .port-conn')) this.connHandlers?.[type]?.(event);
@@ -466,7 +466,7 @@ const Inspector = {
               plural(issues.length, 'problem'),
               `<ul class="links">${issues
                 .slice(0, 20)
-                .map(i => `<li><button class="link" data-reveal="${esc(i.node_id)}">${esc(i.message)}</button></li>`)
+                .map(i => `<li><button type="button" class="link" data-reveal="${esc(i.node_id)}">${esc(i.message)}</button></li>`)
                 .join('')}</ul>`
             )
           : ''
@@ -589,7 +589,7 @@ const Inspector = {
     if (!ids.length) return this.nothing();
     if (ids.length > 1) {
       this.body().innerHTML = `<h2>${plural(ids.length, 'connection')} selected</h2>
-        <div class="button-row"><button id="split">${icon('plus')}Add reroute</button><button class="danger" id="disconnect">Disconnect</button></div>`;
+        <div class="button-row"><button type="button" id="split">${icon('plus')}Add reroute</button><button type="button" class="danger" id="disconnect">Disconnect</button></div>`;
       $('#split').onclick = () => splitEdges(ids).catch(fail);
       $('#disconnect').onclick = () => disconnectMany(ids).catch(fail);
       return;
@@ -598,7 +598,7 @@ const Inspector = {
     const source = W.nodes.get(edge.source),
       target = W.nodes.get(edge.target);
     this.body().innerHTML = `<h2>Connection</h2><p><strong>${esc(nodeLabel(source || {}))}</strong> sends data to <strong>${esc(nodeLabel(target || {}))}</strong></p>
-      <div class="button-row"><button id="split">${icon('plus')}Add reroute</button><button class="danger" id="disconnect">Disconnect</button></div>`;
+      <div class="button-row"><button type="button" id="split">${icon('plus')}Add reroute</button><button type="button" class="danger" id="disconnect">Disconnect</button></div>`;
     $('#split').onclick = () => splitEdges([edge.id]).catch(fail);
     $('#disconnect').onclick = () => disconnect(edge.id).catch(fail);
   },
@@ -839,7 +839,7 @@ const Inspector = {
 
   multiple(nodes, frames) {
     this.body().innerHTML = `<h2>${plural(nodes.length + frames.length, 'item')} selected</h2>
-      <div class="button-row" data-node-actions><button data-act="group">${icon('group')}Group</button><button class="danger" data-act="delete">${icon('trash')}Delete</button></div>`;
+      <div class="button-row" data-node-actions><button type="button" data-act="group">${icon('group')}Group</button><button type="button" class="danger" data-act="delete">${icon('trash')}Delete</button></div>`;
     this.body().onclick = event => {
       const act = event.target.closest('[data-act]')?.dataset.act;
       ({group: () => groupSelection(), delete: () => deleteSelection()})[act]?.().catch(fail);
