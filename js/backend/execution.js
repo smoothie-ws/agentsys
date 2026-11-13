@@ -75,6 +75,9 @@ function saveRuntime(entry) {
       })
       .finally(() => {
         entry.saving = null;
+        // A change that arrived between the last loop check and this cleanup is written now; a
+        // recorded storage failure waits for the next explicit save instead of spinning.
+        if (entry.dirty && !entry.deleted && !entry.storageError) saveRuntime(entry);
       });
   entry.saving.catch(error => {
     entry.storageError = error.message;
@@ -319,18 +322,21 @@ function stopGraph(workflow) {
   const pending = [...entry.pending];
   for (const record of entry.dispatches) record.cancelled = true;
   const host = entry.host;
-  entry.host = null;
   entry.controller?.abort();
-  host?.close();
-  entry.paused = false;
-  for (const [id, node] of entry.nodes)
-    if (BUSY.includes(node.status)) entry.nodes.set(id, {...node, status: 'stopped'});
-  entry.calls.clear();
-  const work = Promise.allSettled(pending)
-    .then(() => saveRuntime(entry))
-    .finally(() => {
-      entry.stopping = null;
-    });
+  const work = (async () => {
+    // One turn for the host to hand over the notifications coalesced before Stop (state, values).
+    await new Promise(resolve => setTimeout(resolve, 0));
+    if (entry.host === host) entry.host = null;
+    host?.close();
+    entry.paused = false;
+    for (const [id, node] of entry.nodes)
+      if (BUSY.includes(node.status)) entry.nodes.set(id, {...node, status: 'stopped'});
+    entry.calls.clear();
+    await Promise.allSettled(pending);
+    await saveRuntime(entry);
+  })().finally(() => {
+    entry.stopping = null;
+  });
   entry.stopping = work;
   return work;
 }

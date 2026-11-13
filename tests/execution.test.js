@@ -536,6 +536,27 @@ test('twenty parallel Runs with Stop in the middle settle without unhandled reje
   assert.deepEqual(rejections, []);
 });
 
+test('a long loop of assignments reports its final values with wait:true', async t => {
+  const {app, project, path} = await fixture(t, '');
+  const writer = await fn(app, project.id, {}, {
+    code: 'for(let i=0;i<500;i++){context.state.count=i;node.output.value=i;}',
+    outputs: ['value'],
+  });
+  const result = await app.api('POST', path, {node_ids: [writer.id], wait: true});
+  assert.equal(result.state.count, 499);
+  assert.equal(result.dispatch_outputs[writer.id].value, 499);
+  const stored = await app.api('GET', path);
+  assert.equal(stored.state.count, 499);
+  assert.equal(stored.outputs[writer.wrapper].value, 499);
+});
+test('edited Script code runs instead of a compiled copy of the old text', async t => {
+  const {app, project, node, path} = await fixture(t, 'context.state.value=1;');
+  assert.equal((await app.api('POST', path, {node_ids: [node.id], wait: true})).state.value, 1);
+  await change(app, project, node, 'context.state.value=2;');
+  assert.equal((await app.api('POST', path, {node_ids: [node.id], wait: true})).state.value, 2);
+  await change(app, project, node, 'context.state.value=3;');
+  assert.equal((await app.api('POST', path, {node_ids: [node.id], wait: true})).state.value, 3);
+});
 test('Stop terminates the workflow worker and a later Run starts exactly one new worker', async t => {
   const {app, node, path} = await fixture(t, 'context.state.n=(context.state.n??0)+1;');
   await app.api('POST', path, {node_ids: [node.id], wait: true});
