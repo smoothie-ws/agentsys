@@ -83,14 +83,18 @@ function draw() {
       definition = JSON.stringify(data);
       W.nodeSignatures.set(node, definition);
     }
-    const signature = JSON.stringify([
+    const signature = [
       W.results.get(node.id) || null,
       shownStatus(node),
       innerNodesOf(node).map(n => W.results.get(n.id) || null),
       widgetsSignature(node),
-      W.issues.get(node.id) || [],
-      node.folded ? foldedPorts(node).map(ports => ports.map(p => p.id)) : null,
-    ]);
+      (W.issues.get(node.id) || []).map(issue => issue.message + '\u0000' + issue.port_id + '\u0000' + issue.direction).join('\u0001'),
+      node.folded
+        ? foldedPorts(node)
+            .map(ports => ports.map(p => p.id).join(','))
+            .join('|')
+        : null,
+    ];
     let element = W.elements.get(node.id);
     const created = !element;
     const foldedChanged = element && element.dataset.folded !== String(!!node.folded);
@@ -105,7 +109,8 @@ function draw() {
     const rewired = element && element.renderPorts !== ports;
     if (
       !element ||
-      ((element.renderDefinition !== definition || element.renderSignature !== signature) && (!typing || rewired))
+      ((element.renderDefinition !== definition || !signatureSame(element.renderSignature, signature)) &&
+        (!typing || rewired))
     ) {
       const focusLiteral = element?.contains(focused) ? focused.dataset.literal : null;
       const typed = typing ? {value: focused.value, start: focused.selectionStart, end: focused.selectionEnd} : null;
@@ -477,11 +482,28 @@ const typeColorOf = type => TYPE_COLORS.get(typeRefs(type)[0]) ?? '';
 
 /** The nodes whose widgets a node shows: itself, or for a Library node placed on the canvas the nodes inside it that have some. */
 const widgetHolders = node => (node.kind === 'complex' ? (node.widget_nodes ?? []) : [node.id]);
-/** What a node's widgets look like in the node's signature: an html widget's value is not part of it (the frame would reload). */
-const widgetsSignature = node =>
-  widgetHolders(node).map(id =>
-    (W.snapshot.widgets?.[id] ?? []).map(w => (w.kind === 'html' ? {...w, value: null} : w))
-  );
+/** What a node's widgets look like in its signature: an html widget's value is not part of it (the frame would reload). */
+const widgetsSignature = node => {
+  let text = '';
+  for (const id of widgetHolders(node)) {
+    const list = W.snapshot.widgets?.[id];
+    if (!list?.length) continue;
+    text += id + ':' + JSON.stringify(list.map(w => (w.kind === 'html' ? {...w, value: null} : w))) + '|';
+  }
+  return text;
+};
+/** Two signature lists are equal when every part is the same value. Results are replaced, not edited,
+ *  when they change, so their object identity is enough. */
+const signatureSame = (a, b) =>
+  !!a &&
+  !!b &&
+  a[0] === b[0] &&
+  a[1] === b[1] &&
+  a[2]?.length === b[2]?.length &&
+  (a[2] || []).every((value, i) => value === b[2][i]) &&
+  a[3] === b[3] &&
+  a[4] === b[4] &&
+  a[5] === b[5];
 
 /** One widget as a row of the node: its label and its control. A person's edits go through changeWidget. */
 function widgetHTML(w) {
