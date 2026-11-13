@@ -348,7 +348,7 @@ function createGraphInterpreter(document, saved, env) {
     if (node && !cancelledWave(ctx.wave))
       for (const port of node.outputs.filter(p => p.signal)) await fire(node, port, ctx);
   }
-  async function execute(id, ctx) {
+  async function execute(id, ctx, attempt = 0) {
     let node = nodes.get(id);
     const generation = generations.get(id) ?? 0;
     const valid = () => !env.closed?.() && nodes.get(id) && (generations.get(id) ?? 0) === generation;
@@ -382,7 +382,11 @@ function createGraphInterpreter(document, saved, env) {
         data.map((p, i) => [p.id, outcomes[i].value === undefined ? undefined : unwrap(outcomes[i].value)])
       );
       await enter();
-      if (view !== readingView) return execute(id, ctx);
+      if (view !== readingView) {
+        // The graph is live: a read may see an edit. Retry a few times, then say so instead of looping.
+        if (attempt >= 2) throw plain('The graph changed while its inputs were read: try again');
+        return execute(id, ctx, attempt + 1);
+      }
       if (cancelledWave(ctx.wave)) {
         announce({ev: 'skip', id});
         return false;
@@ -647,6 +651,12 @@ function createGraphInterpreter(document, saved, env) {
     try {
       const outputs = {};
       if (event.input_port !== undefined) await fireTo(view.inputTargets(id, event.input_port), ctx);
+      // A disabled node does not receive signals (docs/engine.md): it cannot report the values of an
+      // earlier run as if this dispatch produced them.
+      if (!view.get(id)) {
+        emit({ev: 'root', id});
+        return {id};
+      }
       if (id.startsWith('complex:')) {
         for (const port of view.outputRefs(id))
           outputs[port.id] =
@@ -655,7 +665,7 @@ function createGraphInterpreter(document, saved, env) {
               : unwrap(await entryAt(port.ref, readScope(ctx), new Set()));
       } else {
         const node = nodes.get(id);
-        if (!node) Object.assign(outputs, reported(id));
+        if (!node) return {id, outputs};
         else if (node.running && event.input_port === undefined) {
           await track(run(id, ctx), batch.pending); // a Script runs as if a signal reached it, an event node carries its data and fires
           Object.assign(outputs, reported(node.scope ?? id));

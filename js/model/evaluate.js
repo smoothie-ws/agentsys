@@ -397,4 +397,8 @@ const DISPLAY_PARTS = '\u001e';
 function checkRoots(roots, nodes) {
   if (!Array.isArray(roots) || roots.some(id => typeof id !== 'string' || !nodes.has(id)))
     throw bad('node_ids must name nodes of this workflow');
+  // A group organizes the canvas; it is not a node that can run or be read. Naming one used to
+  // answer an empty, successful result.
+  if (roots.some(id => nodes.get(id).kind === 'group'))
+    throw bad('node_ids must name nodes or Custom Nodes, not groups');
 }

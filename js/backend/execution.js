@@ -240,6 +240,8 @@ function signalGraph(entry, roots, event = {}, caller = null) {
     try {
       await stopping; // a Run that arrives while Stop is in progress starts after it
       if (!record.cancelled && roots.length) result = await ensureGraphHost(entry).signal(roots, event);
+      // The host answered: a failure recorded by an earlier dispatch is history, not the state of this one.
+      delete entry.errors.host;
     } catch (error) {
       if (!record.cancelled) {
         entry.errors.host = error.message;

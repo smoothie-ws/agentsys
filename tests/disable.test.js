@@ -62,3 +62,25 @@ test('a group can be collapsed and disabled', async () => {
   const g = snap.groups.find(x => x.id === s.gid);
   assert.deepEqual([g.folded, g.disabled], [true, true]);
 });
+
+test('a disabled node does not report the values of an earlier run when signalled directly', async t => {
+  const app = createApp(),
+    {id} = await app.api('POST', 'projects', {name: 'Disabled root'});
+  t.after(() => app.Backend.shutdownExecutions());
+  const event = await app.api('POST', `projects/${id}/typed-nodes`, {
+    node_type: 'custom',
+    config: nodes.run(),
+    position: {x: 0, y: 0},
+  });
+  const evaluate = payload =>
+    app.api('POST', `projects/${id}/execution`, {node_ids: [event.id], payload, wait: true});
+  const first = await evaluate({value: 'first'});
+  assert.deepEqual(first.dispatch_outputs[event.id], {payload: {value: 'first'}});
+  await app.api('PUT', `projects/${id}/node-style`, {node_id: event.id, disabled: true});
+  // The signal does not reach a disabled node: this dispatch produced nothing, so it reports nothing.
+  assert.equal((await evaluate({value: 'while disabled'})).dispatch_outputs[event.id], undefined);
+  await app.api('PUT', `projects/${id}/node-style`, {node_id: event.id, disabled: false});
+  assert.deepEqual((await evaluate({value: 'second'})).dispatch_outputs[event.id], {
+    payload: {value: 'second'},
+  });
+});

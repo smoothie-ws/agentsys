@@ -310,7 +310,31 @@ test('an old node error does not mark a later successful editor event as failed'
   assert.ok((await app.api('GET', 'node-hooks')).every(event => event.ok));
 });
 
-module.exports = {until};
+test('a successful dispatch clears the host error of an earlier failure', async t => {
+  const {app, project, node, path} = await fixture(t, 'context.state.ok=true;');
+  await app.api('GET', path);
+  // The entry records a host failure exactly as a crashed dispatch does.
+  app.eval(`GRAPH_RUNTIMES.get('${project.id}').errors.host='the script host stopped'`);
+  assert.equal((await app.api('GET', path)).errors.host, 'the script host stopped');
+  const result = await app.api('POST', path, {node_ids: [node.id], wait: true});
+  assert.equal(result.dispatch_status, 'completed');
+  assert.equal((await app.api('GET', path)).errors.host, undefined);
+});
+test('node_ids naming a group is rejected; nodes and Custom Nodes still run', async t => {
+  const {app, project, node, path} = await fixture(t, 'context.state.ran=true;');
+  await app.api('PUT', `projects/${project.id}/groups`, {
+    groups: [{id: 'g1', name: 'Group', members: [node.id]}],
+  });
+  const badRoot = app.api('POST', path, {node_ids: ['group:g1'], wait: true});
+  await assert.rejects(badRoot, error => error.status === 400 && error.code === 'invalid_request');
+  await assert.rejects(
+    app.api('POST', `projects/${project.id}/evaluate-node`, {node_ids: ['group:g1'], collect: true}),
+    error => error.status === 400 && error.code === 'invalid_request'
+  );
+  const result = await app.api('POST', path, {node_ids: [node.id], wait: true});
+  assert.equal(result.dispatch_status, 'completed');
+  assert.equal(result.state.ran, true);
+});
 test('deleting a node during an await prevents late state mutations', async t => {
   const {app, project, node, path} = await fixture(
     t,
