@@ -1,6 +1,10 @@
 // A live runtime belongs to the workflow, including its durable JSON state and values.
 'use strict';
 const GRAPH_RUNTIMES = new Map();
+// A live runtime is cheap to rebuild from its saved data, so idle ones are released: after ten
+// minutes without a signal, or beyond sixteen idle workflows (least recently used first).
+let RUNTIME_TTL_MS = 10 * 60 * 1000;
+const MAX_IDLE_RUNTIMES = 16;
 const runtimeKey = id => `workflows/${id}/runtime`;
 const runtimeStatus = entry => (entry.paused ? 'paused' : entry.pending.size ? 'running' : 'idle');
 const BUSY = ['running', 'sleeping', 'waiting'];
@@ -57,7 +61,16 @@ function saveRuntime(entry) {
         while (entry.dirty && !entry.deleted) {
           entry.dirty = false;
           const {runs: _passes, activity: _activity, ...saved} = runtimeDetail(entry);
-          await DB.commit({[runtimeKey(entry.workflow)]: clone(saved)});
+          try {
+            await DB.commit({[runtimeKey(entry.workflow)]: clone(saved)});
+            entry.storageError = null;
+          } catch (error) {
+            // Keep the change for the next attempt: a transient failure must not lose it, and
+            // waiting requests see storage_error instead of an ambiguous rejection.
+            entry.storageError = error.message;
+            entry.dirty = true;
+            return;
+          }
         }
       })
       .finally(() => {
@@ -67,6 +80,28 @@ function saveRuntime(entry) {
     entry.storageError = error.message;
   });
   return entry.saving;
+}
+/** A runtime nothing is using: no signal, pause, detached handler, stop or write in flight. */
+const runtimeIdle = entry =>
+  !entry.pending.size && !entry.paused && !entry.detached.size && !entry.stopping && !entry.saving && !entry.dirty && !entry.deleted;
+/** Releases an idle runtime's host and keeps only its saved data. */
+function evictRuntime(entry) {
+  if (GRAPH_RUNTIMES.get(entry.workflow) !== entry || !runtimeIdle(entry)) return false;
+  const host = entry.host;
+  entry.host = null;
+  entry.controller?.abort();
+  host?.close();
+  GRAPH_RUNTIMES.delete(entry.workflow);
+  return true;
+}
+/** Lazy sweep: called when a workflow runtime is looked up or signalled. */
+function sweepRuntimes(now = Date.now()) {
+  const idle = [...GRAPH_RUNTIMES.values()]
+    .filter(runtimeIdle)
+    .sort((a, b) => b.lastUsed - a.lastUsed);
+  for (const entry of idle) if (now - entry.lastUsed > RUNTIME_TTL_MS) evictRuntime(entry);
+  const left = idle.filter(entry => GRAPH_RUNTIMES.has(entry.workflow));
+  for (const entry of left.slice(MAX_IDLE_RUNTIMES)) evictRuntime(entry);
 }
 function runtimeDocument(entry) {
   if (!entry.detached.size) return entry.document;
@@ -99,10 +134,15 @@ function syncRuntimeGraph(workflow, document) {
   saveRuntime(entry);
 }
 async function graphRuntime(c, project) {
+  sweepRuntimes();
   const metadata = await c.project(project),
     selected = c.workflowId ?? metadata.workflows[0]?.id;
   if (!metadata.workflows.some(workflow => workflow.id === selected)) throw missing('Workflow not found');
-  if (GRAPH_RUNTIMES.has(selected)) return GRAPH_RUNTIMES.get(selected);
+  const existing = GRAPH_RUNTIMES.get(selected);
+  if (existing) {
+    existing.lastUsed = Date.now();
+    return existing;
+  }
   return exclusive(async () => {
     const {editor, meta} = await c.workflow(project);
     if (!GRAPH_RUNTIMES.has(meta.id)) {
@@ -136,12 +176,14 @@ async function graphRuntime(c, project) {
         controller: null,
         dirty: false,
         saving: null,
+        lastUsed: Date.now(),
       });
     }
     const document = editor.snapshot();
     for (const {doc} of c.docs.values()) doc.types = ownTypes(doc.types);
     await c.ctx.commit();
     syncRuntimeGraph(meta.id, document);
+    sweepRuntimes();
     return GRAPH_RUNTIMES.get(meta.id);
   });
 }
@@ -228,6 +270,7 @@ function ensureGraphHost(entry) {
  */
 function signalGraph(entry, roots, event = {}, caller = null) {
   checkRoots(roots, Editor.nodeMap(runtimeDocument(entry)));
+  entry.lastUsed = Date.now();
   const record = {cancelled: false},
     stopping = entry.stopping,
     callerSignal = caller?.signal,
@@ -251,6 +294,7 @@ function signalGraph(entry, roots, event = {}, caller = null) {
       callerSignal?.removeEventListener('abort', stopWithCaller);
       entry.dispatches.delete(record);
       entry.pending.delete(work);
+      entry.lastUsed = Date.now();
       await saveRuntime(entry);
     }
     const failed = Object.keys(result.errors).length > 0;
@@ -377,6 +421,7 @@ route(
       return {...runtimeDetail(entry), dispatch_status: 'running'};
     }
     await entry.saving;
+    sweepRuntimes();
     return runtimeDetail(entry);
   },
   {

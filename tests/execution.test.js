@@ -414,3 +414,136 @@ for (const group of [false, true])
     assert.equal(await app.eval(`DB.get('wf:${id}')`), undefined);
     assert.equal(await app.eval(`DB.get(runtimeKey('${id}'))`), undefined);
   });
+
+test('an idle runtime is evicted after its TTL and rebuilt from saved data', async t => {
+  const {app, project, path} = await fixture(t, '');
+  const writer = await fn(app, project.id, {}, {
+    code: 'context.state.count=(context.state.count??0)+1;node.output.value=42;node.display("saved");',
+    outputs: ['value'],
+  });
+  assert.equal((await app.api('POST', path, {node_ids: [writer.id], wait: true})).dispatch_status, 'completed');
+  app.eval('RUNTIME_TTL_MS = 1');
+  t.after(() => app.eval('RUNTIME_TTL_MS = 600000'));
+  await sleep(10);
+  // Any later runtime lookup sweeps: the idle workflow is released.
+  const other = await app.api('POST', 'projects', {name: 'Eviction trigger'});
+  await app.api('GET', `projects/${other.id}/execution`);
+  assert.equal(app.eval(`GRAPH_RUNTIMES.has('${project.id}')`), false);
+  // The next read builds it again from the store: values, outputs and previews are intact.
+  const restored = await app.api('GET', path);
+  assert.equal(restored.state.count, 1);
+  assert.equal(restored.outputs[writer.wrapper].value, 42);
+  assert.equal(restored.displays[writer.id], 'saved');
+  assert.equal(restored.status, 'idle');
+});
+
+test('a paused runtime is never evicted', async t => {
+  const {app, project, path} = await fixture(t, '');
+  await app.api('POST', path + '/pause');
+  app.eval('RUNTIME_TTL_MS = 1');
+  t.after(() => app.eval('RUNTIME_TTL_MS = 600000'));
+  await sleep(10);
+  const other = await app.api('POST', 'projects', {name: 'Eviction trigger'});
+  await app.api('GET', `projects/${other.id}/execution`);
+  assert.equal(app.eval(`GRAPH_RUNTIMES.has('${project.id}')`), true);
+  assert.equal((await app.api('GET', path)).paused, true);
+});
+
+test('at most sixteen idle runtimes stay live, least recently used go first', async t => {
+  const app = createApp();
+  t.after(() => app.Backend.shutdownExecutions());
+  const ids = [];
+  for (let i = 0; i < 20; i++) {
+    const project = await app.api('POST', 'projects', {name: 'Visited ' + i});
+    ids.push(project.id);
+    await app.api('GET', `projects/${project.id}/execution`);
+  }
+  assert.equal(app.eval('GRAPH_RUNTIMES.size'), 16);
+  assert.equal(app.eval(`GRAPH_RUNTIMES.has('${ids[19]}')`), true);
+  // Opening the first again rebuilds it from its stored (empty) runtime.
+  assert.equal((await app.api('GET', `projects/${ids[0]}/execution`)).status, 'idle');
+  assert.equal(app.eval('GRAPH_RUNTIMES.size'), 16);
+});
+
+test('a failed runtime write is reported and kept for the next successful write', async t => {
+  const data = new Map();
+  let fail = true,
+    runtime = null;
+  const store = {
+    get: key => (data.has(key) ? structuredClone(data.get(key)) : undefined),
+    commit: ({set, remove}) => {
+      for (const [key, value] of Object.entries(set)) {
+        if (fail && key.endsWith('/runtime')) throw Error('disk full');
+        data.set(key, structuredClone(value));
+        if (key.endsWith('/runtime')) runtime = value;
+      }
+      for (const key of remove) data.delete(key);
+    },
+  };
+  const {app, node, path} = await fixture(t, 'context.state.saved=1;', {store});
+  const first = await app.api('POST', path, {node_ids: [node.id], wait: true});
+  assert.equal(first.dispatch_status, 'completed');
+  assert.equal(first.storage_error, 'disk full');
+  assert.equal(runtime, null);
+  // The same state is still current: the next save writes it instead of skipping it as clean.
+  fail = false;
+  const second = await app.api('POST', path, {node_ids: [node.id], wait: true});
+  assert.equal(second.storage_error, undefined);
+  assert.equal(runtime.state.saved, 1);
+});
+
+test('shutdown waits for the runtime of a fire-and-forget Run to be saved', async t => {
+  const data = new Map();
+  const store = {
+    get: key => (data.has(key) ? structuredClone(data.get(key)) : undefined),
+    commit: async ({set, remove}) => {
+      await sleep(80);
+      for (const [key, value] of Object.entries(set)) data.set(key, structuredClone(value));
+      for (const key of remove) data.delete(key);
+    },
+  };
+  const app = createApp({store});
+  const project = await app.api('POST', 'projects', {name: 'Slow store'});
+  const node = await app.api('POST', `projects/${project.id}/typed-nodes`, {
+    node_type: 'custom',
+    config: nodes.script('context.state.saved=true;'),
+  });
+  const path = `projects/${project.id}/execution`;
+  await app.api('POST', path, {node_ids: [node.id]});
+  for (let i = 0; i < 100 && !app.eval(`GRAPH_RUNTIMES.get('${project.id}')?.state.saved`); i++) await sleep(5);
+  assert.equal(app.eval(`GRAPH_RUNTIMES.get('${project.id}')?.state.saved`), true);
+  await app.Backend.shutdownExecutions();
+  assert.equal([...data.keys()].some(key => key.endsWith('/runtime')), true);
+  assert.equal([...data.entries()].find(([key]) => key.endsWith('/runtime'))[1].state.saved, true);
+});
+
+test('twenty parallel Runs with Stop in the middle settle without unhandled rejections', async t => {
+  const rejections = [];
+  const listener = reason => rejections.push(reason);
+  process.on('unhandledRejection', listener);
+  t.after(() => process.off('unhandledRejection', listener));
+  const {app, node, path} = await fixture(
+    t,
+    'context.state.started=(context.state.started??0)+1;await node.sleep(40);context.state.finished=(context.state.finished??0)+1;'
+  );
+  const runs = Array.from({length: 20}, () => app.api('POST', path, {node_ids: [node.id]}).catch(() => {}));
+  await sleep(10);
+  await app.api('DELETE', path);
+  await Promise.all(runs);
+  const idle = await until(app, path, runtime => runtime.status === 'idle');
+  assert.equal(idle.active_signals, 0);
+  await sleep(120);
+  assert.deepEqual(rejections, []);
+});
+
+test('Stop terminates the workflow worker and a later Run starts exactly one new worker', async t => {
+  const {app, node, path} = await fixture(t, 'context.state.n=(context.state.n??0)+1;');
+  await app.api('POST', path, {node_ids: [node.id], wait: true});
+  assert.equal(app.workerStats.started, 1);
+  await app.api('DELETE', path);
+  await sleep(30);
+  assert.equal(app.workerStats.terminated, 1);
+  assert.equal(app.workerStats.started - app.workerStats.exited, 0);
+  await app.api('POST', path, {node_ids: [node.id], wait: true});
+  assert.equal(app.workerStats.started, 2);
+});

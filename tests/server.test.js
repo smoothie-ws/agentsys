@@ -477,6 +477,47 @@ test('corrupt UI state returns an HTTP error without terminating static hosting'
   });
 });
 
+test('an interrupted commit is replayed once, and an unreadable record does not stop the server', async () => {
+  const dataDir = fs.mkdtempSync(path.join(os.tmpdir(), 'agentsys-transaction-'));
+  const project = {
+    id: 'recoveredproject',
+    name: 'Recovered',
+    description: '',
+    created: 1,
+    workflows: [{id: 'recoveredproject', name: 'Flow', created: 1}],
+  };
+  // The data was written before the crash; the record was not removed yet. Replaying it must
+  // leave one project, not two.
+  fs.writeFileSync(path.join(dataDir, 'projects.json'), JSON.stringify([project]));
+  fs.writeFileSync(
+    path.join(dataDir, '.transaction.json'),
+    JSON.stringify({set: {projects: [project]}, remove: []})
+  );
+  let app = createServer({dataDir}),
+    url = await app.listen(0);
+  try {
+    const listed = await call(url, 'GET', 'projects');
+    assert.equal(listed.status, 200);
+    assert.deepEqual(listed.body.map(item => item.name), ['Recovered']);
+    assert.equal(fs.existsSync(path.join(dataDir, '.transaction.json')), false);
+    assert.equal(JSON.parse(fs.readFileSync(path.join(dataDir, 'projects.json'), 'utf8')).length, 1);
+  } finally {
+    await app.close();
+  }
+  // An unreadable record is set aside; the stored data still serves.
+  fs.writeFileSync(path.join(dataDir, '.transaction.json'), '{not json');
+  app = createServer({dataDir});
+  url = await app.listen(0);
+  try {
+    assert.deepEqual((await call(url, 'GET', 'projects')).body.map(item => item.name), ['Recovered']);
+    assert.equal(fs.existsSync(path.join(dataDir, '.transaction.json')), false);
+    assert.equal(fs.existsSync(path.join(dataDir, '.transaction.json.invalid')), true);
+  } finally {
+    await app.close();
+    fs.rmSync(dataDir, {recursive: true, force: true});
+  }
+});
+
 test('storage keys matching Object properties round-trip as ordinary user data', async () => {
   await withServer({}, async ({url}) => {
     const values = Object.fromEntries(['constructor', 'toString', '__proto__'].map(key => [key, {value: key}]));

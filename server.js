@@ -355,10 +355,29 @@ function createServer(options = {}) {
     for (const k of remove) removeKey(k);
     fs.unlinkSync(transactionFile);
   }
+  /** Finishes a commit that was interrupted, once, without writing the record again. */
+  function replayTransaction() {
+    if (!fs.existsSync(transactionFile)) return;
+    let packet;
+    try {
+      packet = JSON.parse(fs.readFileSync(transactionFile, 'utf8'));
+      const keys = [...Object.keys(packet?.set ?? {}), ...(packet?.remove ?? [])];
+      if (!keys.every(k => VALID_KEY.test(k))) throw new Error('Invalid storage key');
+    } catch (error) {
+      // A record that cannot be read is not a source of truth: the data files are. Keep it for
+      // inspection and start normally instead of refusing to boot.
+      try {
+        fs.renameSync(transactionFile, transactionFile + '.invalid');
+      } catch {}
+      console.warn('[agentsys] ignored an unreadable .transaction.json: ' + error.message);
+      return;
+    }
+    applyTransaction(packet);
+  }
   function commitKeys({set = {}, remove = []}) {
     const keys = [...Object.keys(set), ...remove];
     if (!keys.every(k => VALID_KEY.test(k))) throw new Error('Invalid storage key');
-    if (fs.existsSync(transactionFile)) applyTransaction(JSON.parse(fs.readFileSync(transactionFile, 'utf8')));
+    replayTransaction();
     atomicText(transactionFile, JSON.stringify({set, remove}));
     const transactionFd = fs.openSync(transactionFile, 'r+');
     try {
@@ -368,7 +387,7 @@ function createServer(options = {}) {
     }
     applyTransaction({set, remove});
   }
-  if (fs.existsSync(transactionFile)) commitKeys(JSON.parse(fs.readFileSync(transactionFile, 'utf8')));
+  replayTransaction();
   known = snapshot();
   // ----- the backend: the same code the browser runs, with the data folder as its store -----
   let backend = null,
