@@ -197,7 +197,11 @@ function createServer(options = {}) {
     SESSION_TTL_MS = Math.max(60000, Number(options.sessionTtlMs || 12 * 60 * 60 * 1000)),
     SESSION_LIMIT = Math.max(1, Math.min(100000, Number(options.sessionLimit || 10000))),
     ALLOW_SHARED_DATA = options.allowSharedData === true || process.env.AGENTSYS_ALLOW_SHARED_DATA === '1',
-    LOCK_FILE = path.join(DATA, '.server.lock');
+    LOCK_FILE = path.join(DATA, '.server.lock'),
+    // Sign-in attempts from one address are limited: a wrong token must not be a free brute-force oracle. A
+    // successful sign-in clears the count.
+    AUTH_ATTEMPTS = Math.max(1, Number(options.authAttempts || process.env.AGENTSYS_AUTH_ATTEMPTS || 10)),
+    AUTH_WINDOW_MS = Math.max(1000, Number(options.authWindowMs || process.env.AGENTSYS_AUTH_WINDOW_MS || 60000));
   // Two server processes on one data folder would each cache whole documents and overwrite the other's writes:
   // the last save wins and a record disappears. The lock is per folder, recorded with the pid, and a lock left by
   // a stopped process (a crash) is replaced.
@@ -274,6 +278,29 @@ function createServer(options = {}) {
   }
   const sessionSweep = setInterval(sweepSessions, 5 * 60 * 1000);
   sessionSweep.unref();
+  // Failed sign-ins per address, in a fixed window.
+  const authFailures = new Map();
+  function authEntry(key) {
+    const now = Date.now();
+    let entry = authFailures.get(key);
+    if (!entry || entry.reset <= now) {
+      entry = {count: 0, reset: now + AUTH_WINDOW_MS};
+      authFailures.set(key, entry);
+    }
+    return entry;
+  }
+  /** Seconds to wait when this address used up its attempts in the window, or 0. */
+  const authWait = key => {
+    const entry = authEntry(key);
+    return entry.count >= AUTH_ATTEMPTS ? Math.max(1, Math.ceil((entry.reset - Date.now()) / 1000)) : 0;
+  };
+  const noteAuthFailure = key => {
+    authEntry(key).count++;
+    if (authFailures.size > 512) {
+      const now = Date.now();
+      for (const [address, entry] of authFailures) if (entry.reset <= now) authFailures.delete(address);
+    }
+  };
   const originOf = req => String(req.headers.origin || '').replace(/\/+$/, '').toLowerCase();
   const hostName = req =>
     String(req.headers.host || '')
@@ -808,13 +835,24 @@ function createServer(options = {}) {
       if (hostRefused(req)) return sendJSON(res, 403, {error: {code: 'forbidden', message: 'Unexpected Host header'}});
       if (originOf(req) && !originAllowed(req))
         return sendJSON(res, 403, {error: {code: 'forbidden', message: 'This origin may not open a session'}});
+      const address = String(req.socket?.remoteAddress || 'unknown');
+      const wait = authWait(address);
+      if (wait) {
+        res.setHeader('Retry-After', String(wait));
+        return sendJSON(res, 429, {
+          error: {code: 'rate_limited', message: `Too many sign-in attempts. Try again in ${wait} second(s).`},
+        });
+      }
       const body = await parseJSONBody(req, 64 * 1024);
       const bearer = /^Bearer\s+(.+)$/i.exec(String(req.headers.authorization || ''))?.[1];
       const supplied = typeof body.token === 'string' ? body.token : bearer || '';
-      if (TOKEN && !same(supplied, TOKEN))
+      if (TOKEN && !same(supplied, TOKEN)) {
+        noteAuthFailure(address);
         return sendJSON(res, 401, {error: {code: 'unauthorized', message: 'The token is not valid'}});
+      }
       if (!TOKEN && !loopbackBound && !authenticated(req))
         return sendJSON(res, 401, {error: {code: 'unauthorized', message: 'This server requires a token'}});
+      authFailures.delete(address);
       const id = newSession();
       const secure = !!(
         req.socket?.encrypted ||
@@ -879,9 +917,13 @@ function createServer(options = {}) {
     if (!['GET', 'POST', 'PUT', 'PATCH', 'DELETE'].includes(req.method))
       return sendJSON(res, 405, {error: {message: 'method not allowed'}});
     const query = Object.fromEntries(url.searchParams);
-    // If-Match: <cursor> makes an edit conditional (see "if_cursor" in the API page).
-    if (req.headers['if-match'] && query.if_cursor === undefined)
-      query.if_cursor = String(req.headers['if-match']).replace(/"/g, '');
+    // If-Match: <cursor|version> makes an edit conditional. Workflows compare it with the document cursor; a
+    // collection record compares it with its own version (see "if_cursor"/"if_version" in the API page).
+    if (req.headers['if-match']) {
+      const value = String(req.headers['if-match']).replace(/"/g, '');
+      if (query.if_cursor === undefined) query.if_cursor = value;
+      if (query.if_version === undefined) query.if_version = value;
+    }
     const body = req.method === 'GET' || req.method === 'DELETE' ? {} : await parseJSONBody(req, 20e6);
     const edit = req.headers['x-edit'];
     if (edit !== undefined && (typeof edit !== 'string' || edit.length > 100))

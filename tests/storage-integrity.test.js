@@ -316,3 +316,35 @@ test('a deleted workflow does not leave its script folder behind', async () => {
     clean(dir);
   }
 });
+
+test('records stored before versions existed read as version 1 and become conditional after one write', async () => {
+  const dir = tmp();
+  try {
+    // A folder written by the previous release: definitions and records without a `version` field.
+    fs.mkdirSync(path.join(dir, 'other'), {recursive: true});
+    fs.writeFileSync(
+      path.join(dir, 'other', 'collections.json'),
+      JSON.stringify({legacy: {title: 'Legacy', description: '', schema: {type: 'object'}, updated: 1}})
+    );
+    fs.writeFileSync(
+      path.join(dir, 'other', 'collection__legacy.json'),
+      JSON.stringify([{id: 'r1', data: {text: 'old'}, created: 1, updated: 1}])
+    );
+    const {app, call} = await boot(dir);
+    try {
+      const list = await call('GET', 'collections/legacy/records');
+      assert.equal(list.records.length, 1);
+      assert.equal(list.records[0].version, 1);
+      const written = await call('PUT', 'collections/legacy/records/r1', {data: {text: 'new'}}, {if_version: '1'});
+      assert.equal(written.version, 2);
+      await assert.rejects(
+        call('PUT', 'collections/legacy/records/r1', {data: {text: 'stale'}}, {if_version: '1'}),
+        error => error.code === 'conflict'
+      );
+    } finally {
+      await app.close();
+    }
+  } finally {
+    clean(dir);
+  }
+});

@@ -92,7 +92,7 @@ The application API is the existing backend route table, exposed as HTTP. It is 
 | `GET /api/events` | Authenticated SSE stream of `change` and `hook` events. |
 | `GET /api/diagnostics` | Uptime, version, worker counts, runtime states, recent errors. Authenticated. |
 | `GET /api/migration/ui-state` | Read the old server-side UI state once. Authenticated. |
-| `/api/collections/...` | Generic JSON resources with schema validation. |
+| `/api/collections/...` | Generic JSON resources with schema validation. Records carry a `version`; send it as `If-Match` to make a write conditional (409 on a mismatch). |
 
 The graph API keeps its existing shape (`projects`, `workflows`, `library`, `execution`, `net`, `secrets`, ...).
 Compatibility matters more than renaming routes.

@@ -359,3 +359,28 @@ test('the combined local server sends the same framing and content policy as the
     fs.rmSync(dir, {recursive: true, force: true});
   }
 });
+
+test('sign-in attempts are limited per address, and a success clears the count', async () => {
+  const sleep = ms => new Promise(resolve => setTimeout(resolve, ms));
+  await withServer({authAttempts: 3, authWindowMs: 1000}, async ({base}) => {
+    const login = token =>
+      fetch(base + '/api/auth/session', {
+        method: 'POST',
+        headers: {'Content-Type': 'application/json'},
+        body: JSON.stringify({token}),
+      });
+    for (let attempt = 0; attempt < 3; attempt++) assert.equal((await login('wrong')).status, 401);
+    const limited = await login('wrong');
+    assert.equal(limited.status, 429);
+    assert.equal((await limited.json()).error.code, 'rate_limited');
+    assert.ok(Number(limited.headers.get('retry-after')) >= 1, 'the answer says how long to wait');
+    // The right token waits out the window too: the limit is not an oracle for which guess was right.
+    assert.equal((await login(TOKEN)).status, 429);
+    await sleep(1100);
+    const good = await login(TOKEN);
+    assert.equal(good.status, 200);
+    assert.match(good.headers.get('set-cookie'), /HttpOnly/);
+    // A successful sign-in cleared the count, so one wrong attempt is a 401 again, not a 429.
+    assert.equal((await login('wrong')).status, 401);
+  });
+});

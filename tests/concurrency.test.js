@@ -229,3 +229,55 @@ test('a client that vanishes mid-run does not stop the work', async () => {
     fs.rmSync(dir, {recursive: true, force: true});
   }
 });
+
+test('a collection record has its own version, and If-Match makes its writes conditional', async () => {
+  const {app, base, dir} = await start();
+  try {
+    await call(base, 'PUT', 'collections/notes', {
+      body: {title: 'Notes', schema: {type: 'object', properties: {text: {type: 'string'}}, required: ['text']}},
+    });
+    const made = await call(base, 'POST', 'collections/notes/records', {body: {data: {text: 'one'}}});
+    assert.equal(made.status, 200);
+    assert.equal(made.body.version, 1);
+    const id = made.body.id;
+    const route = 'collections/notes/records/' + id;
+
+    const first = await call(base, 'PUT', route, {body: {data: {text: 'two'}}, headers: {'If-Match': '1'}});
+    assert.equal(first.status, 200);
+    assert.equal(first.body.version, 2);
+
+    const stale = await call(base, 'PUT', route, {body: {data: {text: 'lost'}}, headers: {'If-Match': '1'}});
+    assert.equal(stale.status, 409);
+    assert.equal(stale.body.error.code, 'conflict');
+    assert.match(stale.body.error.message, /version is 2, not 1/);
+    assert.equal((await call(base, 'GET', route)).body.data.text, 'two', 'the stale write changed nothing');
+
+    // Without If-Match the write is last-one-wins, and the version still advances.
+    const plain = await call(base, 'PUT', route, {body: {data: {text: 'three'}}});
+    assert.equal(plain.status, 200);
+    assert.equal(plain.body.version, 3);
+
+    // Two writers that read version 3: one wins, one is told to read again.
+    const [left, right] = await Promise.all([
+      call(base, 'PUT', route, {body: {data: {text: 'left'}}, headers: {'If-Match': '3'}}),
+      call(base, 'PUT', route, {body: {data: {text: 'right'}}, headers: {'If-Match': '3'}}),
+    ]);
+    assert.deepEqual([left.status, right.status].sort(), [200, 409]);
+
+    const bad = await call(base, 'PUT', route, {body: {data: {text: 'x'}}, headers: {'If-Match': 'soon'}});
+    assert.equal(bad.status, 400);
+    assert.equal(bad.body.error.code, 'invalid_request');
+
+    const versionNow = (await call(base, 'GET', route)).body.version;
+    const staleDelete = await call(base, 'DELETE', route, {headers: {'If-Match': '1'}});
+    assert.equal(staleDelete.status, 409);
+    assert.equal((await call(base, 'GET', route)).status, 200, 'the refused delete kept the record');
+    const deleted = await call(base, 'DELETE', route, {headers: {'If-Match': String(versionNow)}});
+    assert.equal(deleted.status, 200);
+    assert.equal(deleted.body.version, versionNow);
+    assert.equal((await call(base, 'GET', route)).status, 404);
+  } finally {
+    await app.close();
+    fs.rmSync(dir, {recursive: true, force: true});
+  }
+});

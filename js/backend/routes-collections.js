@@ -71,12 +71,33 @@ async function collectionDefinition(c, name) {
 }
 
 const recordsKey = name => `collection:${name}`;
+const versionOf = record => record.version ?? 1;
 const publicRecord = record => ({
   id: record.id,
   data: clone(record.data),
   created: record.created,
   updated: record.updated,
+  // The version is what a client sends back as If-Match to make its next write conditional.
+  version: versionOf(record),
 });
+
+/** The version a conditional write expects (`If-Match` arrives as `if_version`), or null for an unconditional one. */
+function expectedVersion(c) {
+  const raw = c.query.if_version;
+  if (raw === undefined || raw === '') return null;
+  const value = Number(raw);
+  if (!Number.isInteger(value) || value < 1) throw bad('if_version must be a positive integer (the record version)');
+  return value;
+}
+function assertVersion(record, expected) {
+  if (expected === null) return;
+  if (versionOf(record) !== expected)
+    throw new ApiError(
+      'conflict',
+      `The record changed since it was read (version is ${versionOf(record)}, not ${expected}). Read it again and retry.`,
+      409
+    );
+}
 
 route('GET', 'collections', 'List generic JSON collection definitions', async c => {
   const definitions = await c.ctx.get(definitionsKey, {});
@@ -143,7 +164,13 @@ route(
     const error = validateAgainst(definition.schema, data);
     if (error) throw bad(error);
     const now = Date.now() / 1000,
-      record = {id: c.body.id && /^[A-Za-z0-9_-]{1,100}$/.test(c.body.id) ? c.body.id : uid(), data, created: now, updated: now};
+      record = {
+        id: c.body.id && /^[A-Za-z0-9_-]{1,100}$/.test(c.body.id) ? c.body.id : uid(),
+        data,
+        created: now,
+        updated: now,
+        version: 1,
+      };
     if (records.some(item => item.id === record.id)) throw bad('A record with that id already exists');
     records.push(record);
     c.ctx.set(recordsKey(name), records);
@@ -162,12 +189,14 @@ route(
       record = records.find(item => item.id === record_id);
     if (!record) throw missing('Record not found');
     if (c.method === 'GET') return publicRecord(record);
+    const expected = expectedVersion(c);
+    assertVersion(record, expected);
     if (c.method === 'DELETE') {
       c.ctx.set(
         recordsKey(name),
         records.filter(item => item !== record)
       );
-      return {deleted: true, id: record.id};
+      return {deleted: true, id: record.id, version: versionOf(record)};
     }
     const data = c.body.data === undefined ? c.body : c.body.data;
     if (!isObject(data)) throw bad('data must be a JSON object');
@@ -176,8 +205,14 @@ route(
     if (error) throw bad(error);
     record.data = data;
     record.updated = Date.now() / 1000;
+    record.version = versionOf(record) + 1;
     c.ctx.set(recordsKey(name), records);
     return publicRecord(record);
   },
-  {body: {data: {}}}
+  {
+    query: ['if_version'],
+    body: {data: {}},
+    returns:
+      'The record with its version. Send the version back as If-Match (?if_version) to make the next write conditional; a mismatch is 409 conflict.',
+  }
 );

@@ -14,7 +14,8 @@ graph content and (by default) client plugins.
 | Server bound to any other address | A token is mandatory. The CLI refuses to start without one and the API answers `503` if a token is ever missing. |
 | Token supplied | `Authorization: Bearer <token>` or one `POST /api/auth/session` exchange. Tokens are compared with a timing-safe comparison. |
 | Browser client | The bearer token stays in `sessionStorage` for the tab. After exchange, requests use an HttpOnly `SameSite` cookie. |
-| Session lifetime | 12 hours by default (`--session-hours`); sessions are in server memory and vanish on restart. The client renews once from the per-tab token. |
+| Session lifetime | 12 hours by default (`--session-hours`); sessions are in server memory and vanish on restart. The client renews once from the per-tab token. The map is swept, capped at 10 000 and the oldest is evicted first. |
+| Sign-in attempts | 10 per minute per address by default (`AGENTSYS_AUTH_ATTEMPTS`, `AGENTSYS_AUTH_WINDOW_MS`). Over the limit answers `429` with `Retry-After`; a successful sign-in clears the count. |
 | Wrong/expired token | `401`; the client shows **Unauthorized** and does not retry with mutations. |
 
 Tokens are never accepted from query parameters, never written to `localStorage`, never logged, and are redacted

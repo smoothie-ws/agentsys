@@ -91,6 +91,8 @@ Errors are JSON:
   cookie. Reads and writes accept either the cookie or the Bearer header.
 - Sessions live in memory for `--session-hours` (12 by default). The map is swept and capped (`sessionLimit`,
   10 000 by default); the oldest session is evicted first. A restart invalidates every session.
+- Sign-in attempts are limited per address (10 per minute by default; `AGENTSYS_AUTH_ATTEMPTS` and
+  `AGENTSYS_AUTH_WINDOW_MS`). Over the limit answers `429` with `Retry-After`; a success clears the count.
 - Unsafe cookie-authenticated requests need `X-AgentSys: 1` and an allowed `Origin` (CSRF protection).
 - CORS is an exact allowlist (`--allowed-origin`); `*` is never sent for credentials. A tokenless loopback
   server also accepts loopback origins so the split local launcher works.
