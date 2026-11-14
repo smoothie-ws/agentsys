@@ -194,7 +194,46 @@ function createServer(options = {}) {
     TLS = options.tls || null,
     TRUST_PROXY = !!options.trustProxy || process.env.AGENTSYS_TRUST_PROXY === '1',
     SESSIONS = new Map(),
-    SESSION_TTL_MS = Math.max(60000, Number(options.sessionTtlMs || 12 * 60 * 60 * 1000));
+    SESSION_TTL_MS = Math.max(60000, Number(options.sessionTtlMs || 12 * 60 * 60 * 1000)),
+    ALLOW_SHARED_DATA = options.allowSharedData === true || process.env.AGENTSYS_ALLOW_SHARED_DATA === '1',
+    LOCK_FILE = path.join(DATA, '.server.lock');
+  // Two server processes on one data folder would each cache whole documents and overwrite the other's writes:
+  // the last save wins and a record disappears. The lock is per folder, recorded with the pid, and a lock left by
+  // a stopped process (a crash) is replaced.
+  const pidAlive = pid => {
+    if (!Number.isInteger(pid) || pid <= 0) return false;
+    try {
+      process.kill(pid, 0);
+      return true;
+    } catch (error) {
+      return error.code === 'EPERM';
+    }
+  };
+  if (!ALLOW_SHARED_DATA) {
+    fs.mkdirSync(DATA, {recursive: true});
+    for (let attempt = 0; attempt < 2; attempt++) {
+      try {
+        fs.writeFileSync(LOCK_FILE, JSON.stringify({pid: process.pid, at: new Date().toISOString()}), {flag: 'wx'});
+        break;
+      } catch (error) {
+        if (error.code !== 'EEXIST') throw error;
+        let holder = null;
+        try {
+          holder = JSON.parse(fs.readFileSync(LOCK_FILE, 'utf8'));
+        } catch {}
+        if (pidAlive(Number(holder?.pid)))
+          throw new Error(
+            `The data folder ${DATA} is in use by another AgentSys server (pid ${holder.pid}). ` +
+              'Stop it, use another --data folder, or set AGENTSYS_ALLOW_SHARED_DATA=1 to share it anyway.'
+          );
+        // A lock of a process that no longer runs is stale: take the folder over.
+        try {
+          fs.unlinkSync(LOCK_FILE);
+        } catch {}
+        if (attempt === 1) throw error;
+      }
+    }
+  }
   const sessionHash = value => crypto.createHash('sha256').update(String(value)).digest('hex');
   const cookies = req => {
     const out = {};
@@ -971,8 +1010,7 @@ function createServer(options = {}) {
       closing = true;
       clearInterval(watcher);
       clearInterval(sessionSweep);
-      await backend?.Backend.shutdownExecutions();
-      for (const res of clients) res.end();
+      await backend?.Backend.shutdownExecutions();      for (const res of clients) res.end();
       clients.clear();
       for (const [res, entry] of eventClients) {
         clearInterval(entry.heartbeat);
@@ -982,6 +1020,12 @@ function createServer(options = {}) {
       }
       eventClients.clear();
 
+      if (!ALLOW_SHARED_DATA) {
+        try {
+          const holder = JSON.parse(fs.readFileSync(LOCK_FILE, 'utf8'));
+          if (Number(holder?.pid) === process.pid) fs.rmSync(LOCK_FILE, {force: true});
+        } catch {}
+      }
       server.closeAllConnections?.();
       return new Promise(resolve => server.close(() => resolve()));
     },

@@ -206,8 +206,11 @@ async function migrateData({dataDir, dryRun = false, log = () => {}} = {}) {
         try {
           const existing = await request('GET', 'collections/providers/records', undefined, {limit: 500});
           const duplicate = existing.records.find(record => record.data.providerId === data.providerId);
-          if (duplicate) await request('PUT', 'collections/providers/records/' + duplicate.id, {data});
-          else await request('POST', 'collections/providers/records', {data});
+          if (duplicate) {
+            // A later record without a key must not erase the reference migrated from the earlier one.
+            if (!data.apiKey && duplicate.data.apiKey) data.apiKey = duplicate.data.apiKey;
+            await request('PUT', 'collections/providers/records/' + duplicate.id, {data});
+          } else await request('POST', 'collections/providers/records', {data});
           report.migrated.records++;
         } catch (error) {
           report.warnings.push(`Provider ${data.providerId} was not migrated: ${error.message}`);
