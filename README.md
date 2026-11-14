@@ -57,9 +57,10 @@ server and are never merged. See [Environments](docs/environments.md).
 ## Client plugins
 
 Install a JSON package from **Plugins**. It runs in a sandboxed iframe with a narrow host API; its pages and
-cards are sanitized. It reaches the server only through the normal API and cannot read the server token.
-Installed plugins are trusted by the user; the sandbox isolates the browser, not the server. See
-[Plugins](docs/plugins.md).
+cards are sanitized. It reaches the server only through the normal API and cannot read the server token. A
+package declares what it may do there: without `capabilities` it is read-only, and writes, runs, secrets and
+network hosts are named explicitly. The check runs in the host page, so it holds against the plugin, not against
+an operator who edits the client. See [Plugins](docs/plugins.md).
 
 ## Tests
 

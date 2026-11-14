@@ -188,6 +188,13 @@ async def main():
             await page.evaluate("go('/library/nodes')")
             await page.wait_for_function("app.route && app.route.page === 'resources' && app.route.section === 'nodes'")
             await page.wait_for_function("document.querySelector('#view').innerText.includes('Greeting')")
+            # The saved node is ordinary server data: it still runs with the plugin (and its interface) switched off.
+            rerun = await page.evaluate(
+                "api('projects/%s/execution', {method: 'POST', body: {workflow_id: '%s', wait: true}})"
+                % (project['id'], workflow['id'])
+            )
+            assert 'finished without the client' in ''.join((rerun.get('displays') or {}).values()), rerun
+            print('PASS a plugin-created node runs with the plugin disabled', flush=True)
             print('PASS a client plugin creates a standard node; the node remains after the plugin is off', flush=True)
 
             # Server restart: definitions and durable state come back; the graph is not secretly started again.

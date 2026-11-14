@@ -8,16 +8,24 @@ npm test
 
 Uses only Node built-in modules. Each test builds an independent in-memory backend or a temporary data folder.
 Coverage includes graph editing, types, wires, nested nodes, signals, reads, loops, execution controls,
-permissions, Data and Graph nodes, durable JSON, the HTTP server, collections and migration. Recent result:
-**242 pass, 0 fail** (~10 s).
+permissions, Data and Graph nodes, durable JSON, the HTTP server, collections, migration, the client transport,
+architectural boundaries, the plugin capability layer, concurrency and resource bounds. Recent result:
+**319 pass, 0 fail** (~20 s).
 
 Useful focused runs:
 
 ```sh
-node --test tests/platform.test.js
-node --test tests/execution.test.js
-node --test tests/migration.test.js
-node --test tests/server.test.js
+node --test tests/platform.test.js       # the split: API-only server, sessions, CORS, SSE, collections
+node --test tests/execution.test.js      # the graph engine and its controls
+node --test tests/migration.test.js      # backup, preserved data, provider and secret move
+node --test tests/server.test.js         # the HTTP server and the data folder
+node --test tests/architecture.test.js   # forbidden imports and browser APIs in the server half
+node --test tests/environments.test.js   # the client transport, in a Node vm
+node --test tests/security.test.js       # auth, sessions, CSRF, CORS, Host, SSE, 413, redaction
+node --test tests/plugin-capabilities.test.js tests/client-plugins.test.js
+node --test tests/storage-integrity.test.js tests/backup.test.js
+node --test tests/concurrency.test.js tests/api-contract.test.js
+node --test tests/engine-regression.test.js tests/resource.test.js
 ```
 
 `tests/platform.test.js` checks the platform split itself: no server plugin route, no client/server script
@@ -29,6 +37,7 @@ runnable Library node. `tests/migration.test.js` checks the backup, preserved da
 Requires Python Playwright and Chromium:
 
 ```sh
+python -m playwright install chromium
 python tests/browser_suite.py
 # or one scenario
 python tests/browser_suite.py platform
@@ -42,17 +51,34 @@ PLAYWRIGHT_CHROMIUM_EXECUTABLE=/path/to/chrome python tests/browser_suite.py
 
 Selected scenarios:
 
-- `platform` — **the split end-to-end test**: starts an API-only server and a static client as separate
+- `platform` - **the split end-to-end test**: starts an API-only server and a static client as separate
   processes; checks no local Backend/DB, the Environments page, a workflow run, continuation after the client
   page closes, reconnect, a second server with isolated data, a sandboxed plugin creating a Library node, and a
   server restart that restores JSON without rerunning the graph.
-- `execution_ui` — Run/Pause/Resume/Stop and previews across tabs and reloads on the combined local server.
-- `shell` — navigation, tabs, toolbar and responsive shell.
-- `design` — page geometry at desktop, tablet and phone widths; node/signal appearance.
+- `plugin_security` - installs a read-only plugin that tries to write, fetch, read a secret, run another
+  plugin's command and add a `javascript:` link: every attempt is refused, the victim command never runs; then a
+  plugin with `graph.write` performs exactly that write, and plugin page HTML is sanitized.
+- `ux` - desktop, tablet and phone layouts with no horizontal overflow; empty states; an unreachable server that
+  keeps the page title and offers a retry; keyboard search (Ctrl+K, Escape); a readable API error. Saves
+  screenshots to `docs/audits/platform-marathon/screenshots/`.
+- `execution_ui` - Run/Pause/Resume/Stop and previews across tabs and reloads on the combined local server.
+- `shell` - navigation, tabs, toolbar and responsive shell.
+- `design` - page geometry at desktop, tablet and phone widths; node/signal appearance.
 
 `tests/browser_smoke.py` and `tests/browser_plugins.py` belong to the removed browser-only and server-plugin
 architectures. They are kept for reference but are not in the default suite; their coverage is replaced by
 `platform` plus the Node suite.
+
+## Load and backup tools
+
+```sh
+node --expose-gc tools/stress.js          # reads, runs, writes, a 600-node graph, Stop under load, heap
+node tools/stress.js --json               # the same as JSON
+node tools/backup.js --data data --out backups
+```
+
+`tools/stress.js` reports medians and p95 for one machine; compare runs on the same machine over time. The Node
+suite asserts loose bounds so a leak or a quadratic path fails it, not a slow machine.
 
 ## Manual smoke alternatives
 

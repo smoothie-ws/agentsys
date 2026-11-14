@@ -48,9 +48,11 @@ LAN HTTP is acceptable only on a trusted network. For anything else use HTTPS.
 ## VPS with HTTPS
 
 The recommended layout is: the server listens on loopback; a reverse proxy owns the public name and TLS.
+Ready-to-edit files are in `deploy/`: `agentsys-server.service` (systemd, with hardening),
+`nginx-agentsys.conf` and `Caddyfile`.
 
 ```ini
-# /etc/systemd/system/agentsys-server.service
+# /etc/systemd/system/agentsys-server.service — see deploy/agentsys-server.service for the full unit
 [Unit]
 Description=AgentSys Server
 After=network.target
@@ -60,8 +62,8 @@ Type=simple
 User=agentsys
 Group=agentsys
 WorkingDirectory=/opt/agentsys
-Environment=AGENTSYS_TOKEN=REPLACE_WITH_A_LONG_RANDOM_TOKEN
-Environment=AGENTSYS_ALLOWED_ORIGINS=https://agentsys.example.com
+# The token lives in a root-owned file, not in the unit, so `systemctl cat` does not show it.
+EnvironmentFile=/etc/agentsys/server.env
 ExecStart=/usr/bin/node /opt/agentsys/bin/agentsys-server.js start \
   --host 127.0.0.1 --port 8080 --data /var/lib/agentsys/data --name "VPS Frankfurt" --trust-proxy
 Restart=on-failure
@@ -69,11 +71,24 @@ RestartSec=3
 NoNewPrivileges=true
 PrivateTmp=true
 ProtectSystem=strict
-ReadWritePaths=/var/lib/agentsys
+ReadWritePaths=/var/lib/agentsys/data
+UMask=0077
 
 [Install]
 WantedBy=multi-user.target
 ```
+
+`/etc/agentsys/server.env` (mode `600`, owner `root`):
+
+```sh
+AGENTSYS_TOKEN=<64 hex characters: openssl rand -hex 32>
+AGENTSYS_ALLOWED_ORIGINS=https://client.example.com
+```
+
+The directory `/var/lib/agentsys/data` must be writable by `agentsys` and by nobody else. The server creates
+`data/.server.lock` and refuses to start if another live process holds the same folder — two servers on one
+folder would overwrite each other's documents. Use one folder per server; `AGENTSYS_ALLOW_SHARED_DATA=1` is the
+deliberate escape hatch and is almost never right.
 
 ```sh
 sudo systemctl daemon-reload
@@ -145,23 +160,52 @@ VPN address as the environment URL. No public proxy is needed.
 
 ## Backups
 
-The data folder is plain JSON. Stop the server or copy a consistent snapshot:
+The data folder is plain JSON. `tools/backup.js` copies it, skips half-written `.tmp-` files, checks that every
+JSON file parses and writes a manifest:
 
 ```sh
-systemctl stop agentsys-server
-tar czf agentsys-data-$(date +%F).tgz -C /var/lib/agentsys data
-systemctl start agentsys-server
+# while the server is stopped: an exact copy
+node tools/backup.js --data /var/lib/agentsys/data --out /var/backups/agentsys
+
+# while it runs (accepted, with the caveat it prints)
+node tools/backup.js --data /var/lib/agentsys/data --out /var/backups/agentsys --force
 ```
 
+The tool refuses a live folder without `--force`, and exits non-zero when a copied JSON file does not parse
+(the file is still copied, for repair). Restore by pointing `--data` at the backup folder while no server uses
+it: a `.transaction.json` inside is replayed at start, so a copy taken during a commit still becomes consistent.
 The migration command creates `data/backups/pre-platform-<timestamp>/` before it writes anything.
+
+What a backup must contain: `projects.json`, `settings.json`, `library/`, `workflows/` (each with its `.files`
+sidecar), `collections.json`, `collection-*.json`, `secrets/`, `other/`. A recursive copy of the folder gets all
+of them.
+
+## Updating
+
+1. Take a backup (above).
+2. Stop the service: `systemctl stop agentsys-server`.
+3. Replace the checkout (`git fetch && git checkout <tag>`); there is no build step and no `npm install`.
+4. Start it and check `GET /api/meta` reports the expected version and protocol.
+5. Run `node bin/agentsys-server.js migrate --data <folder> --dry-run` if the update crosses the platform split.
+6. Clients that report "Incompatible version" need the new client; the protocol number is bumped only when a
+   client of the previous version can no longer work.
 
 ## Health checks and operations
 
 - `GET /api/meta` is public and cheap; use it for liveness and version checks.
-- `GET /api/diagnostics` (authenticated) reports uptime, version, worker counts, live runtimes and recent errors.
+- `GET /api/diagnostics` (authenticated) reports uptime, version, worker counts, live runtimes, the open event
+  streams, the session count and recent errors — never workflow data, tokens or secret values.
 - `agentsys-server status --url https://agentsys.example.com` prints the same discovery data from a shell.
 - Graceful stop (`SIGTERM`) stops active workflows and closes clients; `systemd` sends it by default.
 - A server restart restores saved JSON but does not resume JavaScript. Workflows do not auto-start.
+- One process per data folder: a second one exits with a message naming the pid that holds it.
+
+## Windows
+
+`start.bat` runs the combined local server. For a service, use Task Scheduler with `node bin/agentsys-server.js
+start --host 127.0.0.1 --port 8080 --data <folder>`, and keep the token in a user environment variable. Windows
+antivirus and indexers may briefly lock a file during a rename; the store retries the rename and fails without
+replacing the target with a partial write.
 
 ## Troubleshooting
 
