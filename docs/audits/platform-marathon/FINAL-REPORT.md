@@ -197,7 +197,7 @@ asserts loose bounds so a leak or a quadratic path fails it, not a slow machine.
 | Boundaries | `node --test tests/architecture.test.js` | 7/7 |
 | Backup | `node tools/backup.js` via `tests/backup.test.js` | 3/3 |
 | CLI | `agentsys-server version`, `help`, `status`, no-token refusal | as documented |
-| Diff review | `git diff --stat main...HEAD` | 97 files, +9 515/−1 302; no temporary or user data |
+| Diff review | `git diff --stat main...e9a6889` | 106 files, +9 943/−1 302; no temporary or user data |
 | Working tree | `git status --short` | clean after the final commit |
 | Migration | `tests/migration.test.js` | 6/6, including idempotency and a pre-platform folder |
 
