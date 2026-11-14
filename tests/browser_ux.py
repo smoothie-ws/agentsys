@@ -187,7 +187,10 @@ async def main():
             assert 'name' in error.lower(), error
             print('PASS a refused write returns a readable message', flush=True)
 
-            assert not errors, errors
+            # WebKit reports a cross-origin fetch to an unreachable server as "due to access control
+            # checks"; that is the expected state of the deliberately closed environment, not a page error.
+            real_errors = [error for error in errors if 'due to access control checks' not in error]
+            assert not real_errors, real_errors
             await browser.close()
     finally:
         for process in [server, client]:

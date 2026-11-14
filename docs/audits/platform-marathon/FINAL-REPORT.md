@@ -42,8 +42,8 @@ or externally driven session should pick up, in order.
 |---|---|---|
 | Actual duration | measured | 82 min 56 s, stated above; not 12 h |
 | Initial tests | exact | `node --test`: **245** on `main`, **242** on the source branch, 0 failures |
-| Final tests | exact | **338** pass, 0 fail, ~12 s (Linux CI configured for Node 20; measured on Node 20.11/Windows) |
-| New tests | count and purpose | **96 Node tests** (12 new files plus 4 added to migration) + **3 browser scenarios** (24 checks; the interface ones also on Firefox); listed in section 5 |
+| Final tests | exact | **343** pass, 0 fail, ~13 s (Linux CI configured for Node 20; measured on Node 20.11/Windows) |
+| New tests | count and purpose | **101 Node tests** (14 new files plus 4 added to migration) + **3 browser scenarios** (24 checks on Chromium; the interface ones also on Firefox and WebKit); listed in section 5 |
 | Restored tests | count and purpose | **0** deleted tests restored: the 14 removed server-plugin tests have no subject in this architecture, and their coverage is replaced by platform/migration/permission/plugin tests (table in `BASELINE.md`) |
 | Defects found | priorities | **20** (4 high, 6 medium, 10 low) in section 4 |
 | Defects fixed | with tests | **20/20**, each with a reproducing test |
@@ -97,6 +97,7 @@ holds the fix.
 | 18 | Low | A plugin that never answered left a page render pending forever | code | 20 s invoke timeout | code + browser scenario |
 | 19 | Low | `SERVER_ONLY` did not cover the root `server.js` (defence in depth only; the public path filter still blocked it) | code | pattern extended | `architecture.test.js` |
 | 20 | Low | An aborted request left `readBody` pending | code | `aborted` rejects | code path exercised by security tests |
+| 21 | Medium | Five editing routes were absent from the undo set: adding a Script/Event primitive, splitting a wire, typing an output value, changing workflow types, changing a Script's grants | reproduction + randomized test | all five are edits; undo restores them | `graph-mutation.test.js` |
 
 Negative result, recorded deliberately: **the graph engine needed no change**. Four new scenarios (a Script
 editing its own graph, bounded creation, self-deletion, repeated runs with Stop) all passed against the existing
@@ -110,12 +111,14 @@ semantics, which is evidence that the refactor did not damage it.
 | `tests/environments.test.js` | 13 | the client transport in a Node vm: discovery, token confinement, 401 renewal once, no retry of writes, abort on switch, stale answers, removal, rapid switching, reconnect, incompatibility |
 | `tests/plugin-capabilities.test.js` | 8 | classification and refusal by method/path/body; read-only default; named secrets; host-scoped network; shipped packages declare what they use |
 | `tests/security.test.js` | 15 | anonymous access, invalid/logged-out sessions, CSRF+Origin, Host/rebinding, CORS, anonymous SSE, credential conflicts, 413, unknown routes/methods/escapes, diagnostics, redaction, non-loopback without token, OpenAPI, CSP |
-| `tests/storage-integrity.test.js` | 11 | redo replay, unreadable record, path escape, tmp file, corrupted JSON, folder copy as backup, 25 parallel records, sidecar scripts, lock takeover, deletion |
+| `tests/storage-integrity.test.js` | 12 | redo replay, unreadable record, path escape, tmp file, corrupted JSON, folder copy as backup, 25 parallel records, sidecar scripts, lock takeover, deletion |
 | `tests/concurrency.test.js` | 6 | If-Match conflict, no lost update, shared events, cross-server isolation, stop visible to a second client, restart, vanished client |
 | `tests/engine-regression.test.js` | 4 | dynamic graph editing during a run, bounded creation, self-deletion, worker settlement |
 | `tests/resource.test.js` | 6 | 200 round trips, 12 parallel runs, stream cleanup, session cap, 600-node graph, 1000 records |
 | `tests/api-contract.test.js` | 8 | 405/404, malformed bodies, protocol header, public discovery, pagination, older clients, client independence, cursor |
 | `tests/backup.test.js` | 3 | stopped backup/restore, live refusal and `--force`, corrupted file reporting |
+| `tests/graph-mutation.test.js` | 3 | 5 seeds × 30 random editor operations through the API with invariants after every step (unique ids, every edge endpoint exists, every group member exists, finite positions, monotonic cursor), redo restores what undo removed, a mutated graph still runs, and every editing route is undoable |
+| `tests/soak.test.js` | 1 | an 8 s create/edit/run/delete loop with fixed thresholds: no error, progress, no running runtime, bounded heap |
 | `tests/graph-format.test.js` | 4 | 200 generated documents round-trip through encode/decode (modulo the canonical collection order), encode is idempotent, a script default becomes a sidecar and returns, damaged/unreferenced/escaping/proto-polluting packets are refused, runtime stays opaque |
 | `tests/plugin-tokens.test.js` | 7 | server-enforced plugin tokens: issuance, refusal by capability family, named secrets, host-scoped net, auth/events/diagnostics denied, revocation under a valid cookie, expiry and a bounded token map, and agreement between the host and server matchers |
 | `tests/browser_plugin_security.py` | 5 checks | a read-only plugin cannot write/fetch/spend a secret/run another command/add a link; a granted plugin can write exactly that; HTML sanitized |
@@ -168,6 +171,8 @@ asserts loose bounds so a leak or a quadratic path fails it, not a slow machine.
   Plugins page) plus **server-enforced scoped tokens** (`POST/DELETE /api/auth/plugin-session`), command
   scoping, path-only sidebar links, a stricter sanitizer, a session sweep and cap, a sign-in rate limit, a real
   413, CSP/frame policy on the combined server.
+- **Editor**: every editing route is undoable now (five were missing: primitives, wire splits, output values,
+  types, grants); undo history is documented and tested as per-process.
 - **Client**: real cancellation per environment generation; status/meta ownership per attempt; scoped plugin
   token minting, caching, renewal and revocation; a failed page keeps its context and offers a retry;
   Environments and Collections searchable; Escape closes search.
@@ -190,7 +195,7 @@ asserts loose bounds so a leak or a quadratic path fails it, not a slow machine.
 | No general API rate limiting (beyond sign-in) | Low | A reverse proxy can add per-address limits; a token is an operator credential |
 | Plugin CSS can restyle the client | Low | Documented; there is no per-plugin stylesheet isolation |
 | Browser tests on Chromium and Firefox; WebKit untested | Low | `tests/browser_ux.py firefox` passes; Safari/WebKit is not covered |
-| Undo history is in memory per process | Low | Lost on restart by design; not covered by a durability test |
+| Undo history is in memory per process | Low | Documented in `docs/runtime.md` and asserted by `storage-integrity.test.js`; a restart keeps the document and clears the history |
 | Linux, systemd, nginx/Caddy, a real certificate | Untested here | Artefacts and expectations are written down in `DEPLOYMENT-VERIFICATION.md`; must be exercised on the target host |
 | Collections rewrite one document per write | Low | 255 writes/s measured; a high-volume workload needs a different schema, not a code change |
 | Checkpoints 10–12 (hours 10–12) | Process | Not written because the session did not last that long; the journal and backlog allow a controller to resume |
@@ -199,9 +204,10 @@ asserts loose bounds so a leak or a quadratic path fails it, not a slow machine.
 
 | Check | Command | Result |
 |---|---|---|
-| Node suite | `node --test` | 338 pass, 0 fail (~12 s) |
+| Node suite | `node --test` | 343 pass, 0 fail (~13 s) |
 | Browser suite | `python tests/browser_suite.py` | 6/6 pass: platform, plugin_security, ux, execution_ui, shell, design |
-| Second engine | `python tests/browser_ux.py firefox` | 8/8 interface checks pass; screenshots `*-firefox.jpg` |
+| Other engines | `python tests/browser_ux.py firefox` / `… webkit` | 8/8 each; screenshots `*-firefox.jpg`, `*-webkit.jpg` |
+| Soak | `node --expose-gc tools/soak.js --seconds 60` | 450 cycles, 0 errors, heap 5→11 MB, 450/450 workers settled, 0 running runtimes |
 | Stress | `node --expose-gc tools/stress.js` | recorded in `BENCHMARKS.md`; 0 run failures, 0 running runtimes after Stop |
 | Boundaries | `node --test tests/architecture.test.js` | 7/7 |
 | Backup | `node tools/backup.js` via `tests/backup.test.js` | 3/3 |
@@ -236,9 +242,10 @@ Priority A — correctness and data:
 
 1. ~~Per-record versioning for collections~~ — done in the second phase (versions + `If-Match`, 409 on a
    stale write or delete, old records read as version 1).
-2. Undo/redo durability across a restart, or an explicit statement and test that it is per-process.
+2. ~~Undo/redo durability~~ — decided and tested: history is per process, stated in `docs/runtime.md` and
+   asserted after a restart. Making it durable is a separate design (state size, conflict with concurrent edits).
 3. ~~Property-based tests for the text-graph format~~ — done (`tests/graph-format.test.js`, 200 generated
-   documents, hostile packets).
+   documents, hostile packets). Randomized editor mutations are done too (`tests/graph-mutation.test.js`).
 4. Finish the hourly checkpoint cadence with an external controller: resume from `WORKLOG.md` and continue
    at the next real hour marks.
 
@@ -254,13 +261,14 @@ Priority C — reliability:
 
 8. Run the deployment artefacts on Linux: systemd unit, nginx and Caddy, TLS, a reboot, a restore from
    `tools/backup.js`.
-9. A soak test of 24 h with one workflow running every minute, measuring heap and file descriptors.
+9. A 24 h soak. A bounded 60 s soak exists (`tools/soak.js`, 450 cycles, stable heap); a full day still needs a
+   host that stays up, and file-descriptor sampling on Linux.
 10. A test that a client which loses the network mid-write (not mid-run) retries only idempotent calls.
 
 Priority D — developer experience:
 
 11. ~~Error codes documented one by one~~ — done as the Errors table in `docs/server.md`.
-12. ~~Browser coverage in Firefox~~ — done; WebKit still untested.
+12. ~~Browser coverage in Firefox and WebKit~~ — both pass the interface checks.
 13. A `--json` machine-readable summary for the whole test suite (counts by file) for trend tracking.
 
 Priority E — maintenance:
@@ -273,8 +281,8 @@ Priority E — maintenance:
 
 - `BASELINE.md` — what was measured before any change.
 - `WORKLOG.md` — the journal, with real times.
-- `CHECKPOINT-01..10.md` — phase reports; 10 covers the second phase. Hours 11–12 did not happen in this
-  session.
+- `CHECKPOINT-01..11.md` — phase reports; 10 and 11 cover the second and third phases. Hours 12 did not
+  happen in this session.
 - `BENCHMARKS.md` — the stress numbers.
 - `DEPLOYMENT-VERIFICATION.md` — what ran and what did not.
 - `screenshots/` — dashboard, projects empty, environments disconnected, phone dashboard.

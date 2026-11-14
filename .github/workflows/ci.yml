@@ -35,11 +35,12 @@ jobs:
         with:
           python-version: '3.12'
       - run: pip install playwright
-      - run: python -m playwright install --with-deps chromium firefox
+      - run: python -m playwright install --with-deps chromium firefox webkit
       # The split end-to-end test, the plugin isolation test and the interface checks.
       - run: python tests/browser_suite.py platform plugin_security ux
-      # The interface checks also run on a second engine.
+      # The interface checks also run on the other two engines.
       - run: python tests/browser_ux.py firefox
+      - run: python tests/browser_ux.py webkit
       - if: always()
         uses: actions/upload-artifact@v4
         with:

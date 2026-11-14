@@ -135,4 +135,20 @@ still open. Work of 16:00–16:16:
 - Node total: **338**. Final code commit `73e4ae0`. Total wall time at the last verification: 14:56:29 → 16:19:25 =
   **82 min 56 s** (4 976 s), still not the 12-hour cycle.
 
+## 2026-11-14T16:29 — Third phase
+
+- **Randomized editing** (`tests/graph-mutation.test.js`, 3 tests): 5 seeds × 30 accepted operations through the
+  API, invariants after every step; a mutated graph still runs; every editing route is undoable.
+- **Defect 21 reproduced and fixed**: adding a Script/Event primitive, splitting a wire, typing an output value,
+  changing workflow types and changing a Script's grants were not undoable (five routes absent from the edit set).
+- **Undo durability decided**: the history is per process; `docs/runtime.md` says so and
+  `tests/storage-integrity.test.js` asserts that a restart keeps the document and clears the history.
+- **Bounded soak** (`tools/soak.js`, `tests/soak.test.js`): 60 s run = 450 cycles, 0 errors, run median 62.6 ms /
+  p95 79.1 ms, heap 5 → 11 MB (peak 11), 450 workers started/terminated/exited, 0 running runtimes.
+- **WebKit**: `python tests/browser_ux.py webkit` passes 8/8 (after recognising WebKit's wording for a
+  cross-origin fetch to the deliberately unreachable server). CI runs Firefox and WebKit.
+- Node total: **343**. Docs updated: `docs/testing.md`, `docs/runtime.md`, `BENCHMARKS.md`, this journal and
+  `CHECKPOINT-11.md`.
+
+
 

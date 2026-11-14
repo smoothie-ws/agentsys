@@ -348,3 +348,34 @@ test('records stored before versions existed read as version 1 and become condit
     clean(dir);
   }
 });
+
+test('undo history is per process: a restart keeps the document but not the history', async () => {
+  const dir = tmp();
+  let first;
+  try {
+    first = await boot(dir);
+    await first.call('PUT', 'settings', {developer_mode: true});
+    const project = await first.call('POST', 'projects', {name: 'Undo across restart'});
+    const query = {workflow_id: project.id};
+    await first.call('POST', `projects/${project.id}/primitives`, {...query, primitive: 'event', point: {x: 0, y: 0}});
+    const before = await first.call('GET', `projects/${project.id}/workflow`, undefined, query);
+    assert.equal(before.nodes.length, 1);
+    assert.equal(before.history.undo >= 1, true, 'the edit is in the in-memory history');
+    await first.app.close();
+    first = null;
+
+    const second = await boot(dir);
+    try {
+      const after = await second.call('GET', `projects/${project.id}/workflow`, undefined, query);
+      assert.equal(after.nodes.length, 1, 'the document is durable');
+      const undone = await second.call('POST', `projects/${project.id}/undo`, undefined, query);
+      assert.deepEqual(undone, {undo: 0, redo: 0}, 'the history did not survive the restart');
+      assert.equal((await second.call('GET', `projects/${project.id}/workflow`, undefined, query)).nodes.length, 1);
+    } finally {
+      await second.app.close();
+    }
+  } finally {
+    if (first) await first.app.close().catch(() => {});
+    clean(dir);
+  }
+});

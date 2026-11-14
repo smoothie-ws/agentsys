@@ -37,3 +37,20 @@ suite's loose bounds (not these numbers) are what guards against regressions.
 end with no running runtime and at least one worker used; ten closed event streams removed from memory; the
 session map capped at its limit with the oldest evicted; a 600-node save under 30 s and read p95 under 3 s; 1000
 collection records written under 60 s and a page never wider than 500 records.
+
+## Bounded soak (60 s)
+
+`node --expose-gc tools/soak.js --seconds 60` on the same machine: create a project, add two nodes, wire them,
+run with `wait: true`, read the graph back, append a collection record and delete the project — repeatedly.
+
+| Metric | Value |
+|---|---|
+| Cycles in 60 s | 450, 0 errors |
+| Run latency (includes project creation, a worker per run and the delete) | median 62.6 ms, p95 79.1 ms |
+| Heap (with GC between samples) | 5 → 11 MB, peak 11 MB |
+| Workers | 450 started, 450 terminated, 450 exited |
+| Runtimes still running at the end | 0 |
+
+The 60 s run is the reference for longer soaks; `tests/soak.test.js` runs an 8 s version with fixed thresholds
+(no error, ≥5 cycles, heap growth < 64 MB, peak < 256 MB, p95 < 2 s, no runtime left running) so the suite fails
+on a leak instead of waiting for one.

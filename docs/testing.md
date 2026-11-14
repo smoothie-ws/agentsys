@@ -10,7 +10,7 @@ Uses only Node built-in modules. Each test builds an independent in-memory backe
 Coverage includes graph editing, types, wires, nested nodes, signals, reads, loops, execution controls,
 permissions, Data and Graph nodes, durable JSON, the HTTP server, collections, migration, the client transport,
 architectural boundaries, the plugin capability layer, concurrency and resource bounds. Recent result:
-**326 pass, 0 fail** (~12 s).
+**343 pass, 0 fail** (~13 s).
 
 Useful focused runs:
 
@@ -52,8 +52,9 @@ PLAYWRIGHT_CHROMIUM_EXECUTABLE=/path/to/chrome python tests/browser_suite.py
 
 Selected scenarios:
 
-- `ux` can also run on another engine: `python tests/browser_ux.py firefox` (after
-  `python -m playwright install firefox`); screenshots get a `-firefox` suffix. The other scenarios use Chromium.
+- `ux` can also run on another engine: `python tests/browser_ux.py firefox` or `… webkit` (after
+  `python -m playwright install firefox webkit`); screenshots get a `-firefox`/`-webkit` suffix. The other
+  scenarios use Chromium.
 
 - `platform` - **the split end-to-end test**: starts an API-only server and a static client as separate
   processes; checks no local Backend/DB, the Environments page, a workflow run, continuation after the client
@@ -78,11 +79,13 @@ architectures. They are kept for reference but are not in the default suite; the
 ```sh
 node --expose-gc tools/stress.js          # reads, runs, writes, a 600-node graph, Stop under load, heap
 node tools/stress.js --json               # the same as JSON
+node --expose-gc tools/soak.js --seconds 60   # create/edit/run/delete in a bounded loop, heap sampled
 node tools/backup.js --data data --out backups
 ```
 
 `tools/stress.js` reports medians and p95 for one machine; compare runs on the same machine over time. The Node
-suite asserts loose bounds so a leak or a quadratic path fails it, not a slow machine.
+suite asserts loose bounds so a leak or a quadratic path fails it, not a slow machine. `tests/soak.test.js` runs
+a short version of the soak (8 s) with the same thresholds; the tool is for longer runs.
 
 ## Manual smoke alternatives
 

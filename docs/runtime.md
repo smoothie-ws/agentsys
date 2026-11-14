@@ -47,7 +47,7 @@ Mutation requests require `X-AgentSys: 1`; cookie-authenticated mutations also r
 
 The core API covers projects, workflow editing and batches, graph validation and evaluation, live graph signals and controls, Library nodes, generic collections, settings, permissions, secrets and checked network calls. Server plugin routes were removed; a client plugin uses this same API.
 
-See the sections above for Run/Pause/Resume/Stop and [Permissions](permissions.md) for capability checks. `if_cursor` or `If-Match` makes a graph edit conditional on its current cursor. Edit history provides undo/redo.
+See the sections above for Run/Pause/Resume/Stop and [Permissions](permissions.md) for capability checks. `if_cursor` or `If-Match` makes a graph edit conditional on its current cursor. Edit history provides undo/redo for every editing route (nodes, wires, splits, layout, titles, values, types and grants) and is kept in memory per workflow: a restart keeps the document but starts with an empty history. The limit is the `undo_steps` preference (50 by default).
 
 `GET projects/{project_id}/execution` returns the current workflow runtime, including its JSON `state`, outputs and previews. `POST` sends a signal; `DELETE` stops active work. Workflow exports include durable runtime data.
 
