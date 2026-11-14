@@ -210,7 +210,7 @@ Platform-specific additions measured now:
 - `GET /api/projects`, authenticated, empty folder: **0.85 ms median**, 1.62 ms p95 over 30 requests.
 - Client scripts requested by `index.html`: **48 files / 664 KB**.
 - All `js/**/*.js`: 65 files / 898 KB; server-only set no longer requested by the browser: 19 files / 238 KB.
-- Node test suite: **242 pass / 0 fail / 9.1 s**.
+- Node test suite: **242 pass / 0 fail / 9.8 s**.
 - Browser suite: platform 9.7 s, execution_ui 10.0 s, shell 14.2 s, design 6.5 s (4/4 pass).
 
 ## 10. UI/UX
@@ -250,7 +250,7 @@ node bin/agentsys-server.js status --url http://127.0.0.1:8123
 
 Results:
 
-- Node: **242 pass, 0 fail** (9.1 s). Includes new `platform`, `client-plugins` and `migration` tests.
+- Node: **242 pass, 0 fail** (9.8 s). Includes new `platform`, `client-plugins` and `migration` tests.
 - Browser: **4/4** — `platform`, `execution_ui`, `shell`, `design`.
 - `browser_platform.py` chain: split start → no Backend/DB → Environments connected → create/run → close client →
   server finishes → reopen → second server isolated → back → plugin creates node → plugin off, node remains →
