@@ -2,7 +2,7 @@
 
 A Library node has default permissions (`payload.grants`). Placing it on the canvas copies those values to the new instance. There is no declaration or Library-level runtime permission check: existing instances may allow or deny permissions independently of the defaults. Changing the defaults affects subsequent placements only.
 
-Capabilities include graph.read/write, library.read/write, run.read/start for workflow inspection and signals, plugins.call for a plugin's routes, net.fetch:HOST and secrets.use:NAME. Unknown/admin routes are denied to scripts. The host UI represents the user's authority and edits project policy.
+Capabilities include graph.read/write, library.read/write, collections.read/write, run.read/start for workflow inspection and signals, net.fetch:HOST and secrets.use:NAME. `plugins.call` is still accepted in old graphs but no server route grants it; server plugins were removed. Unknown/admin routes are denied to scripts. The host UI represents the user's authority and edits project policy.
 
 In a Library node's graph editor, Workflow / Default permissions edits these placement defaults. On the canvas, Properties / Permissions edits the selected instance. A Script inside nested placed nodes must have permission from each enclosing instance and the project's allow list (Workflow / Project permissions). A standalone Script uses `config.grants`. The source of its code, typed or wired, does not add a permission layer.
 

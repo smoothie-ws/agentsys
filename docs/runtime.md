@@ -21,7 +21,7 @@ The canvas uses white for active work and briefly holds short passes before sett
 
 ## Persistence
 
-`workflows/{workflow_id}/runtime` stores JSON `state`, port values, previews and the latest presentation state in the application's key-value store. The Node server maps this to `data/workflows/{workflow_id}/runtime.json`. Browser-only deployments use IndexedDB.
+`workflows/{workflow_id}/runtime` stores JSON `state`, port values, previews and the latest presentation state in the application's key-value store. The server maps this to `data/workflows/{workflow_id}/runtime.json`. There is no browser-only storage mode in the platform client; older IndexedDB data must be exported.
 
 JSON mutations and previews are sent to the host and writes are serialized/coalesced. A call with `wait: true` and Stop wait for outstanding persistence. On restart, active node marks become stopped; no pending calls are replayed. The saved pause gate is retained. Output and preview entries for deleted nodes are pruned.
 
@@ -43,9 +43,9 @@ Graph structure must remain valid: existing nodes and ports, compatible wires, a
 
 The server exposes JSON endpoints under `/api/`; `/api/openapi.json` is the generated contract. The editor's API page includes a searchable method tree and examples.
 
-Mutation requests require `X-AgentSys: 1`. Host and optional bearer-token checks protect the server; non-loopback access requires an API token.
+Mutation requests require `X-AgentSys: 1`; cookie-authenticated mutations also require an allowed `Origin`. Host validation and bearer/session auth protect the server; non-loopback access requires an API token. The client uses one environment transport rather than a fixed `/api` URL.
 
-The core API covers projects, workflow editing and batches, graph validation and evaluation, live graph signals and controls, Library nodes, settings, permissions, secrets, checked network calls and plugins (`plugins`, `plugins/{id}/{name}`).
+The core API covers projects, workflow editing and batches, graph validation and evaluation, live graph signals and controls, Library nodes, generic collections, settings, permissions, secrets and checked network calls. Server plugin routes were removed; a client plugin uses this same API.
 
 See the sections above for Run/Pause/Resume/Stop and [Permissions](permissions.md) for capability checks. `if_cursor` or `If-Match` makes a graph edit conditional on its current cursor. Edit history provides undo/redo.
 

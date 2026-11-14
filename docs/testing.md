@@ -1,18 +1,76 @@
 ﻿# Testing
 
-`npm test` runs the Node suite. Each test uses an independent backend and temporary server data. Coverage: graph editing, types, wires, nested nodes, signals, reads, loops, controls, permissions, the Data and Graph nodes, the plugin host, durable JSON state and the server.
+## Node suite
 
-`python tests/browser_suite.py` runs the browser scenarios with Playwright and Chromium (set `PLAYWRIGHT_CHROMIUM_EXECUTABLE` if needed). Name scenarios to run a subset, e.g. `python tests/browser_suite.py smoke`.
+```sh
+npm test
+```
 
-`node tools/smoke.js --mobile` is the dependency-free alternative: it starts a temporary server with a copy of `data/`, opens Dashboard, Projects, Library, Settings, Plugins, a project and its workflow canvas in a local Chrome or Edge through the DevTools protocol, checks that each page rendered without console errors, and saves screenshots to `node_modules/.cache/agentsys/smoke`. Pass `--url` to reuse a running server, `--chrome` to choose the executable, and `--out` to choose the screenshot folder. It never writes to the real data folder.
+Uses only Node built-in modules. Each test builds an independent in-memory backend or a temporary data folder.
+Coverage includes graph editing, types, wires, nested nodes, signals, reads, loops, execution controls,
+permissions, Data and Graph nodes, durable JSON, the HTTP server, collections and migration. Recent result:
+**242 pass, 0 fail** (~10 s).
 
-- `browser_smoke.py`: navigation, Library, Custom Nodes, tabs, wire styles and the main editor flows.
-- `browser_execution_ui.py`: Run/Pause/Stop, state and previews across tabs and reloads, action menus.
-- `browser_plugins.py`: the Plugins page.
-- `browser_design.py`: common page geometry at desktop, tablet and phone widths; stable node shells, ordered short-pass feedback and signal wires. Review screenshots are written to `node_modules/.cache/ui-review` (override with `AGENTSYS_UI_ARTIFACTS`).
+Useful focused runs:
 
-Interpreter tests cover concurrent Run signals, live edits while paused, Stop of synchronous code, restart persistence, JSON export/import and chains deeper than a thousand nodes. `graph-primitives.test.js` covers the Graph nodes through the real runtime, including concurrent child instances and permission checks. A focused run: `node --test tests/execution.test.js`.
+```sh
+node --test tests/platform.test.js
+node --test tests/execution.test.js
+node --test tests/migration.test.js
+node --test tests/server.test.js
+```
 
-Test behavior, not appearance: no pixel, gradient or timing assertions.
+`tests/platform.test.js` checks the platform split itself: no server plugin route, no client/server script
+cross-loading, `/api/meta`, sessions, CSRF/CORS, SSE, generic collections and a client plugin creating a
+runnable Library node. `tests/migration.test.js` checks the backup, preserved data and provider/secret move.
 
-`node tools/bench.js` measures the graph read sizes, the runtime read, a 5 000-assignment Script loop, database commits, idle runtimes and Library type lookup against a fresh in-memory backend; `--json` prints the same numbers for before/after records. The baseline and the measurement method are in [baseline](baseline.md).
+## Browser suite
+
+Requires Python Playwright and Chromium:
+
+```sh
+python tests/browser_suite.py
+# or one scenario
+python tests/browser_suite.py platform
+```
+
+If Chromium is not in Playwright's cache, point at it:
+
+```sh
+PLAYWRIGHT_CHROMIUM_EXECUTABLE=/path/to/chrome python tests/browser_suite.py
+```
+
+Selected scenarios:
+
+- `platform` — **the split end-to-end test**: starts an API-only server and a static client as separate
+  processes; checks no local Backend/DB, the Environments page, a workflow run, continuation after the client
+  page closes, reconnect, a second server with isolated data, a sandboxed plugin creating a Library node, and a
+  server restart that restores JSON without rerunning the graph.
+- `execution_ui` — Run/Pause/Resume/Stop and previews across tabs and reloads on the combined local server.
+- `shell` — navigation, tabs, toolbar and responsive shell.
+- `design` — page geometry at desktop, tablet and phone widths; node/signal appearance.
+
+`tests/browser_smoke.py` and `tests/browser_plugins.py` belong to the removed browser-only and server-plugin
+architectures. They are kept for reference but are not in the default suite; their coverage is replaced by
+`platform` plus the Node suite.
+
+## Manual smoke alternatives
+
+```sh
+node tools/smoke.js --mobile
+```
+
+This older tool opens pages through the Chrome DevTools protocol and saves screenshots. It targets the combined
+`server.js` editor and is not part of the split architecture test.
+
+`node tools/bench.js` measures graph reads, runtime reads, a Script loop, commits, idle runtimes and Library type
+lookups against a fresh in-memory backend. Use `--json` for before/after numbers. The historical baseline and
+method are in [baseline](baseline.md).
+
+## What the tests do not cover
+
+- TLS termination and a real reverse proxy.
+- Every mobile browser and every private-network permission prompt.
+- A malicious user-installed client plugin (the sandbox is tested as a boundary for code, not as an
+  authorization system).
+- Durable resumption of JavaScript (not implemented).

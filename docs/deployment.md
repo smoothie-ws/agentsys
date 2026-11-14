@@ -1,0 +1,175 @@
+# Deployment
+
+## Local desktop
+
+```sh
+npm start
+```
+
+`bin/agentsys-local.js` starts two processes:
+
+- AgentSys Server on `127.0.0.1:8080`, data in `./data`.
+- AgentSys Client on `127.0.0.1:8081`, with `http://127.0.0.1:8080` as the default environment.
+
+`start.bat` does the same on Windows. Closing the browser leaves the server running; the workflow continues.
+Use Ctrl+C in the server console to stop it. A token is not needed on loopback.
+
+Separate commands, if you prefer:
+
+```sh
+npm run server -- --port 8080 --data ./data
+npm run client -- --port 8081 --server http://127.0.0.1:8080
+```
+
+## LAN
+
+1. Start the server on a stable address with a token:
+
+   ```sh
+   AGENTSYS_TOKEN="$(openssl rand -hex 32)" node bin/agentsys-server.js start \
+     --host 0.0.0.0 --port 8080 --data /srv/agentsys/data
+   ```
+
+2. Serve the client from any static host, or from another machine:
+
+   ```sh
+   node bin/agentsys-client.js --host 0.0.0.0 --port 8081 --server http://192.168.1.20:8080
+   ```
+
+3. In the client, **Environments → Add environment**, enter `http://192.168.1.20:8080` and the token. Add the
+   client origin to the server's allowlist if it is not the same origin:
+
+   ```sh
+   --allowed-origin http://192.168.1.20:8081
+   ```
+
+LAN HTTP is acceptable only on a trusted network. For anything else use HTTPS.
+
+## VPS with HTTPS
+
+The recommended layout is: the server listens on loopback; a reverse proxy owns the public name and TLS.
+
+```ini
+# /etc/systemd/system/agentsys-server.service
+[Unit]
+Description=AgentSys Server
+After=network.target
+
+[Service]
+Type=simple
+User=agentsys
+Group=agentsys
+WorkingDirectory=/opt/agentsys
+Environment=AGENTSYS_TOKEN=REPLACE_WITH_A_LONG_RANDOM_TOKEN
+Environment=AGENTSYS_ALLOWED_ORIGINS=https://agentsys.example.com
+ExecStart=/usr/bin/node /opt/agentsys/bin/agentsys-server.js start \
+  --host 127.0.0.1 --port 8080 --data /var/lib/agentsys/data --name "VPS Frankfurt" --trust-proxy
+Restart=on-failure
+RestartSec=3
+NoNewPrivileges=true
+PrivateTmp=true
+ProtectSystem=strict
+ReadWritePaths=/var/lib/agentsys
+
+[Install]
+WantedBy=multi-user.target
+```
+
+```sh
+sudo systemctl daemon-reload
+sudo systemctl enable --now agentsys-server
+sudo systemctl status agentsys-server
+journalctl -u agentsys-server -f
+```
+
+Caddy (automatic HTTPS):
+
+```caddyfile
+agentsys.example.com {
+  encode zstd gzip
+  reverse_proxy 127.0.0.1:8080
+}
+```
+
+Nginx:
+
+```nginx
+server {
+  listen 443 ssl http2;
+  server_name agentsys.example.com;
+
+  ssl_certificate     /etc/letsencrypt/live/agentsys.example.com/fullchain.pem;
+  ssl_certificate_key /etc/letsencrypt/live/agentsys.example.com/privkey.pem;
+
+  client_max_body_size 20m;
+
+  location / {
+    proxy_pass http://127.0.0.1:8080;
+    proxy_http_version 1.1;
+    proxy_set_header Host $host;
+    proxy_set_header X-Forwarded-For $proxy_add_x_forwarded_for;
+    proxy_set_header X-Forwarded-Proto $scheme;
+    # SSE: do not buffer the event stream
+    proxy_buffering off;
+    proxy_read_timeout 1h;
+  }
+}
+```
+
+Serve the client statically from the same host (for example `/opt/agentsys/client`) or from another HTTPS host
+listed in `AGENTSYS_ALLOWED_ORIGINS`. If the client is on another host, add it exactly:
+
+```sh
+--allowed-origin https://client.example.com
+```
+
+Do not expose `/__data`: the platform server does not have it.
+
+## Direct TLS
+
+If you do not want a reverse proxy:
+
+```sh
+node bin/agentsys-server.js start --host 0.0.0.0 --port 8443 \
+  --token "$AGENTSYS_TOKEN" \
+  --tls-cert /etc/agentsys/cert.pem --tls-key /etc/agentsys/key.pem \
+  --allowed-origin https://agentsys.example.com
+```
+
+The client must use `https://…:8443`. The session cookie becomes `Secure`.
+
+## VPN
+
+WireGuard/Tailscale is a simple alternative: bind the server to the VPN address, keep the token, and use the
+VPN address as the environment URL. No public proxy is needed.
+
+## Backups
+
+The data folder is plain JSON. Stop the server or copy a consistent snapshot:
+
+```sh
+systemctl stop agentsys-server
+tar czf agentsys-data-$(date +%F).tgz -C /var/lib/agentsys data
+systemctl start agentsys-server
+```
+
+The migration command creates `data/backups/pre-platform-<timestamp>/` before it writes anything.
+
+## Health checks and operations
+
+- `GET /api/meta` is public and cheap; use it for liveness and version checks.
+- `GET /api/diagnostics` (authenticated) reports uptime, version, worker counts, live runtimes and recent errors.
+- `agentsys-server status --url https://agentsys.example.com` prints the same discovery data from a shell.
+- Graceful stop (`SIGTERM`) stops active workflows and closes clients; `systemd` sends it by default.
+- A server restart restores saved JSON but does not resume JavaScript. Workflows do not auto-start.
+
+## Troubleshooting
+
+| Symptom | Check |
+|---|---|
+| Client says Disconnected | Server running? URL reachable from the client device? HTTPS mixed content? |
+| Client says Unauthorized | Token correct? Session expired after a server restart? Enter it again. |
+| CORS error in the console | Add the exact client origin with `--allowed-origin`; include scheme and port. |
+| SSE reconnects repeatedly | A proxy is buffering; disable buffering and raise the read timeout. |
+| Incompatible version | Update the client or the server; the protocol number is in `/api/meta`. |
+| Port in use | `--port 0` chooses a free port for the server; the client has its own port. |
