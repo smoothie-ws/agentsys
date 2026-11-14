@@ -36,8 +36,8 @@ jobs:
           python-version: '3.12'
       - run: pip install playwright
       - run: python -m playwright install --with-deps chromium firefox webkit
-      # The split end-to-end test, the plugin isolation test and the interface checks.
-      - run: python tests/browser_suite.py platform plugin_security ux
+      # The split end-to-end test, the plugin isolation test, the editor and the interface checks.
+      - run: python tests/browser_suite.py platform plugin_security editor ux
       # The interface checks also run on the other two engines.
       - run: python tests/browser_ux.py firefox
       - run: python tests/browser_ux.py webkit

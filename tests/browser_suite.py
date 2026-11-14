@@ -14,7 +14,7 @@ import threading
 import time
 
 ROOT = Path(__file__).resolve().parents[1]
-SELF_HOSTED = {'platform', 'plugin_security', 'ux', 'execution_ui', 'plugins', 'design', 'shell'}
+SELF_HOSTED = {'platform', 'plugin_security', 'editor', 'ux', 'execution_ui', 'plugins', 'design', 'shell'}
 
 
 class QuietHandler(http.server.SimpleHTTPRequestHandler):
@@ -26,7 +26,7 @@ def main():
     # `browser_platform` is the split client/server end-to-end test. The other selected scripts exercise the
     # combined local server's editor UI (still supported for `node server.js`).
     # browser_smoke.py targeted the removed browser-only mode; browser_plugins.py targeted server plugins.
-    selected = sys.argv[1:] or ['platform', 'plugin_security', 'ux', 'execution_ui', 'shell', 'design']
+    selected = sys.argv[1:] or ['platform', 'plugin_security', 'editor', 'ux', 'execution_ui', 'shell', 'design']
     logs = Path(tempfile.mkdtemp(prefix='agentsys-browser-suite-'))
     print(f'Logs: {logs}', flush=True)
     failures = []

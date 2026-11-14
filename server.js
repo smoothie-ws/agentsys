@@ -195,7 +195,7 @@ function createServer(options = {}) {
     TLS = options.tls || null,
     TRUST_PROXY = !!options.trustProxy || process.env.AGENTSYS_TRUST_PROXY === '1',
     SESSIONS = new Map(),
-    SESSION_TTL_MS = Math.max(60000, Number(options.sessionTtlMs || 12 * 60 * 60 * 1000)),
+    SESSION_TTL_MS = Math.max(1000, Number(options.sessionTtlMs || 12 * 60 * 60 * 1000)),
     SESSION_LIMIT = Math.max(1, Math.min(100000, Number(options.sessionLimit || 10000))),
     // Scoped tokens for client plugins: short-lived, limited to the capabilities the host asked for, and enforced
     // by the server on every call (not only by the host page that issued them).

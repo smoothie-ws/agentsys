@@ -111,6 +111,33 @@ async def main():
                 await check_page(page, route, heading)
             print('PASS the main pages render at 1440x900 without horizontal overflow', flush=True)
 
+            # Accessibility basics on every main page: one h1, and no interactive control without a name.
+            unnamed = []
+            for route, heading in [
+                ('', 'Dashboard'),
+                ('projects', 'Projects'),
+                ('library', 'Library'),
+                ('collections', 'Collections'),
+                ('environments', 'Environments'),
+                ('plugins', 'Plugins'),
+                ('settings', 'Settings'),
+                ('api', 'API'),
+            ]:
+                await page.goto(f'http://127.0.0.1:{client_port}/#/{route}' if route else f'http://127.0.0.1:{client_port}/#/')
+                await page.wait_for_selector(f'h1:has-text("{heading}")')
+                found = await page.evaluate(
+                    """() => ({
+                      h1: document.querySelectorAll('#view .page h1').length,
+                      empty: [...document.querySelectorAll('#view button, #view a[href]')]
+                        .filter(el => !el.textContent.trim() && !el.getAttribute('aria-label') && !el.getAttribute('title') && !el.disabled)
+                        .map(el => el.outerHTML.slice(0, 140)),
+                    })"""
+                )
+                assert found['h1'] == 1, f'{route or "dashboard"} has {found["h1"]} h1 elements'
+                unnamed.extend(f'{route}: {item}' for item in found['empty'])
+            assert not unnamed, unnamed
+            print('PASS every main page has one heading and no interactive control without a name', flush=True)
+
             # A tablet width keeps the layout usable.
             await check_page(page, 'projects', 'Projects', 1024, 768)
             print('PASS the layout fits 1024x768', flush=True)
@@ -146,6 +173,20 @@ async def main():
             await page.wait_for_selector('h1:has-text("Projects")')
             assert await page.locator('[data-retry]').count() == 0, 'the reachable page has no error state'
             print('PASS an unreachable server keeps the page title and offers a retry', flush=True)
+
+            # Environments: remove the saved unreachable server through its row, leaving the real one.
+            await page.goto(f'http://127.0.0.1:{client_port}/#/environments')
+            await page.wait_for_selector('h1:has-text("Environments")')
+            closed = page.locator('.environment-row', has_text='Closed port')
+            await closed.locator('[data-env-remove]').click()
+            await page.wait_for_selector('#modal[open]')
+            await page.click('#modal button[value=ok]')
+            await page.wait_for_function(
+                "[...document.querySelectorAll('.environment-row')].every(row => !row.innerText.includes('Closed port'))"
+            )
+            names = await page.evaluate("Environment.list().map(env => env.name)")
+            assert names == ['Local server'], names
+            print('PASS an environment is removed through its row and only the real one remains', flush=True)
 
             # Keyboard: Ctrl+K opens search, typing filters, Escape closes it, focus is not left behind.
             await page.goto(f'http://127.0.0.1:{client_port}/#/')

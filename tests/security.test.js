@@ -398,3 +398,19 @@ test('on POSIX a secret file and the commit record are readable by their owner o
     assert.equal(stored.value, 'sk-live-1');
   });
 });
+
+test('an expired session is refused and removed from the server', async () => {
+  const sleep = ms => new Promise(resolve => setTimeout(resolve, ms));
+  await withServer({sessionTtlMs: 1000}, async ({base}) => {
+    const {cookie} = await session(base);
+    assert.equal((await request(base, 'projects', {headers: {Cookie: cookie}})).status, 200);
+    const before = await (await request(base, 'diagnostics', {headers: bearer})).json();
+    assert.equal(before.sessions, 1);
+    await sleep(1100);
+    const expired = await request(base, 'projects', {headers: {Cookie: cookie}});
+    assert.equal(expired.status, 401);
+    assert.equal((await expired.json()).error.code, 'unauthorized');
+    const after = await (await request(base, 'diagnostics', {headers: bearer})).json();
+    assert.equal(after.sessions, 0, 'the expired session was removed when it was presented');
+  });
+});
