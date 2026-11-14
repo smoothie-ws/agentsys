@@ -19,13 +19,14 @@ function sectionOf(route) {
   if (route.page === 'ext') return 'ext:' + route.plugin;
   if (route.project?.startsWith('lib-')) return 'library'; // a Custom Node is edited as a workflow
   if (route.project || route.page === 'projects') return 'projects';
-  return {resources: 'library', plugins: 'plugins', settings: 'settings', api: 'home'}[route.page] || 'home';
+  return {resources: 'library', plugins: 'plugins', environments: 'environments', settings: 'settings', api: 'home'}[route.page] || 'home';
 }
 const SECTION_TITLES = {
   home: 'Dashboard',
   plugins: 'Plugins',
   projects: 'Projects',
   library: 'Library',
+  environments: 'Server',
   settings: 'Settings',
   api: 'API reference',
 };
@@ -238,16 +239,31 @@ const NAV_TREES = {
           href: '/library/' + s.id,
           menu: 'collection:' + s.id,
         })),
+        ...(typeof Extensions === 'undefined'
+          ? []
+          : Extensions.librarySections().map(s => ({
+              key: 'x:' + s.plugin + ':' + s.id,
+              label: s.title,
+              icon: s.icon || 'database',
+              href: s.href,
+              menu: '',
+            }))),
       ],
     };
   },
 };
 function pageMenu(route = app.route || {}) {
   if (route.page === 'ext') return '';
-  if (route.page === 'resources' && !route.section) return '';
+  if (route.page === 'resources' && !route.section) return 'section:library';
   if (route.page === 'resources' && route.section !== 'nodes') return 'collection:' + route.section;
   if (route.page === 'resources')
     return route.id ? 'resource:' + route.id : route.folder ? 'folder:' + route.folder : 'nodes:';
+  // A section root page uses the same menu spec as its sidebar row: one source of actions, two entrances.
+  if (route.page === 'projects') return 'section:projects';
+  if (route.page === 'plugins' && !route.id) return 'section:plugins';
+  if (route.page === 'environments') return 'section:environments';
+  if (route.page === 'settings') return 'section:settings';
+  if (route.page === 'api') return 'section:api';
   if (route.page === 'plugins' && route.id) return 'plugin:' + route.id;
   if (route.project) return route.workflow ? `workflow:${route.project}:${route.workflow}` : 'project:' + route.project;
   return '';
@@ -400,12 +416,12 @@ function placePills(list = false, all = false) {
     const host = sheet ? $('#subnav') : $('#mobile-secondary');
     const inactive = sheet ? $('#mobile-secondary') : $('#subnav');
     $(':scope > .nav-seam', inactive)?.classList.add('off');
-    placePill(navPills.side, $('#sidebar a.active')?.closest('.sidebar-item') || $('#sidebar a.active'), $('#sidebar'), all, host);
+    placePill(navPills.side, $('#sidebar .sidebar-item.active'), $('#sidebar'), all, host);
     placePill(navPills.mobile, $('#mobile-browse'), $('#mobile-secondary'), list || all, $('main'));
     navPills.sub.classList.add('off');
     return;
   }
-  placePill(navPills.side, $('#sidebar a.active')?.closest('.sidebar-item') || $('#sidebar a.active'), $('#sidebar'), all, $('#subnav'));
+  placePill(navPills.side, $('#sidebar .sidebar-item.active'), $('#sidebar'), all, $('#subnav'));
   placePill(navPills.sub, shownRow($('#subnav .subnav-row.active')), $('#subnav-body'), list || all, $('main'));
 }
 /** The Properties panel's icon rail has its own pill (it flows left into the panel); the editor calls this when the open section changes. */
@@ -494,10 +510,29 @@ async function menuItems(spec, owner) {
 }
 async function resolveMenuItems(spec, owner) {
   const items = await resolveBuiltinMenuItems(spec, owner);
-  const extra = typeof Extensions === 'undefined' ? [] : Extensions.menuItems(spec);
+  const extra = typeof Extensions === 'undefined' ? [] : Extensions.menuItems(spec, [menuContext(spec)]);
   if (!extra.length) return items;
   if (!items?.length) return extra;
   return [...items, null, ...extra];
+}
+/** The data a plugin's menu command receives: the object the menu belongs to, not a DOM node. */
+function menuContext(spec) {
+  const colon = String(spec || '').indexOf(':'),
+    type = colon < 0 ? String(spec || '') : String(spec).slice(0, colon),
+    arg = colon < 0 ? '' : String(spec).slice(colon + 1);
+  if (type === 'resource') return {type, resource: (app.resources || []).find(r => r.id === arg) || null, id: arg};
+  if (type === 'folder') return {type, folder: arg, resources: (app.resources || []).filter(r => underPath(r.payload.folder || '', arg))};
+  if (type === 'plugin') return {type, plugin: (app.plugins || []).find(p => p.id === arg) || null, id: arg};
+  if (type === 'project') return {type, project: (app.projects || []).find(p => p.id === arg) || null, id: arg};
+  if (type === 'workflow') {
+    const [project, workflow] = arg.split(':');
+    return {type, project, workflow};
+  }
+  if (type === 'section') return {type, section: arg};
+  if (type === 'collection') return {type, collection: arg};
+  if (type === 'provider') return {type, provider: arg};
+  if (type === 'nodes') return {type, section: 'nodes'};
+  return {type, id: arg};
 }
 /** What the application itself puts in a menu; plugins add theirs after it (see Extensions.menuItems). */
 async function resolveBuiltinMenuItems(spec, owner) {
@@ -517,6 +552,7 @@ async function resolveBuiltinMenuItems(spec, owner) {
     return workflow && workflowActions(projectId, workflow, title);
   }
   if (type === 'section') return sectionActions(arg);
+  if (type === 'environment') return environmentActions(arg, title);
   if (type === 'nodes') return nodesActions();
   if (type === 'collection') return collectionActions(arg);
   if (type === 'provider') return providerActions(arg);
@@ -536,7 +572,12 @@ function sectionActions(section) {
       ['New project', newProjectDialog, {icon: 'plus'}],
       ['Import project', importProjects, {icon: 'download'}],
     ];
-  if (section === 'plugins') return [['Reload plugins', reloadPlugins, {icon: 'refresh'}]];
+  if (section === 'plugins')
+    return [
+      ['Install plugin…', installPluginDialog, {icon: 'plus'}],
+      ['Reload plugins', reloadPlugins, {icon: 'refresh'}],
+    ];
+  if (section === 'environments') return environmentSectionActions();
   if (section === 'settings')
     return [['Restore defaults', () => app.restoreSettings?.(), {icon: 'refresh', disabled: !app.restoreSettings}]];
   if (section === 'api')

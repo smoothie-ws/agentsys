@@ -1,0 +1,13 @@
+{
+  "id": "hello-agent",
+  "name": "Hello Agent",
+  "version": "1.0.0",
+  "description": "The smallest useful AgentSys plugin: a command, a page and a private counter.",
+  "icon": "sparkles",
+  "api": 2,
+  "engines": {"agentsys": ">=0.3.0 <1.0.0"},
+  "capabilities": ["graph.read"],
+  "author": "You",
+  "license": "MIT",
+  "main": "main.js"
+}

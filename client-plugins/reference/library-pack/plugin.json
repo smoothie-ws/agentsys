@@ -1,0 +1,69 @@
+{
+  "id": "reference-library-pack",
+  "name": "Reference: Library Pack",
+  "version": "1.0.0",
+  "description": "Adds a Library section, three reusable Script nodes, a Generic Collection and a runnable workflow template. The deployed nodes keep working when the plugin is off.",
+  "icon": "library",
+  "api": 2,
+  "engines": {"agentsys": ">=0.3.0 <1.0.0"},
+  "capabilities": ["graph.read", "graph.write", "library.read", "library.write", "collections.read", "collections.write", "run.start"],
+  "author": "AgentSys reference plugins",
+  "license": "MIT",
+  "main": "main.js",
+  "contributes": {
+    "collections": [
+      {
+        "name": "pack-notes",
+        "title": "Library pack notes",
+        "description": "Notes written by the reference Library Pack nodes.",
+        "schema": {
+          "type": "object",
+          "properties": {
+            "text": {"type": "string", "maxLength": 2000},
+            "created": {"type": "number"}
+          },
+          "required": ["text"],
+          "additionalProperties": false
+        }
+      }
+    ],
+    "library": [
+      {
+        "name": "Pack: Slug",
+        "description": "Turns text into a URL slug. No client or plugin is needed after deployment.",
+        "folder": "Reference pack",
+        "icon": "text",
+        "outputs": ["slug"],
+        "grants": ["graph.read"],
+        "code": "const text = String(node.input.text ?? node.input.value ?? '');\nnode.output.slug = text.toLowerCase().replace(/[^a-z0-9]+/g, '-').replace(/^-+|-+$/g, '');"
+      },
+      {
+        "name": "Pack: Greeting",
+        "description": "Displays a greeting and returns it.",
+        "folder": "Reference pack",
+        "icon": "sparkles",
+        "outputs": ["message"],
+        "grants": ["graph.read"],
+        "code": "const who = String(node.input.who ?? node.input.value ?? 'world');\nnode.output.message = 'Hello, ' + who + '!';\nnode.display(node.output.message);"
+      },
+      {
+        "name": "Pack: Record note",
+        "description": "Stores a note in the pack-notes Generic Collection through the ordinary API.",
+        "folder": "Reference pack",
+        "icon": "database",
+        "outputs": ["id"],
+        "grants": ["collections.write", "graph.read"],
+        "code": "const text = String(node.input.text ?? node.input.value ?? 'note from a workflow');\nconst made = await agentsys('POST', 'collections/pack-notes/records', {data: {text, created: Date.now() / 1000}});\nnode.output.id = made.id;\nnode.display('stored note ' + made.id);"
+      }
+    ],
+    "workflows": [
+      {
+        "name": "Library Pack demo",
+        "project": "Reference pack",
+        "nodes": [
+          {"library": "Pack: Greeting"}
+        ]
+      }
+    ]
+  }
+}

@@ -277,6 +277,7 @@ function wireCanvas() {
     });
   }
   W.flushInline = () => Promise.all([...inlineEdits.values()].map(entry => entry.flush()));
+  W.inlineDirty = () => [...inlineEdits.values()].some(entry => entry.dirty);
   leaveGuards.push(() => W.flushInline());
   canvas.addEventListener('click', event => {
     const expand = event.target.closest('[data-expand]'),

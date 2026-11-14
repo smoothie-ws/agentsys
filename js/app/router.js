@@ -40,8 +40,9 @@ function parseRoute(path = routePath(), query = routeQuery()) {
     return {page: 'not-found'};
   }
   const page =
-    {projects: 'projects', settings: 'settings', library: 'resources', api: 'api', plugins: 'plugins'}[parts[0]] ||
-    'not-found';
+    {projects: 'projects', settings: 'settings', environments: 'environments', library: 'resources', api: 'api', plugins: 'plugins'}[
+      parts[0]
+    ] || 'not-found';
   if (page === 'plugins') return parts.length <= 2 ? {page, id: parts[1]} : {page: 'not-found'};
   if (page !== 'resources') return parts.length === 1 ? {page} : {page: 'not-found'};
   if (parts.length > 3 || (parts[1] && parts[1] !== 'nodes' && !/^[a-z][a-z0-9-]*$/.test(parts[1])))
@@ -68,6 +69,7 @@ function parentPage(route) {
   }
   if (route.page === 'plugins' && route.id) return ['Plugins', '/plugins'];
   if (route.page === 'ext') return ['Plugins', '/plugins'];
+  if (route.page === 'environments') return ['Dashboard', '/'];
   return ['Dashboard', '/'];
 }
 let navigationRevision = 0,
@@ -126,7 +128,21 @@ async function render() {
   } catch (error) {
     if (revision !== renderRevision) return;
     const [label, href] = parentPage(route);
-    view.innerHTML = `<div class="page">${pageHead({title: 'Could not open this page', sub: esc(error.message), menu: ''})}<p><a class="button" href="${esc(href)}" data-link>Back to ${esc(label)}</a></p></div>`;
+    // Keep the page the reader asked for: its title, what failed, and a way forward. Replacing the whole view
+    // with a bare error loses the place the reader is in, which matters most while the server is away.
+    const title =
+      {projects: 'Projects', resources: 'Library', settings: 'Settings', plugins: 'Plugins', api: 'API', environments: 'Server'}[
+        route.page
+      ] || 'This page';
+    const offline = error.code === 'network_error' || (typeof Environment !== 'undefined' && Environment.status?.().status === 'disconnected');
+    view.innerHTML = `<div class="page">${pageHead({title: esc(title), menu: ''})}<div class="empty"><h2>${
+      offline ? 'The server could not be reached' : 'This page could not be opened'
+    }</h2><p class="muted">${esc(
+      offline ? 'Check the environment this client is connected to, then try again.' : error.message
+    )}</p>${offline ? `<p class="muted small">${esc(error.message)}</p>` : ''}<p><button type="button" class="primary" data-retry>Try again</button> <a class="button" href="${esc(
+      href
+    )}" data-link>Back to ${esc(label)}</a></p></div></div>`;
+    $('[data-retry]', view)?.addEventListener('click', () => render().catch(fail));
   }
   if (revision !== renderRevision) return;
   app.currentURL = routeURL();

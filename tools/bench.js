@@ -230,7 +230,13 @@ async function main() {
       handwritten_js: lineCount(filesUnder(path.join(root, 'js'), '.js').filter(f => !f.endsWith('builtin-nodes.js'))),
       generated_js: lineCount([path.join(root, 'js/backend/builtin-nodes.js')]),
       css: lineCount(filesUnder(path.join(root, 'css'), '.css')),
-      server: lineCount([path.join(root, 'server.js'), path.join(root, 'headless.js'), path.join(root, 'plugin-host.js')]),
+      server: lineCount([
+        path.join(root, 'server.js'),
+        path.join(root, 'headless.js'),
+        path.join(root, 'server', 'api-server.js'),
+        path.join(root, 'server', 'manifest.js'),
+        path.join(root, 'shared', 'protocol.js'),
+      ]),
     };
     report.workers = {...app.workerStats};
   } finally {

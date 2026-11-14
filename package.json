@@ -1,9 +1,16 @@
 {
   "name": "agentsys",
   "private": true,
-  "description": "AgentSys: a live graph programming environment with a small Node server that keeps the data as JSON files.",
+  "version": "0.3.0",
+  "description": "AgentSys: a visual graph programming platform with an independent execution server and a browser client.",
   "scripts": {
-    "start": "node server.js",
-    "test": "node --test"
+    "start": "node bin/agentsys-local.js",
+    "local": "node bin/agentsys-local.js",
+    "server": "node bin/agentsys-server.js start",
+    "client": "node bin/agentsys-client.js",
+    "test": "node --test",
+    "plugin:pack": "node tools/plugin-pack.js",
+    "plugin:check": "node tools/plugin-pack.js --check",
+    "plugin:validate": "node tools/plugin-pack.js --validate"
   }
 }

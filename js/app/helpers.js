@@ -27,55 +27,68 @@ const when = seconds => {
       : {month: 'short', day: 'numeric', hour: '2-digit', minute: '2-digit'}
   );
 };
-/** UI state uses the same file-backed store as projects; localStorage is read once for migration. */
+/**
+ * Interface state belongs to the client: panel sizes, tabs, camera and the clipboard are kept in this browser,
+ * never on the server. Older versions kept them in the server's ui-state key; those values are imported once.
+ */
 const store = (() => {
-  const values = {...(globalThis.AGENTSYS_UI_STORE || {})};
+  const KEY = 'agentsys-ui-store';
+  const RESERVED = new Set([
+    KEY,
+    'agentsys-environments',
+    'agentsys-active-environment',
+    'agentsys-client-plugins',
+  ]);
+  let values = {};
+  try {
+    const saved = JSON.parse(localStorage.getItem(KEY) || '{}');
+    if (saved && typeof saved === 'object' && !Array.isArray(saved)) values = saved;
+  } catch {}
   const legacy = [];
   try {
+    // The old server injected its ui-state into the page; copy it, then leave the server out of UI state.
+    for (const [key, value] of Object.entries(globalThis.AGENTSYS_UI_STORE || {}))
+      if (!Object.hasOwn(values, key)) values[key] = value;
     for (let i = 0; i < localStorage.length; i++) {
       const key = localStorage.key(i);
-      if (!key.startsWith('agentsys-') && !key.startsWith('fieldHeights:')) continue;
+      if (RESERVED.has(key) || (!key.startsWith('agentsys-') && !key.startsWith('fieldHeights:'))) continue;
       try {
-        if (!(key in values)) values[key] = JSON.parse(localStorage.getItem(key));
+        if (!Object.hasOwn(values, key)) values[key] = JSON.parse(localStorage.getItem(key));
         legacy.push(key);
       } catch {}
     }
   } catch {}
-  const dirty = new Map();
-  let pending = Promise.resolve();
-  const save = () => {
-    pending = pending
-      .catch(() => {})
-      .then(async () => {
-        if (!dirty.size) return;
-        const changes = Object.fromEntries(dirty);
-        const state = await api('ui-state', {method: 'PUT', body: {values: changes}});
-        for (const [key, value] of Object.entries(changes)) if (dirty.get(key) === value) dirty.delete(key);
-        for (const [key, value] of Object.entries(state)) if (!dirty.has(key)) values[key] = value;
-      });
-    return pending;
-  };
-  const ready = (async () => {
-    const saved = await DB.get('ui-state');
-    for (const [key, value] of Object.entries(saved || {})) if (!dirty.has(key)) values[key] = value;
-    for (const key of legacy) if (!Object.hasOwn(saved || {}, key)) dirty.set(key, values[key]);
-    if (legacy.length) {
-      await save();
-      for (const key of legacy) localStorage.removeItem(key);
+  let timer = null,
+    pending = Promise.resolve();
+  const persist = () => {
+    try {
+      localStorage.setItem(KEY, JSON.stringify(values));
+    } catch (error) {
+      console.error('Could not save UI state:', error);
     }
-  })();
+    for (const key of legacy.splice(0)) localStorage.removeItem(key);
+  };
+  const ready = Promise.resolve().then(() => {
+    if (legacy.length) persist();
+  });
   return {
     ready,
     get: (key, fallback = null) => clone(Object.hasOwn(values, key) ? values[key] : fallback),
     set(key, value) {
       if (JSON.stringify(values[key]) !== JSON.stringify(value)) {
         values[key] = clone(value);
-        dirty.set(key, values[key]);
+        pending = pending.then(() => {
+          if (!timer)
+            timer = setTimeout(() => {
+              timer = null;
+              persist();
+            }, 0);
+        });
       }
-      const result = ready.then(save);
-      result.catch(error => console.error('Could not save UI state:', error));
-      return result;
+      return pending;
     },
+    /** Exposed for tests and for the migration notice. */
+    kind: 'localStorage',
   };
 })();
 const uuid = () => crypto.randomUUID?.() ?? uid();
@@ -88,37 +101,21 @@ const app = {
 };
 
 // ----- API -----
-/** File-backed mode calls the server API; browser-only mode uses the local Backend with the same contract. */
-async function api(path, {method = 'GET', body, query, edit} = {}) {
+/**
+ * Every request goes through the active environment's transport. There is no local backend in the client:
+ * closing this page cannot stop a workflow, and switching servers cannot mix their data.
+ */
+async function api(path, {method = 'GET', body, query, edit, signal} = {}) {
   const [bare, search = ''] = path.split('?');
-  // Under the Node server, the server owns runs. Closing a browser tab leaves them alive.
-  await DB.get('prefs');
-  if (DB.mode === 'files') {
-    const params = new URLSearchParams({
-      ...Object.fromEntries(new URLSearchParams(search)),
-      ...Object.fromEntries(Object.entries(query ?? {}).filter(([, v]) => v !== undefined && v !== null)),
-    });
-    const response = await fetch('/api/' + bare + (params.size ? '?' + params : ''), {
-      method,
-      headers: {'X-AgentSys': '1', 'Content-Type': 'application/json', ...(edit ? {'X-Edit': edit} : {})},
-      ...(method === 'GET' || method === 'DELETE' ? {} : {body: JSON.stringify(body ?? {})}),
-    });
-    const result = await response.json();
-    if (!response.ok)
-      throw new ApiError(
-        result.error?.code ?? result.error ?? 'request_failed',
-        result.error?.message ?? result.message ?? String(result.error),
-        response.status
-      );
-    return result;
-  }
-  return Backend.request(method, bare, {
-    body: body === undefined ? {} : JSON.parse(JSON.stringify(body)),
-    query: {
-      ...Object.fromEntries(new URLSearchParams(search)),
-      ...Object.fromEntries(Object.entries(query || {}).filter(([, v]) => v !== undefined && v !== null)),
-    },
+  const params = {
+    ...Object.fromEntries(new URLSearchParams(search)),
+    ...Object.fromEntries(Object.entries(query ?? {}).filter(([, value]) => value !== undefined && value !== null)),
+  };
+  return Environment.request(method, bare, {
+    body: body === undefined ? undefined : JSON.parse(JSON.stringify(body)),
+    query: params,
     edit,
+    signal,
   });
 }
 

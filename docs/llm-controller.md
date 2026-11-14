@@ -1,40 +1,37 @@
 # Building an LLM controller from nodes
 
-AgentSys has no AI in its core. A controller (an agent, a planner, a recursive problem solver) is a graph that you assemble, plus one plugin that talks to a model. This page lists what is there and how the pieces fit.
+AgentSys has no AI in its core. A controller (an agent, a planner, a recursive problem solver) is a graph you
+assemble from general nodes, plus one ordinary Script node that calls a model endpoint through the checked
+network API. Nothing in that is a server plugin.
 
-## 1. Model access is a plugin
+## 1. Model access is a standard Script node
 
-The plugin owns the credentials and the HTTP call, and offers the model as a route and as a Library node. A complete skeleton for an OpenAI-compatible endpoint:
+Store the key as a server secret (an empty value never returns from a read):
 
-```js
-// data/plugins/llm/main.js
-exports.title = 'LLM';
-exports.settings = [
-  {key: 'baseURL', label: 'Base URL', type: 'text', default: 'http://localhost:11434/v1'},
-  {key: 'apiKey', label: 'API key', type: 'password'},
-  {key: 'model', label: 'Model', type: 'text'},
-];
-exports.start = api => {
-  api.route('POST', 'chat', async ({body, signal}) => {
-    const s = await api.settings.get();
-    const response = await fetch(s.baseURL.replace(/\/+$/, '') + '/chat/completions', {
-      method: 'POST',
-      headers: {'Content-Type': 'application/json', ...(s.apiKey ? {Authorization: 'Bearer ' + s.apiKey} : {})},
-      body: JSON.stringify({model: body.model || s.model, messages: body.messages ?? [{role: 'user', content: body.prompt}]}),
-      signal, // Stop aborts the request
-    });
-    if (!response.ok) throw new Error('Model request failed: HTTP ' + response.status);
-    const data = await response.json();
-    return {text: data.choices[0].message.content, usage: data.usage ?? null};
-  });
-  return api.library.addScriptNode({
-    name: 'Ask', folder: 'LLM', grants: ['plugins.call'], inputs: ['prompt'], outputs: ['response'],
-    code: "node.output.response = (await agentsys('POST', 'plugins/llm/chat', {prompt: node.input.prompt})).text;",
-  });
-};
+```sh
+curl -X PUT https://agentsys.example.com/api/secrets/llm-api-key \
+  -H "Authorization: Bearer $TOKEN" -H "Content-Type: application/json" \
+  -d '{"value":"sk-…"}'
 ```
 
-Always pass the route's `signal` to the request: that is how Stop reaches a model call that is in flight. The key lives in the plugin's settings and is never sent back to the page. See [plugins](plugins.md).
+Create a reusable Library node through the same API a client plugin uses:
+
+```sh
+curl -X POST https://agentsys.example.com/api/library/script-nodes \
+  -H "Authorization: Bearer $TOKEN" -H "Content-Type: application/json" \
+  -d '{
+    "name": "Ask",
+    "folder": "LLM",
+    "inputs": ["prompt"],
+    "outputs": ["response"],
+    "grants": ["net.fetch:api.example.com", "secrets.use:llm-api-key", "graph.read"],
+    "code": "const r = await agentsys(\"POST\", \"net\", {url: \"https://api.example.com/v1/chat/completions\", method: \"POST\", headers: {\"Content-Type\": \"application/json\", \"Authorization\": \"Bearer {{secret:llm-api-key}}\"}, body: JSON.stringify({model: \"model-name\", messages: [{role: \"user\", content: node.input.prompt}]})}); node.output.response = JSON.parse(r.text).choices[0].message.content;"
+  }'
+```
+
+The Script runs in the worker, uses only the checked API, and is aborted by Stop. The secret is substituted
+inside the host operation; the page never sees it. The node is ordinary Library data: it keeps working when no
+client or plugin is open. See [security](security.md) and [plugins](plugins.md).
 
 ## 2. The nodes
 
@@ -60,6 +57,6 @@ Make the procedure one Custom Node in the Library, for example `Task` with a `pr
 - **Wires and values.** Signals carry control, data wires carry values. A wired input ignores `input-values`; for an unwired input of a placed node use **Set Input** or pass `values` to **Add Node**.
 - **Children are separate instances.** Each generated node keeps its own inputs and outputs, so concurrent children cannot overwrite each other. **Invoke Node** returns the outputs of that call only. The relation parent → child is an invocation, not a wire.
 - **Shared memory** is `context.state` (**Get State** / **Set State**): one store per workflow, shared by every child, durable.
-- **Stop** cancels the run and everything it started: generated nodes, `net` requests and plugin routes (through `signal`). Pause holds new work until Resume.
-- **Permissions.** A node that calls a plugin needs `plugins.call`; Add Node, Set Input, Connect, Remove Node need `graph.write`; Find Library Node needs `library.read`; Invoke Node needs `run.start`. The project policy must allow them too ([permissions](permissions.md)).
+- **Stop** cancels the run and everything it started: generated nodes and checked `net` requests. Pause holds new work until Resume.
+- **Permissions.** A Script that calls `net` needs `net.fetch:<host>` and, if it uses one, `secrets.use:<name>`; Add Node, Set Input, Connect, Remove Node need `graph.write`; Find Library Node needs `library.read`; Invoke Node needs `run.start`. The project policy must allow them too ([permissions](permissions.md)).
 - **Generated nodes are ordinary nodes**: visible on the canvas, inspectable, movable. **Add Node** without a point stacks them below what is already there. Remove them with **Remove Node** when the work is done.

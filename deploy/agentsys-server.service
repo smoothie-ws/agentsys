@@ -1,0 +1,40 @@
+[Unit]
+Description=AgentSys graph execution server
+Documentation=https://github.com/smoothie-ws/agentsys/blob/main/docs/deployment.md
+After=network-online.target
+Wants=network-online.target
+
+[Service]
+Type=simple
+User=agentsys
+Group=agentsys
+# The token is read from a root-owned environment file, never from the unit itself.
+EnvironmentFile=/etc/agentsys/server.env
+WorkingDirectory=/opt/agentsys
+ExecStart=/usr/bin/node /opt/agentsys/bin/agentsys-server.js start \
+  --host 127.0.0.1 --port 8080 --data /var/lib/agentsys/data \
+  --name "%H" --trust-proxy
+Restart=on-failure
+RestartSec=3
+# AgentSys shuts down gracefully on SIGTERM: runs are stopped and state is saved.
+KillSignal=SIGTERM
+TimeoutStopSec=30
+
+# Hardening: the server needs its data folder and nothing else.
+NoNewPrivileges=true
+PrivateTmp=true
+ProtectSystem=strict
+ProtectHome=true
+ReadWritePaths=/var/lib/agentsys/data
+ProtectKernelTunables=true
+ProtectKernelModules=true
+ProtectControlGroups=true
+RestrictAddressFamilies=AF_INET AF_INET6 AF_UNIX
+RestrictNamespaces=true
+LockPersonality=true
+MemoryDenyWriteExecute=false
+SystemCallArchitectures=native
+UMask=0077
+
+[Install]
+WantedBy=multi-user.target

@@ -41,7 +41,7 @@ function livePage(route, update) {
         run();
       }, 250);
   };
-  const unsubscribe = Backend.subscribe(schedule, {own: true});
+  const unsubscribe = Environment.subscribe(schedule);
   const interval = setInterval(run, 3000);
   document.addEventListener('visibilitychange', schedule);
   app.pageDispose = () => {
@@ -59,7 +59,11 @@ function pageAutosave(form, read, write) {
     status = $('.save-status', form);
   $('#save-slot', $('#view'))?.replaceWith(status);
   app.pageSave = save;
-  leaveGuards.push(() => leaveAutosave(save));
+  leaveGuards.push(async () => {
+    const ok = await leaveAutosave(save);
+    if (ok && app.pageSave === save) app.pageSave = null;
+    return ok;
+  });
   return save;
 }
 const COMMON_CAPABILITIES = [

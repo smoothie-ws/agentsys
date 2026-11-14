@@ -1,0 +1,32 @@
+{
+  "format": 2,
+  "manifest": {
+    "id": "hello-agent",
+    "name": "Hello Agent",
+    "version": "1.0.0",
+    "description": "The smallest useful AgentSys plugin: a command, a page and a private counter.",
+    "icon": "plug",
+    "api": 2,
+    "engines": {
+      "agentsys": ">=0.3.0 <1.0.0"
+    },
+    "capabilities": [
+      "graph.read"
+    ],
+    "dependencies": {},
+    "author": "You",
+    "license": "MIT",
+    "homepage": ""
+  },
+  "main": "main.js",
+  "files": {
+    "main.js": "// A minimal plugin: install this folder's generated package from Plugins → Install → Import JSON file.\n'use strict';\n\nexports.activate = async api => {\n  api.commands.register(\n    'count',\n    async () => {\n      const value = (await api.storage.get('count', 0)) + 1;\n      await api.storage.set('count', value);\n      api.ui.toast(`Count is ${value}`);\n      return {count: value};\n    },\n    {title: 'Count', icon: 'plus'}\n  );\n\n  api.ui.addToolbarButton({id: 'count', command: 'count', title: 'Count', icon: 'plus'});\n  api.ui.addPage({\n    id: 'home',\n    title: 'Hello Agent',\n    icon: 'sparkles',\n    render: async () => {\n      const count = await api.storage.get('count', 0);\n      const environment = await api.env.info();\n      return `<h2>Hello Agent</h2>\n        <p class=\"muted\">This page is drawn by a sandboxed plugin and runs against\n        <strong>${api.escape(environment.name)}</strong>.</p>\n        <dl class=\"page-facts\"><div><dt>Count</dt><dd>${count}</dd></div></dl>\n        <button type=\"button\" data-command=\"count\">Count one more</button>`;\n    },\n  });\n};\n\nexports.deactivate = async api => api.log('Hello Agent stopped');\n"
+  },
+  "assets": {},
+  "contributes": {
+    "collections": [],
+    "library": [],
+    "workflows": []
+  },
+  "checksum": "fnv1a-41ffcf9c"
+}

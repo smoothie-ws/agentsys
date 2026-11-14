@@ -105,7 +105,9 @@ main {
   transition: background-color var(--fast) var(--ease), color var(--fast) var(--ease);
 }
 .sidebar-top .sidebar-item > a,
-.sidebar-footer .sidebar-item > a {
+.sidebar-top .sidebar-item > .sidebar-link,
+.sidebar-footer .sidebar-item > a,
+.sidebar-footer .sidebar-item > .sidebar-link {
   flex: 1;
   min-width: 0;
 }
@@ -114,7 +116,9 @@ main {
   color: var(--text);
 }
 .sidebar-item:hover > a,
-.sidebar-item.active > a { color: var(--text); }
+.sidebar-item:hover > .sidebar-link,
+.sidebar-item.active > a,
+.sidebar-item.active > .sidebar-link { color: var(--text); }
 .sidebar-item.active {
   background: var(--current);
   color: var(--text);
@@ -147,17 +151,27 @@ main {
 
 /* Sections: Projects and Library above, Settings and API below; no lists inside, those live in the second panel. */
 .sidebar-top .sidebar-item > a,
-.sidebar-footer .sidebar-item > a {
+.sidebar-top .sidebar-item > .sidebar-link,
+.sidebar-footer .sidebar-item > a,
+.sidebar-footer .sidebar-item > .sidebar-link {
   display: flex;
   align-items: center;
   gap: 0.55rem;
   height: 36px; /* the same folded and unfolded */
   padding: 0 0.6rem 0 calc(56px - 0.2rem - 8px);
+  border: 0;
   border-radius: var(--nav-radius);
+  background: none;
   color: color-mix(in srgb, var(--text) 82%, var(--background));
+  font: inherit;
+  text-align: left;
   text-decoration: none;
   white-space: nowrap;
   overflow: hidden;
+  cursor: pointer;
+  margin: 0;
+  appearance: none;
+  -webkit-appearance: none;
   transition:
     background-color var(--fast) var(--ease),
     color var(--fast) var(--ease),
@@ -172,12 +186,16 @@ main {
   margin-top: auto;
   padding-top: 0.6rem;
 }
-.sidebar-hidden .sidebar-top .sidebar-item > a > span:not(.brand-mark),
-.sidebar-hidden .sidebar-footer .sidebar-item > a > span:not(.brand-mark) {
+.sidebar-hidden .sidebar-top .sidebar-item > a > span:not(.brand-mark):not(.env-dot),
+.sidebar-hidden .sidebar-top .sidebar-item > .sidebar-link > span:not(.brand-mark):not(.env-dot),
+.sidebar-hidden .sidebar-footer .sidebar-item > a > span:not(.brand-mark):not(.env-dot),
+.sidebar-hidden .sidebar-footer .sidebar-item > .sidebar-link > span:not(.brand-mark):not(.env-dot) {
   display: none;
 }
 .sidebar-hidden .sidebar-top .sidebar-item > a,
-.sidebar-hidden .sidebar-footer .sidebar-item > a {
+.sidebar-hidden .sidebar-top .sidebar-item > .sidebar-link,
+.sidebar-hidden .sidebar-footer .sidebar-item > a,
+.sidebar-hidden .sidebar-footer .sidebar-item > .sidebar-link {
   padding-inline: 0;
 }
 @media (min-width: 761px) {
@@ -186,7 +204,8 @@ main {
      rows above and below them, and its icons sit in the middle of the rail. */
   #sidebar,
   .sidebar-hidden #sidebar { padding-left: 0; }
-  .sidebar-item > a > :is(svg, .brand-mark) {
+  .sidebar-item > a > :is(svg, .brand-mark),
+  .sidebar-item > .sidebar-link > :is(svg, .brand-mark) {
     position: absolute;
     left: 20px;
     top: 50%;
@@ -197,6 +216,7 @@ main {
   #topstrip > #open-notifications { margin-right: 4px; }
   body #topstrip { padding-right: 0; }
   body:not(.nav-joined) .sidebar-item > a,
+  body:not(.nav-joined) .sidebar-item > .sidebar-link,
   body:not(.nav-joined) .subnav-row { height: 40px; }
   body:not(.nav-joined):not(.sidebar-hidden) #sidebar .sidebar-item:hover:not(.active),
   body:not(.nav-joined):not(.subnav-collapsed) #subnav .subnav-row:hover:not(.active) { background: transparent; }
@@ -987,4 +1007,42 @@ main {
   margin: 0.3rem 0 0.8rem;
   padding-left: 1.2rem;
 }
+/* Plugin sections appended to Settings and the Inspector keep the application's rhythm instead of floating. */
+.plugin-settings { margin-top: 1.4rem; padding-top: 1rem; border-top: 1px solid var(--line); }
+.plugin-settings-body { display: grid; gap: 0.6rem; }
+.inspector-extensions { margin-top: 1rem; padding-top: 0.8rem; border-top: 1px solid var(--line); }
+.inspector-plugin h2 { margin: 0.6rem 0 0.3rem; font-size: 0.95rem; }
+.plugin-logo-line { display: flex; align-items: center; gap: 0.45rem; }
+.plugin-logo { display: inline-block; border-radius: 3px; vertical-align: middle; }
 
+
+/* Environments: the server picker is a navigation row in the sidebar, not a top-strip pill. */
+.sidebar-environment > .sidebar-link { width: 100%; }
+#sidebar .sidebar-footer .sidebar-item.sidebar-environment > .sidebar-link { padding-right: 2.1rem; }
+body.sidebar-hidden #sidebar .sidebar-footer .sidebar-item.sidebar-environment > .sidebar-link { padding-right: 0; }
+.sidebar-environment .server-icon { width: 18px; height: 18px; flex: none; }
+.sidebar-environment .env-name { overflow: hidden; text-overflow: ellipsis; white-space: nowrap; }
+.sidebar-environment .env-dot { margin-left: auto; }
+.env-dot { width: 8px; height: 8px; border-radius: 50%; flex: none; background: var(--muted); box-shadow: 0 0 0 2px color-mix(in srgb, var(--muted) 22%, transparent); }
+.env-dot[data-status="connected"] { background: var(--ok); box-shadow: 0 0 0 2px color-mix(in srgb, var(--ok) 22%, transparent); }
+.env-dot[data-status="connecting"] { background: var(--warn); animation: env-pulse 1s ease-in-out infinite; }
+.env-dot[data-status="disconnected"], .env-dot[data-status="error"] { background: var(--bad); }
+.env-dot[data-status="unauthorized"], .env-dot[data-status="incompatible"] { background: var(--warn); }
+@keyframes env-pulse { 50% { opacity: .35; } }
+.environment-status { display: inline-flex; align-items: center; gap: 6px; font-size: 12px; }
+.environment-card { align-content: center; gap: 0.6rem; }
+.environment-card-status { display: flex; align-items: center; flex-wrap: wrap; gap: 0.55rem; }
+.environment-card-url { color: var(--muted); font-size: 0.78rem; line-height: 1.35; overflow-wrap: anywhere; white-space: normal; }
+.badge { display: inline-block; padding: 1px 7px; border-radius: 999px; font-size: 11px; font-weight: 600; vertical-align: middle; background: var(--field); color: var(--muted); }
+.badge[data-tone="info"] { color: var(--accent); background: var(--soft); }
+.badge[data-tone="success"] { color: var(--ok); background: color-mix(in srgb, var(--ok) 14%, transparent); }
+.badge[data-tone="warning"] { color: var(--warn); background: color-mix(in srgb, var(--warn) 14%, transparent); }
+.badge[data-tone="error"] { color: var(--bad); background: color-mix(in srgb, var(--bad) 14%, transparent); }
+.callout { padding: 12px 16px; border: 1px solid var(--line); border-left: 3px solid var(--accent); border-radius: var(--radius); background: var(--card); margin: 0 0 18px; }
+.callout p { margin: 0; }
+.callout p + p { margin-top: 6px; }
+.callout[data-tone="error"] { border-left-color: var(--bad); }
+.callout[data-tone="warning"] { border-left-color: var(--warn); }
+@media (max-width: 760px) {
+  .sidebar-environment .env-dot { margin-left: 0; }
+}

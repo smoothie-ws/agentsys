@@ -151,7 +151,7 @@ PAGES.workflow = async (view, route) => {
   wireCanvas();
   Inspector.mount($('#side'));
   // Subscribe before reading the first snapshot: a hook may finish while the page is mounting.
-  W.unsubscribe = Backend.subscribe(
+  W.unsubscribe = Environment.subscribe(
     keys => {
       if (app.route !== route) return;
       if (keys.includes('policy:' + route.project)) W.policyDirty = true;

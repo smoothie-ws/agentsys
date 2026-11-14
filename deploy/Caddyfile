@@ -1,0 +1,11 @@
+# Caddy equivalent of deploy/nginx-agentsys.conf. Caddy obtains and renews the certificate itself.
+# Run the server with: agentsys-server start --host 127.0.0.1 --port 8080 --data ... --trust-proxy
+agentsys.example.com {
+	encode zstd gzip
+	reverse_proxy 127.0.0.1:8080 {
+		# Server-Sent Events must not be buffered.
+		flush_interval -1
+		header_up Host {host}
+		header_up X-Forwarded-Proto {scheme}
+	}
+}

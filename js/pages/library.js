@@ -342,7 +342,7 @@ function libraryOverview(view) {
       attrs: 'title="Reusable Custom Nodes"',
       menu: 'nodes:',
     }
-  )}${(app.librarySections || []).map(s => card({href: '/library/' + s.id, glyph: s.icon || 'plug', title: s.title, menu: 'collection:' + s.id, attrs: `title="${esc(s.description || '')}"`})).join('')}</div></div>`;
+  )}${(app.librarySections || []).map(s => card({href: '/library/' + s.id, glyph: s.icon || 'plug', title: s.title, menu: 'collection:' + s.id, attrs: `title="${esc(s.description || '')}"`})).join('')}${(typeof Extensions === 'undefined' ? [] : Extensions.librarySections()).map(s => card({href: s.href, glyph: s.icon || 'database', title: s.title, preview: `<span class="muted">${esc(s.description || 'Added by ' + s.plugin)}</span>`, previewClass: 'card-note', attrs: `title="${esc(s.description || '')}"`})).join('')}</div></div>`;
 }
 
 /** The Nodes section, or one group of it: its groups and nodes as cards. */

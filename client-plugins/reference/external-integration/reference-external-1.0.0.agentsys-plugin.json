@@ -1,0 +1,76 @@
+{
+  "format": 2,
+  "manifest": {
+    "id": "reference-external",
+    "name": "Reference: External Integration",
+    "version": "1.0.0",
+    "description": "Calls a local HTTP endpoint through the net capability with a server-side secret, and deploys a Library node that keeps calling it without this plugin.",
+    "icon": "plug",
+    "api": 2,
+    "engines": {
+      "agentsys": ">=0.3.0 <1.0.0"
+    },
+    "capabilities": [
+      "graph.read",
+      "library.read",
+      "library.write",
+      "collections.read",
+      "collections.write",
+      "net.fetch:127.0.0.1:*",
+      "secrets.use:reference-demo",
+      "run.start"
+    ],
+    "dependencies": {},
+    "author": "AgentSys reference plugins",
+    "license": "MIT",
+    "homepage": ""
+  },
+  "main": "main.js",
+  "files": {
+    "main.js": "// Reference Plugin D: allowed network access and a server secret, never visible to this iframe.\n'use strict';\n\nconst escape = value =>\n  String(value ?? '').replace(/[&<>\"']/g, character => ({'&': '&amp;', '<': '&lt;', '>': '&gt;', '\"': '&quot;', \"'\": '&#39;'})[character]);\nconst COLLECTION = 'external-demo';\n\nasync function endpoint() {\n  const answer = await api.collections.records(COLLECTION, {limit: 1});\n  return answer.records[0]?.data?.url || '';\n}\n\nasync function section() {\n  const url = await endpoint();\n  const present = await api.secrets.present('reference-demo').catch(() => ({present: false}));\n  return `<h2>External Integration</h2>\n    <p class=\"muted\">The plugin never receives the secret. It writes the placeholder\n    <code>{{secret:reference-demo}}</code> into a request; the server replaces it and scrubs it from the answer.</p>\n    <dl class=\"page-facts\">\n      <div><dt>Endpoint</dt><dd>${url ? escape(url) : 'not set'}</dd></div>\n      <div><dt>Server secret</dt><dd>${present.present ? 'present' : 'missing'}</dd></div>\n      <div><dt>Network grant</dt><dd>${escape(api.capabilities.filter(item => item.startsWith('net.fetch:')).join(', ') || 'none')}</dd></div>\n    </dl>\n    <div class=\"button-row\"><button type=\"button\" class=\"primary\" data-command=\"edit-endpoint\">Set endpoint…</button>\n    <button type=\"button\" data-command=\"check\">Check endpoint</button></div>\n    <p class=\"muted small\">The deployed node “External: Local status” runs this call on the server, with no client or plugin.</p>`;\n}\n\nexports.activate = async pluginApi => {\n  const api = pluginApi;\n  api.ui.addResourceView({\n    id: 'external-demo',\n    title: 'External endpoint',\n    description: 'The URL used by the External Integration reference node.',\n    collection: COLLECTION,\n    icon: 'globe',\n    render: async () => {\n      const url = await endpoint();\n      return `<h2>External endpoint</h2><p>Current URL: <strong>${url ? escape(url) : 'not set'}</strong></p>\n        <button type=\"button\" data-command=\"edit-endpoint\">Set endpoint…</button>`;\n    },\n  });\n  api.ui.addSettingsSection({\n    id: 'external',\n    title: 'External Integration',\n    description: 'Local endpoint and server secret status.',\n    render: () => section(),\n  });\n  api.commands.register('edit-endpoint', async values => {\n    const current = await endpoint();\n    const answer = await api.ui.showDialog({\n      title: 'External endpoint',\n      body: `<label class=\"field\"><span>Base URL</span><input name=\"url\" value=\"${escape(values?.url || current || 'http://127.0.0.1:8791')}\" placeholder=\"http://127.0.0.1:8791\"></label>\n        <p class=\"muted small\">Only an http(s) URL is accepted, and the server's network policy still applies.</p>`,\n      actions: [{id: 'save', label: 'Save', command: 'save-endpoint', variant: 'primary'}],\n    });\n    return answer;\n  }, {title: 'Set endpoint'});\n  api.commands.register('save-endpoint', async values => {\n    const url = String(values?.url || '').trim();\n    if (!/^https?:\\/\\/[^\\s]+$/i.test(url)) throw new Error('Enter an absolute http(s) URL.');\n    const existing = await api.collections.records(COLLECTION, {limit: 1});\n    const record = existing.records[0];\n    if (record) await api.collections.update(COLLECTION, record.id, {url}, record.version);\n    else await api.collections.create(COLLECTION, {url});\n    api.ui.toast('Endpoint saved on the server.');\n    api.ui.refresh();\n    return {url};\n  }, {title: 'Save endpoint'});\n  api.commands.register('check', async () => {\n    const url = await endpoint();\n    if (!url) throw new Error('Set the endpoint first.');\n    const answer = await api.net.fetch({url: url.replace(/\\/+$/, '') + '/status', headers: {Authorization: '{{secret:reference-demo}}'}, timeout: 5000});\n    api.ui.toast(`Endpoint answered ${answer.status}.`);\n    return answer;\n  }, {title: 'Check endpoint'});\n};\n"
+  },
+  "assets": {},
+  "contributes": {
+    "collections": [
+      {
+        "name": "external-demo",
+        "title": "External demo endpoint",
+        "description": "The URL the reference Library node calls.",
+        "strategy": "update",
+        "schema": {
+          "type": "object",
+          "properties": {
+            "url": {
+              "type": "string",
+              "maxLength": 500
+            }
+          },
+          "required": [
+            "url"
+          ],
+          "additionalProperties": false
+        }
+      }
+    ],
+    "library": [
+      {
+        "name": "External: Local status",
+        "description": "Fetches /status from the URL in the external-demo collection with the server-held reference-demo secret.",
+        "folder": "Reference external",
+        "icon": "globe",
+        "outputs": [
+          "status",
+          "body"
+        ],
+        "grants": [
+          "collections.read",
+          "net.fetch:127.0.0.1:*",
+          "secrets.use:reference-demo"
+        ],
+        "code": "const config = await agentsys('GET', 'collections/external-demo/records');\nconst base = String(config.records[0]?.data?.url || '').replace(/\\/+$/, '');\nif (!base) throw new Error('Set the endpoint in the external-demo collection first');\nconst answer = await agentsys('POST', 'net', {url: base + '/status', headers: {Authorization: '{{secret:reference-demo}}'}, timeout: 5000});\nnode.output.status = answer.status;\nnode.output.body = answer.text;\nnode.display('external status ' + answer.status + ': ' + answer.text);"
+      }
+    ],
+    "workflows": []
+  },
+  "checksum": "fnv1a-92ea05c7"
+}

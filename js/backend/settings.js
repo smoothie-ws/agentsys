@@ -39,9 +39,7 @@ const DEFAULT_SHORTCUTS = {
 };
 const SHORTCUT_PATTERN =
   /^(?:(?:Ctrl|Alt|Shift|Meta)\+)*(?:Key[A-Z]|Digit[0-9]|F(?:[1-9]|1[0-2])|Arrow(?:Left|Right|Up|Down)|Space|Enter|Escape|Delete|Backspace|Home|End|PageUp|PageDown|Equal|Minus|BracketLeft|BracketRight|Backslash|Semicolon|Quote|Comma|Period|Slash|Backquote|Shift|Control|Alt|Meta)$/;
-/** Graph Editor appearance limits: [min, max] of each whole-number setting, and the wire shapes. */
-const GRAPH_RANGES = {node_radius: [0, 42], group_radius: [0, 54], wire_width: [1, 5], wire_curve: [10, 100]};
-const WIRE_STYLE_IDS = ['bezier', 'linear', 'step', 'rounded'];
+// GRAPH_RANGES and WIRE_STYLE_IDS are shared with the client (shared/core.js).
 
 function validateShortcuts(value) {
   if (!isObject(value) || Object.keys(value).some(k => !Object.hasOwn(DEFAULT_SHORTCUTS, k)))

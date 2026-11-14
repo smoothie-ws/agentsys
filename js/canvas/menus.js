@@ -59,10 +59,15 @@ function addItems({all = false} = {}) {
     {icon: glyph, hint: ''},
   ];
   const library = menuOf(tree);
+  const pluginItems =
+    typeof Extensions === 'undefined'
+      ? []
+      : Extensions.menuItems('canvas:add', [{project: W.project, workflow: W.workflow, point: at}]);
   return [
     primitive('Script', 'script', 'code'),
     primitive('Event', 'event', 'bolt'),
     ...(library.length ? [null, ...library] : []),
+    ...(pluginItems.length ? [null, ...pluginItems] : []),
   ];
 }
 function addMenu(x, y) {
@@ -90,6 +95,19 @@ function selectionMenu() {
     off = switchable.length > 0 && switchable.every(n => n.disabled),
     foldable = foldableItems(),
     folded = foldable.length > 0 && foldable.every(n => n.folded);
+  const pluginItems =
+    typeof Extensions === 'undefined'
+      ? []
+      : Extensions.menuItems('canvas:selection', [
+          {
+            project: W.project,
+            workflow: W.workflow,
+            selected: [
+              ...plainNodes().map(n => n.id),
+              ...groupIds.map(id => 'complex:' + id),
+            ],
+          },
+        ]);
   return [
     ['Copy', () => copySelection(), {icon: 'copy', hint: shortcut('copy'), disabled: !any}],
     ['Cut', () => copySelection(true), {icon: 'cut', hint: shortcut('cut'), disabled: !any}],
@@ -128,5 +146,6 @@ function selectionMenu() {
     null,
     ['Dissolve', () => deleteSelection(true), {icon: 'merge', hint: shortcut('dissolve'), disabled: !plain.length}],
     ['Delete', () => deleteSelection(), {icon: 'trash', danger: true, hint: shortcut('delete'), disabled: !any}],
+    ...(pluginItems.length ? [null, ...pluginItems] : []),
   ];
 }

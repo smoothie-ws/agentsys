@@ -1,0 +1,13 @@
+{
+  "id": "reference-security",
+  "name": "Reference: Security Test",
+  "version": "1.0.0",
+  "description": "Deliberately tries the operations a plugin must not be able to do: forge a message, read another plugin's data or token, escape the sandbox, bypass a capability and act after being disabled. Every attempt must be refused.",
+  "icon": "lock",
+  "api": 2,
+  "engines": {"agentsys": ">=0.3.0 <1.0.0"},
+  "capabilities": ["graph.read"],
+  "author": "AgentSys reference plugins",
+  "license": "MIT",
+  "main": "main.js"
+}

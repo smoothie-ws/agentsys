@@ -1,0 +1,72 @@
+{
+  "format": 2,
+  "manifest": {
+    "id": "reference-structured-data",
+    "name": "Reference: Structured Data",
+    "version": "1.0.0",
+    "description": "A custom collection with CRUD, validation, a schema migration and a conflict-aware update path, plus a resource view drawn by the plugin.",
+    "icon": "plug",
+    "api": 2,
+    "engines": {
+      "agentsys": ">=0.3.0 <1.0.0"
+    },
+    "capabilities": [
+      "collections.read",
+      "collections.write",
+      "graph.read",
+      "settings.read",
+      "settings.write"
+    ],
+    "dependencies": {},
+    "author": "AgentSys reference plugins",
+    "license": "MIT",
+    "homepage": ""
+  },
+  "main": "main.js",
+  "files": {
+    "main.js": "// Reference Plugin C: the Generic Collections API, a plugin-drawn resource view and an update migration.\n'use strict';\n\nconst escape = value =>\n  String(value ?? '').replace(/[&<>\"']/g, character => ({'&': '&amp;', '<': '&lt;', '>': '&gt;', '\"': '&quot;', \"'\": '&#39;'})[character]);\nconst COLLECTION = 'structured-notes';\n\nasync function view() {\n  const answer = await api.collections.records(COLLECTION, {limit: 100});\n  const rows = answer.records\n    .map(\n      record =>\n        `<tr><td>${escape(record.data.title)}</td><td>${escape(record.data.body || '')}</td><td>${record.data.done ? 'yes' : 'no'}</td><td>${escape(record.data.priority ?? 0)}</td><td class=\"oc-num\">v${record.version}</td></tr>`\n    )\n    .join('');\n  return `<h2>Structured notes</h2>\n    <p class=\"muted\">A resource view reads a Generic Collection through <code>api.collections</code>. Validation is\n    enforced by the server, not by this page.</p>\n    <dl class=\"page-facts\"><div><dt>Records</dt><dd>${answer.total}</dd></div></dl>\n    ${answer.records.length ? `<div class=\"oc-table\"><table><thead><tr><th>Title</th><th>Body</th><th>Done</th><th>Priority</th><th>Version</th></tr></thead><tbody>${rows}</tbody></table></div>` : '<div class=\"empty small\"><h2>No notes yet</h2></div>'}\n    <div class=\"button-row\"><button type=\"button\" class=\"primary\" data-command=\"add-note\">Add a note</button><button type=\"button\" data-command=\"add-invalid\">Try an invalid record</button><button type=\"button\" data-command=\"race\">Concurrent update</button></div>`;\n}\n\nasync function settings() {\n  const value = await api.settings.get();\n  return `<p class=\"muted\">Data version: <strong>${escape(String(value.schemaVersion ?? 0))}</strong></p>\n    <p class=\"muted small\">A schema change is a normal collection update; existing records are never deleted.</p>\n    <button type=\"button\" data-command=\"migrate\">Run migration</button>`;\n}\n\nexports.activate = async pluginApi => {\n  // The module receives the public API as its `api` parameter; keep a local name for the closures below.\n  const api = pluginApi;\n  api.ui.addResourceView({\n    id: 'structured-notes',\n    title: 'Structured notes',\n    description: 'A custom view over the structured-notes collection.',\n    collection: COLLECTION,\n    icon: 'database',\n    sidebar: true,\n    render: () => view(),\n  });\n  api.ui.addSettingsSection({\n    id: 'structured-data',\n    title: 'Structured Data',\n    description: 'Migration state of the reference collection.',\n    render: () => settings(),\n  });\n  api.commands.register('add-note', async () => {\n    const made = await api.collections.create(COLLECTION, {\n      title: 'Note ' + new Date().toISOString().slice(11, 19),\n      body: 'Created by Reference: Structured Data.',\n      done: false,\n      priority: 1,\n    });\n    api.ui.toast(`Created note ${made.id.slice(0, 8)}.`);\n    api.ui.refresh();\n    return made;\n  }, {title: 'Add a note'});\n  api.commands.register('add-invalid', async () => {\n    try {\n      await api.collections.create(COLLECTION, {body: 'no title'});\n      return {unexpected: true};\n    } catch (error) {\n      api.ui.toast('The server refused the record: ' + error.message, true);\n      return {refused: error.message};\n    }\n  }, {title: 'Try an invalid record'});\n  api.commands.register('race', async () => {\n    const list = await api.collections.records(COLLECTION, {limit: 1});\n    const record = list.records[0];\n    if (!record) return {skipped: 'no record'};\n    const results = await Promise.allSettled([\n      api.collections.update(COLLECTION, record.id, {...record.data, body: 'writer one'}, record.version),\n      api.collections.update(COLLECTION, record.id, {...record.data, body: 'writer two'}, record.version),\n    ]);\n    const conflict = results.filter(item => item.status === 'rejected' && /conflict|version/i.test(item.reason?.message || '')).length;\n    api.ui.toast(`Concurrent update: ${conflict} conflict(s) rejected.`);\n    return {conflict};\n  }, {title: 'Concurrent update'});\n  api.commands.register('migrate', async () => {\n    // The same definition with a stricter schema: existing records stay, new writes are validated against it.\n    await api.collections.define(COLLECTION, {\n      title: 'Structured notes',\n      description: 'Notes with a title, a body, a done flag and a priority.',\n      schema: {\n        type: 'object',\n        properties: {\n          title: {type: 'string', maxLength: 200},\n          body: {type: 'string', maxLength: 4000},\n          done: {type: 'boolean'},\n          priority: {type: 'integer', enum: [0, 1, 2, 3]},\n        },\n        required: ['title'],\n        additionalProperties: false,\n      },\n    });\n    const settingsValue = await api.settings.get();\n    await api.settings.set({...settingsValue, schemaVersion: 2});\n    api.ui.toast('Schema migrated to version 2.');\n    api.ui.refresh();\n    return {schemaVersion: 2};\n  }, {title: 'Run migration'});\n};\n"
+  },
+  "assets": {},
+  "contributes": {
+    "collections": [
+      {
+        "name": "structured-notes",
+        "title": "Structured notes",
+        "description": "Notes with a title, a body and a done flag.",
+        "strategy": "update",
+        "schema": {
+          "type": "object",
+          "properties": {
+            "title": {
+              "type": "string",
+              "maxLength": 200
+            },
+            "body": {
+              "type": "string",
+              "maxLength": 4000
+            },
+            "done": {
+              "type": "boolean"
+            },
+            "priority": {
+              "type": "integer",
+              "enum": [
+                0,
+                1,
+                2,
+                3
+              ]
+            }
+          },
+          "required": [
+            "title"
+          ],
+          "additionalProperties": false
+        }
+      }
+    ],
+    "library": [],
+    "workflows": []
+  },
+  "checksum": "fnv1a-6313b960"
+}
