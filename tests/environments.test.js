@@ -47,7 +47,8 @@ function makeEnvironment(handler) {
       const body = new ReadableStream({
         start(controller) {
           controller.enqueue(encoder.encode(result.stream.initial || ''));
-          // Never closes: an event stream stays open until it is aborted.
+          // An event stream stays open until it is aborted, unless the scripted answer closes it.
+          if (result.stream.close) controller.close();
         },
       });
       return new Response(body, {status: 200, headers: {'Content-Type': 'text/event-stream'}});
@@ -255,11 +256,56 @@ test('an incompatible server is reported as such and is not used', async () => {
   await assert.rejects(Environment.request('GET', 'projects'), error => error.code === 'incompatible_protocol');
 });
 
-test('an address without a scheme, with credentials or with a path is refused', async () => {
-  const {Environment} = makeEnvironment(plainServer);
+test('an address without a scheme, with credentials or with a path is refused', async () => {  const {Environment} = makeEnvironment(plainServer);
   assert.throws(() => Environment.normalizeURL('agentsys.example.com'), error => error.code === 'invalid_request');
   assert.throws(() => Environment.normalizeURL('ftp://example.com'), error => error.code === 'invalid_request');
   assert.throws(() => Environment.normalizeURL('https://user:pass@example.com'), error => error.code === 'invalid_request');
   assert.equal(Environment.normalizeURL('https://example.com/'), 'https://example.com');
   assert.equal(Environment.normalizeURL('https://example.com/base/?q=1#x'), 'https://example.com/base');
+});
+
+test('rapid switching settles on the last environment, with no stale status', async () => {
+  const {Environment, requests} = makeEnvironment(plainServer);
+  await Environment.start();
+  const second = Environment.save({name: 'Second', url: 'http://second.test'});
+  const third = Environment.save({name: 'Third', url: 'http://third.test'});
+  // Three switches without waiting: the last one wins and earlier connections cannot report over it.
+  const attempts = [Environment.setActive(second.id), Environment.setActive(third.id), Environment.setActive('local')];
+  const results = await Promise.all(attempts);
+  assert.equal(results.at(-1), true);
+  const state = Environment.status();
+  assert.equal(state.environment.name, 'Local server');
+  assert.equal(state.status, 'connected');
+  assert.equal(state.meta.product, Protocol.PRODUCT);
+  // The last stream that was opened is the default server's, not one of the abandoned ones.
+  const streams = requests.filter(request => request.url.includes(Protocol.EVENTS_PATH));
+  assert.ok(streams.length >= 1);
+  await Environment.setActive('local', {reconnect: false});
+});
+
+test('the event stream reconnects with backoff after it closes, without replaying a mutation', async () => {
+  let opens = 0;
+  let writes = 0;
+  const {Environment} = makeEnvironment(request => {
+    if (request.url.includes(API)) return {body: meta};
+    if (request.url.includes('/api/session')) return {body: {ok: true}};
+    if (request.url.includes(Protocol.EVENTS_PATH)) {
+      opens++;
+      // The first stream closes at once (a proxy timeout); the next one stays open.
+      return opens === 1 ? {stream: {initial: 'data: {"type":"ready"}\n\n', close: true}} : {stream: {initial: 'data: {"type":"ready"}\n\n'}};
+    }
+    if (request.url.includes('/api/projects')) {
+      if (request.method === 'POST') writes++;
+      return {body: []};
+    }
+    return {body: {}};
+  });
+  await Environment.start();
+  await Environment.request('POST', 'projects', {body: {name: 'once'}});
+  // Wait for the scheduled reconnect (500 ms first backoff).
+  await new Promise(resolve => setTimeout(resolve, 700));
+  assert.ok(opens >= 2, `the stream was reopened (${opens})`);
+  assert.equal(writes, 1, 'a reconnect never repeats a write');
+  assert.equal(Environment.status().status, 'connected');
+  await Environment.setActive('local', {reconnect: false});
 });

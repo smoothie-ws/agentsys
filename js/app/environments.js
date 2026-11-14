@@ -28,6 +28,7 @@ const Environment = (() => {
   let reconnectTimer = null;
   let reconnectAttempt = 0;
   let started = false;
+  let switching = 0; // a setActive() is between its start and its answer
 
   /** Starts a new environment generation: older answers are rejected, their requests and the event stream are aborted. */
   function beginGeneration() {
@@ -160,11 +161,11 @@ const Environment = (() => {
   /** One transport for every API call. Network failures and mutations are never retried: a repeated Run may
    * have side effects. A clean 401 is different: the server rejected the request before running it, so after
    * renewing the session the same call may be sent once. */
-  async function request(method, path, {body, query, edit, signal} = {}) {
-    return requestOnce(method, path, {body, query, edit, signal}, true);
+  async function request(method, path, {body, query, edit, signal, env} = {}) {
+    return requestOnce(method, path, {body, query, edit, signal, env}, true);
   }
-  async function requestOnce(method, path, {body, query, edit, signal}, mayRenew) {
-    const env = active || ensureDefaults();
+  async function requestOnce(method, path, {body, query, edit, signal, env: target}, mayRenew) {
+    const env = target || active || ensureDefaults();
     // A server that speaks another protocol is not asked: its answers would be read as this protocol's.
     if (status === 'incompatible')
       throw new ApiError('incompatible_protocol', statusDetail || 'The server speaks another AgentSys protocol', 409);
@@ -375,20 +376,28 @@ const Environment = (() => {
     active = env;
     // A connection attempt is a new generation: answers of the old environment (and its event stream) are void.
     const gate = beginGeneration();
+    const gen = generation;
     setStatus('connecting');
     meta = null;
+    // A newer attempt owns the state: an older one returns without touching status or meta.
+    const current = () => gen === generation;
     try {
-      meta = await probe(env, gate);
+      const probed = await probe(env, gate);
+      if (!current()) return false;
+      meta = probed;
       await startSession(env, gate);
+      if (!current()) return false;
       // A protected read proves the session (or the loopback trust) is good before the stream opens.
-      await request('GET', 'session');
+      await request('GET', 'session', {env});
+      if (!current()) return false;
       if (status === 'unauthorized') return false;
       openStream();
+      if (!current()) return false;
       setStatus('connected');
       if (!started) started = true;
       return true;
     } catch (error) {
-      if (error?.code === 'stale_environment') return false;
+      if (!current() || error?.code === 'stale_environment') return false;
       if (error?.code === 'incompatible_protocol') setStatus('incompatible', error.message);
       else if (error?.code === 'unauthorized') setStatus('unauthorized', error.message);
       else setStatus('disconnected', error?.message || 'The server could not be reached.');
@@ -410,21 +419,27 @@ const Environment = (() => {
   async function setActive(id, {reconnect = true} = {}) {
     const env = environments.find(item => item.id === id);
     if (!env) throw new ApiError('not_found', 'Environment not found', 404);
-    if (active?.id === id && status === 'connected') return true;
-    await runHooks(beforeSwitch);
-    if (active?.id !== id) beginGeneration();
-    active = env;
-    activeId = env.id;
-    persistActive();
-    meta = null;
-    if (!reconnect) {
-      beginGeneration(); // even for the same environment: no stream and no answer may outlive a disconnect
-      setStatus('disconnected');
-      return false;
+    // A switch already on its way to this environment is not a reason to skip: it has not arrived yet.
+    if (!switching && active?.id === id && status === 'connected') return true;
+    switching++;
+    try {
+      await runHooks(beforeSwitch);
+      if (active?.id !== id) beginGeneration();
+      active = env;
+      activeId = env.id;
+      persistActive();
+      meta = null;
+      if (!reconnect) {
+        beginGeneration(); // even for the same environment: no stream and no answer may outlive a disconnect
+        setStatus('disconnected');
+        return false;
+      }
+      const ok = await connect(env);
+      if (ok) await runHooks(afterSwitch);
+      return ok;
+    } finally {
+      switching--;
     }
-    const ok = await connect(env);
-    if (ok) await runHooks(afterSwitch);
-    return ok;
   }
 
   function validate(env) {
