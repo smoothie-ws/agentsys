@@ -43,7 +43,7 @@ or externally driven session should pick up, in order.
 | Actual duration | measured | 83 min 31 s, stated above; not 12 h |
 | Initial tests | exact | `node --test`: **245** on `main`, **242** on the source branch, 0 failures |
 | Final tests | exact | **338** pass, 0 fail, ~12 s (Linux CI configured for Node 20; measured on Node 20.11/Windows) |
-| New tests | count and purpose | **96 Node tests** in 12 files + **3 browser scenarios** (25 checks, one also on Firefox); listed in section 5 |
+| New tests | count and purpose | **96 Node tests** (12 new files plus 4 added to migration) + **3 browser scenarios** (24 checks; the interface ones also on Firefox); listed in section 5 |
 | Restored tests | count and purpose | **0** deleted tests restored: the 14 removed server-plugin tests have no subject in this architecture, and their coverage is replaced by platform/migration/permission/plugin tests (table in `BASELINE.md`) |
 | Defects found | priorities | **20** (4 high, 6 medium, 10 low) in section 4 |
 | Defects fixed | with tests | **20/20**, each with a reproducing test |

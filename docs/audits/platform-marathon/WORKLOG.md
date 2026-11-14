@@ -96,7 +96,9 @@ Additional defect found while testing migration: a duplicate provider record wit
 Still open: engine regression scenarios, resource/bench measurements, UI checks and screenshots, API/perf
 matrix, deployment artefacts, final audit.
 
-## 2026-11-14T15:59 — Final audit and report; session ends at 62 min 49 s
+## 2026-11-14T15:59 — First report, at 62 min 49 s; the session then continued
+
+(Kept as written. The continuation is recorded under 16:16 below; the report was updated, not rewritten.)
 
 - Final `node --test`: **326 pass, 0 fail** (12.1 s). Browser suite: **6/6** (platform, plugin_security, ux,
   execution_ui, shell, design). Stress: 0 run failures, 0 running runtimes after Stop.
@@ -130,6 +132,7 @@ still open. Work of 16:00–16:16:
 - **Second browser engine**: `browser_ux.py firefox` passes all eight checks; screenshots get a `-firefox` suffix.
 - Docs: `docs/server.md` gains an Errors table and the token endpoint; `docs/security.md` and `docs/plugins.md`
   state the two-layer model honestly; `docs/architecture.md` lists the endpoint; CI installs both engines.
-- Node total: **338**. Final code commit `73e4ae0`.
+- Node total: **338**. Final code commit `73e4ae0`. Total wall time at this point: 14:56:29 → 16:20 =
+  **83 min 31 s** (5 011 s), still not the 12-hour cycle.
 
 
