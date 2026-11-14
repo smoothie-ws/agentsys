@@ -29,7 +29,7 @@ in section 12 and the journal is current.
 | Planned deadline | 2026-11-15T02:56:29+10:00 (not reached) |
 | Source branch / commit | `platform/server-client` / `5123643be41a0227f6cb5e9ea586cfee816e1946` |
 | Audit branch | `audit/12h-platform-hardening` |
-| Final commit | `fe0639f` |
+| Final code commit | `fe0639f` (the report and its figures follow in later docs commits) |
 | Commits added | 20 audit commits on top of the 3 platform commits (`git log main..HEAD`: 23); the last is `fe0639f` |
 | `main` | untouched |
 
