@@ -136,10 +136,9 @@ function panelResize(panel, {edge, key, initial, min, max, setWidth, collapse, e
         body.style.setProperty('--sidebar-live-width', live + 'px');
         body.classList.toggle('sidebar-hidden', !expand);
         body.classList.toggle('sidebar-will-collapse', !expand);
-        body.classList.toggle('sidebar-will-expand', expand && wasHidden);
       },
       e => {
-        body.classList.remove('resizing-panel', 'sidebar-dragging', 'sidebar-will-collapse', 'sidebar-will-expand');
+        body.classList.remove('resizing-panel', 'sidebar-dragging', 'sidebar-will-collapse');
         side.style.width = '';
         body.style.removeProperty('--sidebar-live-width');
         if (e.type === 'pointercancel') return toggleSidebar(!wasHidden);
@@ -217,6 +216,7 @@ async function destinations() {
     found.push({label: r.name, hint: 'Library · Node', href: resourceHref(r)});
   for (const path of library.node_folders || [])
     found.push({label: baseName(path), hint: 'Library · Nodes group', href: folderHref(path)});
+  if (typeof Extensions !== 'undefined') found.push(...Extensions.destinations());
   return found;
 }
 
@@ -238,10 +238,24 @@ function openSearch() {
       text = input.value.trim(),
       q = text.normalize('NFKC').toLowerCase();
     const go_ = (await places).filter(d => !q || `${d.label} ${d.hint}`.toLowerCase().includes(q)).slice(0, q ? 8 : 10);
+    const commands =
+      typeof Extensions === 'undefined'
+        ? []
+        : Extensions.commands()
+            .filter(c => !q || `${c.title} ${c.pluginTitle}`.toLowerCase().includes(q))
+            .slice(0, q ? 6 : 4);
     const found = q ? await api('search/nodes', {query: {q: text, limit: 50}}) : {nodes: []};
     if (mine !== sequence || !input.isConnected) return;
     results.innerHTML =
       (go_.length ? `<h3>Go to</h3>${go_.map(d => link(d.href, d.label, d.hint)).join('')}` : '') +
+        (commands.length
+          ? `<h3>Commands</h3>${commands
+              .map(
+                c =>
+                  `<button type="button" class="search-command" data-command="${esc(c.key)}"><strong>${esc(c.title)}</strong><span class="muted small">Plugin · ${esc(c.pluginTitle)}</span></button>`
+              )
+              .join('')}`
+          : '') +
         (found.nodes.some(n => developerMode() || !n.project_id.startsWith('lib-'))
           ? `<h3>Nodes</h3>${found.nodes
               .filter(n => developerMode() || !n.project_id.startsWith('lib-'))
@@ -263,7 +277,7 @@ function openSearch() {
   };
   // Enter opens the first result; the arrow keys walk the list.
   input.onkeydown = event => {
-    const first = $('a', results);
+    const first = $('a, button', results);
     if (event.key === 'Enter' && first) {
       event.preventDefault();
       first.click();
@@ -275,11 +289,17 @@ function openSearch() {
   results.onkeydown = event => {
     if (!['ArrowDown', 'ArrowUp'].includes(event.key)) return;
     event.preventDefault();
-    const links = $$('a', results),
+    const links = $$('a, button', results),
       next = links[links.indexOf(document.activeElement) + (event.key === 'ArrowDown' ? 1 : -1)];
     (next || input).focus();
   };
   results.onclick = event => {
+    const command = event.target.closest('[data-command]');
+    if (command) {
+      $('#modal').close();
+      Extensions.execute(command.dataset.command).catch(() => {});
+      return;
+    }
     if (event.target.closest('a')) $('#modal').close();
   };
   run().catch(fail);
@@ -308,6 +328,8 @@ Backend.subscribe(keys => {
     loadLibrary()
       .then(renderSidebar)
       .catch(() => {});
+  // Turned on or off in another tab: its interface follows the server module.
+  if (keys.includes('plugins-disabled') && typeof Extensions !== 'undefined') Extensions.reload().catch(fail);
 });
 // on_placed, on_deleted, on_input_connected and on_widget run by themselves after a change, so a failure has to be told to the person.
 Backend.subscribeHooks(entry =>

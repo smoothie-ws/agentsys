@@ -73,6 +73,7 @@ ${WORKER_FREEZE}
 const AsyncFunction=Object.getPrototypeOf(async function(){}).constructor;
 ${displayPart}
 ${displayText}
+${resolvePort}
 ${createGraphView}
 ${createGraphInterpreter}
 const pending=new Map(),gate={paused:false,waiters:[]};let serial=0,runtime;
@@ -88,9 +89,11 @@ const receive=async({data})=>{
       runtime=createGraphInterpreter(data.graph,data.saved,{AsyncFunction,displayText,call,gate,context:data.context,emit:event=>send({type:'event',event})});
     }else if(data.type==='update')runtime.update(data.graph);
     else if(data.type==='pause'){
+      runtime?.flush?.();
       gate.paused=data.paused;
       if(!gate.paused)gate.waiters.splice(0).forEach(wake=>wake());
     }else if(data.type==='signal')result=await runtime.signal(data.nodes,data.event);
+    runtime?.flush?.();
     send({type:'result',id:data.id,result});
   }catch(error){send({type:'result',id:data.id,error:String(error?.message??error),code:error?.code});}
 };
@@ -227,6 +230,7 @@ function createInlineGraphHost(graph, saved, {context, onEvent, signal, paused =
       return Promise.resolve();
     },
     pause(paused) {
+      runtime.flush();
       gate.paused = paused;
       if (!paused) gate.waiters.splice(0).forEach(wake => wake());
       return Promise.resolve();
@@ -241,6 +245,7 @@ function createInlineGraphHost(graph, saved, {context, onEvent, signal, paused =
       });
     },
     close() {
+      runtime.flush();
       closed = true;
       gate.paused = false;
       gate.waiters.splice(0).forEach(wake => wake());

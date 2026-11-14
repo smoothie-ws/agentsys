@@ -477,6 +477,47 @@ test('corrupt UI state returns an HTTP error without terminating static hosting'
   });
 });
 
+test('an interrupted commit is replayed once, and an unreadable record does not stop the server', async () => {
+  const dataDir = fs.mkdtempSync(path.join(os.tmpdir(), 'agentsys-transaction-'));
+  const project = {
+    id: 'recoveredproject',
+    name: 'Recovered',
+    description: '',
+    created: 1,
+    workflows: [{id: 'recoveredproject', name: 'Flow', created: 1}],
+  };
+  // The data was written before the crash; the record was not removed yet. Replaying it must
+  // leave one project, not two.
+  fs.writeFileSync(path.join(dataDir, 'projects.json'), JSON.stringify([project]));
+  fs.writeFileSync(
+    path.join(dataDir, '.transaction.json'),
+    JSON.stringify({set: {projects: [project]}, remove: []})
+  );
+  let app = createServer({dataDir}),
+    url = await app.listen(0);
+  try {
+    const listed = await call(url, 'GET', 'projects');
+    assert.equal(listed.status, 200);
+    assert.deepEqual(listed.body.map(item => item.name), ['Recovered']);
+    assert.equal(fs.existsSync(path.join(dataDir, '.transaction.json')), false);
+    assert.equal(JSON.parse(fs.readFileSync(path.join(dataDir, 'projects.json'), 'utf8')).length, 1);
+  } finally {
+    await app.close();
+  }
+  // An unreadable record is set aside; the stored data still serves.
+  fs.writeFileSync(path.join(dataDir, '.transaction.json'), '{not json');
+  app = createServer({dataDir});
+  url = await app.listen(0);
+  try {
+    assert.deepEqual((await call(url, 'GET', 'projects')).body.map(item => item.name), ['Recovered']);
+    assert.equal(fs.existsSync(path.join(dataDir, '.transaction.json')), false);
+    assert.equal(fs.existsSync(path.join(dataDir, '.transaction.json.invalid')), true);
+  } finally {
+    await app.close();
+    fs.rmSync(dataDir, {recursive: true, force: true});
+  }
+});
+
 test('storage keys matching Object properties round-trip as ordinary user data', async () => {
   await withServer({}, async ({url}) => {
     const values = Object.fromEntries(['constructor', 'toString', '__proto__'].map(key => [key, {value: key}]));
@@ -488,5 +529,65 @@ test('storage keys matching Object properties round-trip as ordinary user data',
     assert.equal(saved.status, 200);
     for (const [key, value] of Object.entries(values))
       assert.deepEqual(await (await fetch(url + '/__data/' + key)).json(), value);
+  });
+});
+
+test('malformed bodies, duplicate ids and traversal attempts answer 4xx, never 5xx', async () => {
+  await withServer({}, async ({url}) => {
+    const {body: project} = await call(url, 'POST', 'projects', {name: 'Malformed'}),
+      {body: node} = await call(url, 'POST', `projects/${project.id}/typed-nodes`, {
+        node_type: 'custom',
+        config: nodes.script(''),
+      });
+    const send = async (method, route, body) => {
+      const response = await fetch(`${url}/api/${route}`, {
+        method,
+        headers: {'Content-Type': 'application/json', 'X-AgentSys': '1'},
+        body,
+      });
+      await response.arrayBuffer();
+      return response.status;
+    };
+    const rejected = [
+      ['POST', 'projects', 'null'],
+      ['POST', 'projects', '[]'],
+      ['PUT', 'settings', 'null'],
+      ['PUT', 'settings', '"text"'],
+      ['PUT', `projects/${project.id}/groups`, '{"groups":null}'],
+      ['PUT', `projects/${project.id}/layout`, '{"positions":null}'],
+      ['PUT', `projects/${project.id}/policy`, '{"allow":null}'],
+      ['PUT', `projects/${project.id}/node-style`, `{"node_id":"${node.id}","pinned":"yes"}`],
+      ['POST', `projects/${project.id}/port-connections`, '{"add":[null]}'],
+      ['POST', `projects/${project.id}/execution`, '{"payload":[]}'],
+      ['POST', `projects/${project.id}/evaluate-node`, '{"node_ids":null}'],
+    ];
+    for (const [method, route, body] of rejected) {
+      const status = await send(method, route, body);
+      assert.ok(status >= 400 && status < 500, `${method} ${route} ${body} -> ${status}`);
+    }
+    // Odd but well-typed values stay bounded: a duplicate id runs, an unknown key is ignored,
+    // a self wire is a valid signal cycle, and a null config is an empty Custom node.
+    for (const [method, route, body] of [
+      ['POST', `projects/${project.id}/execution`, `{"node_ids":["${node.id}","${node.id}"],"wait":true}`],
+      ['POST', `projects/${project.id}/execution`, '{"payload":{"__proto__":{"x":1}},"wait":true}'],
+      ['POST', `projects/${project.id}/typed-nodes`, '{"node_type":"custom","config":null}'],
+      [
+        'POST',
+        `projects/${project.id}/port-connections`,
+        `{"add":[{"source":"${node.id}","source_port":"out","target":"${node.id}","target_port":"in"}]}`,
+      ],
+    ]) {
+      const status = await send(method, route, body);
+      assert.ok(status < 500, `${method} ${route} ${body} -> ${status}`);
+    }
+    for (const route of [
+      '/api/projects/%2e%2e%2f%2e%2e%2fpackage.json',
+      '/__data/..%2fpackage.json',
+      '/__data/%2e%2e%2fpackage.json',
+      '/editor/%2e%2e/%2e%2e/package.json',
+    ]) {
+      const status = (await fetch(url + route)).status;
+      assert.ok(status >= 400 && status < 500, `${route} -> ${status}`);
+    }
   });
 });

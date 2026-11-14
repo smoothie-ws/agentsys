@@ -24,7 +24,7 @@ class Editor {
     this.doc = doc;
   }
 
-  // в”Ђв”Ђв”Ђв”Ђв”Ђ Reading: snapshot, selection, layout and styles в”Ђв”Ђв”Ђв”Ђв”Ђ
+  // ----- Reading: snapshot, selection, layout and styles -----
 
   /** `structure`: nodes, groups and Complex Nodes only, without ports, wires and diagnostics (see buildSnapshot). */
   snapshot(structure = false) {
@@ -41,16 +41,12 @@ class Editor {
   }
   /** Follows Complex Node ports down to the node ports they are bound to: [[node ID, port ID], ...] (an unbound port stays on the wrapper; only an input is bound to several). */
   static resolveAll(nodes, nodeId, portId, direction, seen = new Set()) {
-    const address = key(nodeId, portId);
-    if (seen.has(address)) throw bad('Cyclic interface binding');
-    const node = nodes.get(nodeId);
-    if (node.kind !== 'complex') return [[nodeId, portId]];
-    const item = node.interface[direction].find(p => p.id === portId);
-    if (!item) throw bad('Complex Node port not found');
-    if (!item.bound?.length) return [[nodeId, portId]];
-    return item.bound.flatMap(b =>
-      Editor.resolveAll(nodes, b.node_id, b.port_id, direction, new Set(seen).add(address))
-    );
+    try {
+      return resolvePort(nodes, nodeId, portId, direction, seen);
+    } catch (error) {
+      // Graph edits report invalid bindings as bad requests; the resolver itself is shared with the interpreter.
+      throw bad(error.message);
+    }
   }
   /** The first port a Complex Node port is bound to (the only one of an output). */
   static resolve(nodes, nodeId, portId, direction) {
@@ -154,7 +150,7 @@ class Editor {
     for (const id of Object.keys(this.doc.widgets)) if (predicate(id)) delete this.doc.widgets[id];
   }
 
-  // в”Ђв”Ђв”Ђв”Ђв”Ђ Layout and style в”Ђв”Ђв”Ђв”Ђв”Ђ
+  // ----- Layout and style -----
 
   saveLayout(positions) {
     if (!isObject(positions) || !Object.keys(positions).length || Object.keys(positions).length > 1000)
@@ -217,7 +213,7 @@ class Editor {
     return {saved: true, pinned, folded, disabled, color: color ? color.toLowerCase() : null};
   }
 
-  // в”Ђв”Ђв”Ђв”Ђв”Ђ Nodes в”Ђв”Ђв”Ђв”Ђв”Ђ
+  // ----- Nodes -----
 
   /** The name of a Custom node on this workflow (what it is called on the canvas): its title, which belongs to this copy only. */
   renameNode(nodeId, title) {
@@ -268,7 +264,7 @@ class Editor {
     return {id: nodeId};
   }
 
-  // в”Ђв”Ђв”Ђв”Ђв”Ђ The two bricks the engine is made of: Script and Event (not Library nodes; the Add node menu offers them) в”Ђв”Ђв”Ђв”Ђв”Ђ
+  // ----- The two bricks the engine is made of: Script and Event (not Library nodes; the Add node menu offers them) -----
 
   /** Every type expression a document holds: the ports of its nodes and of its Complex Nodes. */
   retype(map) {
@@ -485,7 +481,7 @@ class Editor {
     return {ids: made};
   }
 
-  // в”Ђв”Ђв”Ђв”Ђв”Ђ Widgets: what the code of a Custom node put on it в”Ђв”Ђв”Ђв”Ђв”Ђ
+  // ----- Widgets: what the code of a Custom node put on it -----
 
   /** The Custom node `nodeId` (a Custom node, not a Complex Node). */
   customNode(nodeId) {
@@ -547,7 +543,7 @@ class Editor {
     return {saved: true};
   }
 
-  // в”Ђв”Ђв”Ђв”Ђв”Ђ Groups and Complex Nodes (a Complex Node is a group with an interface) в”Ђв”Ђв”Ђв”Ђв”Ђ
+  // ----- Groups and Complex Nodes (a Complex Node is a group with an interface) -----
 
   /** Adds or removes the Complex Node wrapper of a group, and changes its ports, collapsed state or compact size. */
   complex(groupId, body, internal = false) {
@@ -627,7 +623,7 @@ class Editor {
     return {saved: true};
   }
 
-  // в”Ђв”Ђв”Ђв”Ђв”Ђ Slots of a placed Library node в”Ђв”Ђв”Ђв”Ђв”Ђ
+  // ----- Slots of a placed Library node -----
 
   /**
    * The slots of a placed Library node that were added on the workflow (by hand or by a Script: `arbitrary` only decides whether the panel
@@ -866,7 +862,7 @@ class Editor {
     }
   }
 
-  // в”Ђв”Ђв”Ђв”Ђв”Ђ Deleting nodes в”Ђв”Ђв”Ђв”Ђв”Ђ
+  // ----- Deleting nodes -----
 
   deleteNodes(ids, dissolve = false, groupPositions = {}) {
     const selected = this.selection(ids);
@@ -928,7 +924,7 @@ class Editor {
     return {deleted: [...removing].sort()};
   }
 
-  // в”Ђв”Ђв”Ђв”Ђв”Ђ Wires в”Ђв”Ђв”Ђв”Ђв”Ђ
+  // ----- Wires -----
 
   connections(body) {
     const draft = body.draft === true;
@@ -1025,7 +1021,7 @@ class Editor {
     return {saved: true};
   }
 
-  // в”Ђв”Ђв”Ђв”Ђв”Ђ Library: keeping placed copies in sync в”Ђв”Ђв”Ђв”Ђв”Ђ
+  // ----- Library: keeping placed copies in sync -----
 
   /** Replaces the contents of a placed Library node with its current definition, keeping its wires, values and place. */
   refreshInstance(groupId, bundle, source) {
@@ -1114,7 +1110,7 @@ class Editor {
       } catch {}
   }
 
-  // в”Ђв”Ђв”Ђв”Ђв”Ђ Clipboard: copy and paste в”Ђв”Ђв”Ђв”Ђв”Ђ
+  // ----- Clipboard: copy and paste -----
 
   copy(ids, groupIds = []) {
     groupIds ??= [];

@@ -1,5 +1,23 @@
 // The current graph is indexed for port lookup. Nodes are interpreted on demand; the graph stays live.
 'use strict';
+/**
+ * Follows Complex Node ports down to the node ports they are bound to: [[node ID, port ID], ...].
+ * One unbound port stays on the wrapper; only an input may be bound to several ports. The editor
+ * wraps its errors as ApiError; the interpreter uses the messages as they are. The Worker source
+ * carries this function (js/backend/scripts.js), so it must not use anything outside its arguments.
+ */
+function resolvePort(nodes, nodeId, portId, direction, seen = new Set()) {
+  const address = nodeId + '|' + portId;
+  if (seen.has(address)) throw Error('Cyclic interface binding');
+  const node = nodes.get(nodeId);
+  if (!node) throw Error('Node not found: ' + nodeId);
+  if (node.kind !== 'complex') return [[nodeId, portId]];
+  const item = node.interface[direction].find(p => p.id === portId);
+  if (!item) throw Error('Complex Node port not found: ' + portId);
+  return item.bound?.length
+    ? item.bound.flatMap(b => resolvePort(nodes, b.node_id, b.port_id, direction, new Set(seen).add(address)))
+    : [[nodeId, portId]];
+}
 function createGraphView(document, {context = {}} = {}) {
   const key = (node, port) => node + '|' + port;
   const isSignal = type => type === 'signal',
@@ -14,21 +32,8 @@ function createGraphView(document, {context = {}} = {}) {
       new Map(
         [...s.nodes, ...s.complex.map(c => ({...c, id: 'complex:' + c.id, kind: 'complex'}))].map(n => [n.id, n])
       ),
-    resolveAll(nodes, id, port, direction, seen = new Set()) {
-      const k = key(id, port);
-      if (seen.has(k)) throw Error('Cyclic interface binding');
-      const node = nodes.get(id);
-      if (!node) throw Error('Node not found: ' + id);
-      if (node.kind !== 'complex') return [[id, port]];
-      const item = node.interface[direction].find(p => p.id === port);
-      if (!item) throw Error('Port not found: ' + port);
-      return item.bound?.length
-        ? item.bound.flatMap(b => Editor.resolveAll(nodes, b.node_id, b.port_id, direction, new Set(seen).add(k)))
-        : [[id, port]];
-    },
-    resolve(nodes, id, port, direction) {
-      return this.resolveAll(nodes, id, port, direction)[0];
-    },
+    resolveAll: (nodes, id, port, direction, seen = new Set()) => resolvePort(nodes, id, port, direction, seen),
+    resolve: (nodes, id, port, direction) => resolvePort(nodes, id, port, direction)[0],
   };
   class TypeTable {
     constructor(list) {
@@ -141,22 +146,41 @@ function createGraphView(document, {context = {}} = {}) {
   function instanceScopes(document) {
     const scopes = new Map();
     const composites = [...document.complex].sort((a, b) => b.depth - a.depth);
+    // One pass over the groups: the closest copy around each node, its data interface, and the
+    // placed nodes that grant it permissions (deepest first, as before).
+    const closest = new Map(),
+      placedAround = new Map(),
+      shared = new Map();
+    for (const c of composites) {
+      shared.set(c.id, {
+        group: c.id,
+        instance_id: 'complex:' + c.id,
+        widgets: c.members.filter(m => !m.startsWith('complex:') && document.widgets?.[m]?.length),
+        // What a Script of the copy reads: every data input of the node. What it writes: the data outputs no node inside feeds. What it fires
+        // with emit(name): the signal outputs no node inside feeds.
+        inputs: c.interface.inputs.filter(p => !isSignal(p.type)),
+        outputs: c.interface.outputs.filter(p => !isSignal(p.type) && !p.bound?.length),
+        signals: c.interface.outputs.filter(p => isSignal(p.type) && !p.bound?.length),
+      });
+      for (const member of c.members) {
+        if (!closest.has(member)) closest.set(member, c.id);
+        if (c.source) {
+          const placed = placedAround.get(member) ?? [];
+          placed.push(c);
+          placedAround.set(member, placed);
+        }
+      }
+    }
     for (const node of document.nodes) {
-      const c = composites.find(cx => cx.members.includes(node.id));
-      if (c)
-        scopes.set(node.id, {
-          group: c.id,
-          instance_id: 'complex:' + c.id,
-          widgets: c.members.filter(m => !m.startsWith('complex:') && document.widgets?.[m]?.length),
-          // What a Script of the copy reads: every data input of the node. What it writes: the data outputs no node inside feeds. What it fires
-          // with emit(name): the signal outputs no node inside feeds.
-          inputs: c.interface.inputs.filter(p => !isSignal(p.type)),
-          outputs: c.interface.outputs.filter(p => !isSignal(p.type) && !p.bound?.length),
-          signals: c.interface.outputs.filter(p => isSignal(p.type) && !p.bound?.length),
-          resource_id: composites.find(cx => cx.source && cx.members.includes(node.id))?.source.resource_id ?? null,
-          // The permissions of every placed node around it, the closest first: it can do only what all of them allow.
-          grant_chain: composites.filter(cx => cx.source && cx.members.includes(node.id)).map(cx => cx.grants ?? []),
-        });
+      const group = closest.get(node.id);
+      if (!group) continue;
+      const placed = placedAround.get(node.id) ?? [];
+      scopes.set(node.id, {
+        ...shared.get(group),
+        resource_id: placed[0]?.source.resource_id ?? null,
+        // The permissions of every placed node around it, the closest first: it can do only what all of them allow.
+        grant_chain: placed.map(cx => cx.grants ?? []),
+      });
     }
     return scopes;
   }
@@ -397,4 +421,8 @@ const DISPLAY_PARTS = '\u001e';
 function checkRoots(roots, nodes) {
   if (!Array.isArray(roots) || roots.some(id => typeof id !== 'string' || !nodes.has(id)))
     throw bad('node_ids must name nodes of this workflow');
+  // A group organizes the canvas; it is not a node that can run or be read. Naming one used to
+  // answer an empty, successful result.
+  if (roots.some(id => nodes.get(id).kind === 'group'))
+    throw bad('node_ids must name nodes or Custom Nodes, not groups');
 }

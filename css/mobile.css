@@ -100,8 +100,6 @@ body .mobile-only,
     background: var(--current);
     color: var(--text);
   }
-  body.nav-joined #sidebar a.active,
-  body.nav-joined #sidebar a.active:hover { background: transparent; }
   body main,
   body.nav-joined main {
     width: 100%;

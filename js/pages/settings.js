@@ -6,10 +6,6 @@ PAGES['project-settings'] = async (view, route) => {
   const {project} = await api(`projects/${route.project}`);
   if (app.route !== route) return;
   view.innerHTML = `<form class="page form-page" id="project-form">${pageHead({
-    crumbs: [
-      ['Projects', '/projects'],
-      [project.name, `/p/${project.id}`],
-    ],
     title: 'Project settings',
     actions: '<span id="save-slot"></span>',
   })}

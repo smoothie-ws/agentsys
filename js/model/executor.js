@@ -20,6 +20,61 @@ function createGraphInterpreter(document, saved, env) {
   for (const n of view.values())
     if (n.op === 'on_read' && scopeOf(n)) readNodes.set(scopeOf(n), [...(readNodes.get(scopeOf(n)) ?? []), n.id]);
   const SCOPE = 'scope:';
+  // Compiled Script code is reusable: the function has no captured state, only its text matters.
+  // A bounded LRU keeps loops and repeated signals from compiling the same body again and again.
+  const compiledFunctions = new Map();
+  let compiledBytes = 0;
+  const MAX_COMPILED = 100,
+    MAX_COMPILED_BYTES = 8 * 1024 * 1024;
+  const compile = code => {
+    const text = code ?? '';
+    const cached = compiledFunctions.get(text);
+    if (cached) {
+      compiledFunctions.delete(text);
+      compiledFunctions.set(text, cached);
+      return cached;
+    }
+    const fn = new AsyncFunction('node', 'agentsys', 'context', 'Date', 'Math', '"use strict";\n' + text);
+    compiledFunctions.set(text, fn);
+    compiledBytes += text.length * 2;
+    while (compiledFunctions.size > MAX_COMPILED || compiledBytes > MAX_COMPILED_BYTES) {
+      const oldest = compiledFunctions.keys().next().value;
+      compiledFunctions.delete(oldest);
+      compiledBytes -= oldest.length * 2;
+    }
+    return fn;
+  };
+  // State and value notifications are coalesced on a microtask: a loop of assignments sends its
+  // last values once. The latest values themselves are updated synchronously (see `keep` and
+  // `watchState`), so reads and dependencies never observe the deferred notification.
+  const queuedEvents = new Map();
+  const sentSinceFlush = new Set();
+  let flushScheduled = false;
+  const flushEvents = () => {
+    flushScheduled = false;
+    sentSinceFlush.clear();
+    if (!queuedEvents.size) return;
+    const events = [...queuedEvents.values()];
+    queuedEvents.clear();
+    for (const make of events) emit(make());
+  };
+  // The first notification of a key in a turn goes out at once (a long synchronous block must not
+  // hide acknowledged state); later ones replace each other and only the last is sent.
+  const publish = (key, make) => {
+    if (!sentSinceFlush.has(key)) {
+      sentSinceFlush.add(key);
+      emit(make());
+      return;
+    }
+    queuedEvents.set(key, () => {
+      sentSinceFlush.delete(key);
+      return make();
+    });
+    if (!flushScheduled) {
+      flushScheduled = true;
+      Promise.resolve().then(flushEvents);
+    }
+  };
 
   // ----- Flow control -----
 
@@ -50,9 +105,13 @@ function createGraphInterpreter(document, saved, env) {
   const entryOf = (value, text) =>
     typeof value === 'string' || typeof value === 'boolean'
       ? {v: value}
-      : value !== null && typeof value === 'object'
-        ? {j: text}
-        : {v: JSON.parse(text)};
+      : value === null
+        ? {v: null}
+        : typeof value === 'number'
+          ? Number.isFinite(value)
+            ? {v: value}
+            : {v: JSON.parse(text)}
+          : {j: text};
   const copyOf = value => (value !== null && typeof value === 'object' ? JSON.parse(JSON.stringify(value)) : value);
   /** An error that is the node's own message as it is: it does not get the "Node code:" prefix of an error in code. */
   const plain = message => Object.assign(new Error(message), {plain: true});
@@ -70,13 +129,22 @@ function createGraphInterpreter(document, saved, env) {
         return item;
       })
     );
+  /** A JSON primitive is already a value of its own; only objects and invalid values need the serializer. */
+  const stateValue = value =>
+    value === null ||
+    typeof value === 'string' ||
+    typeof value === 'boolean' ||
+    (typeof value === 'number' && Number.isFinite(value))
+      ? value
+      : stateCopy(value);
   const watchState = (value, guard, proxies = new WeakMap()) => {
     if (value === null || typeof value !== 'object') return value;
     if (proxies.has(value)) return proxies.get(value);
     const changed = () => {
       stateRevision++;
       tick++;
-      emit({ev: 'state', state: stateCopy(state)});
+      // The copy is taken when the notification is sent: a loop of assignments produces one.
+      publish('state', () => ({ev: 'state', state: stateCopy(state)}));
     };
     const proxy = new Proxy(value, {
       get: (target, name) => watchState(Reflect.get(target, name), guard, proxies),
@@ -84,7 +152,7 @@ function createGraphInterpreter(document, saved, env) {
         guard();
         if (typeof name !== 'string' || ['__proto__', 'prototype', 'constructor'].includes(name))
           throw plain('Invalid state key');
-        Reflect.set(target, name, stateCopy(value));
+        Reflect.set(target, name, stateValue(value));
         changed();
         return true;
       },
@@ -214,13 +282,26 @@ function createGraphInterpreter(document, saved, env) {
   function keep(id, {map}) {
     latest.set(id, map);
     const signature = [...map]
-      .map(([port, entry]) => port + '=' + ('j' in entry ? entry.j : JSON.stringify(entry.v)))
+      .map(
+        ([port, entry]) =>
+          port +
+          '=' +
+          ('j' in entry
+            ? entry.j
+            : typeof entry.v === 'string'
+              ? JSON.stringify(entry.v)
+              : typeof entry.v + ':' + String(entry.v))
+      )
       .join('\u0001');
     if (signatures.get(id) !== signature) {
       signatures.set(id, signature);
       versions.set(id, (versions.get(id) ?? 0) + 1);
       tick++;
-      emit({ev: 'values', id, outputs: Object.fromEntries([...map].map(([port, value]) => [port, unwrap(value)]))});
+      publish('values:' + id, () => ({
+        ev: 'values',
+        id,
+        outputs: Object.fromEntries([...map].map(([port, value]) => [port, unwrap(value)])),
+      }));
     }
   }
 
@@ -348,7 +429,7 @@ function createGraphInterpreter(document, saved, env) {
     if (node && !cancelledWave(ctx.wave))
       for (const port of node.outputs.filter(p => p.signal)) await fire(node, port, ctx);
   }
-  async function execute(id, ctx) {
+  async function execute(id, ctx, attempt = 0) {
     let node = nodes.get(id);
     const generation = generations.get(id) ?? 0;
     const valid = () => !env.closed?.() && nodes.get(id) && (generations.get(id) ?? 0) === generation;
@@ -382,7 +463,11 @@ function createGraphInterpreter(document, saved, env) {
         data.map((p, i) => [p.id, outcomes[i].value === undefined ? undefined : unwrap(outcomes[i].value)])
       );
       await enter();
-      if (view !== readingView) return execute(id, ctx);
+      if (view !== readingView) {
+        // The graph is live: a read may see an edit. Retry a few times, then say so instead of looping.
+        if (attempt >= 2) throw plain('The graph changed while its inputs were read: try again');
+        return execute(id, ctx, attempt + 1);
+      }
       if (cancelledWave(ctx.wave)) {
         announce({ev: 'skip', id});
         return false;
@@ -452,6 +537,7 @@ function createGraphInterpreter(document, saved, env) {
                 : `This Script has no signal output: “${name}”`
             );
           commit(node, output);
+          flushEvents();
           announce({ev: 'pause', id: node.id, reason: 'signal'});
           const wave = newWave(ctx.wave, {handles, failFast: options?.failFast === true});
           try {
@@ -515,6 +601,7 @@ function createGraphInterpreter(document, saved, env) {
         const sleep = async ms => {
           if (!Number.isFinite(ms) || ms < 0) throw plain('Invalid delay');
           commit(node, output);
+          flushEvents();
           announce({ev: 'pause', id: node.id, reason: 'delay'});
           try {
             for (let remaining = ms; remaining > 0; ) {
@@ -574,15 +661,7 @@ function createGraphInterpreter(document, saved, env) {
         });
 
         try {
-          await Promise.resolve().then(() =>
-            new AsyncFunction('node', 'agentsys', 'context', 'Date', 'Math', '"use strict";\n' + (code ?? ''))(
-              self,
-              agentsys,
-              context,
-              Date,
-              Math
-            )
-          );
+          await Promise.resolve().then(() => compile(code)(self, agentsys, context, Date, Math));
         } catch (error) {
           // node.flow.* ended the code on purpose: the node ends normally.
           if (error?.code === 'permission_denied') throw Object.assign(new Error(error.message), {blocked: true});
@@ -599,11 +678,13 @@ function createGraphInterpreter(document, saved, env) {
         return false;
       }
       commit(node, output);
+      flushEvents();
 
       announce({ev: 'done', id: node.id, label: node.label, ms: Date.now() - own, display: shown});
       return node;
     } catch (error) {
       // A failure inside a wave of an emit with failFast cancels that wave (and the ones between).
+      flushEvents();
       if (ctx.errors && valid()) ctx.errors[id] = error.message;
       const between = [];
       for (let w = ctx.wave; w; w = w.parent) {
@@ -647,6 +728,12 @@ function createGraphInterpreter(document, saved, env) {
     try {
       const outputs = {};
       if (event.input_port !== undefined) await fireTo(view.inputTargets(id, event.input_port), ctx);
+      // A disabled node does not receive signals (docs/engine.md): it cannot report the values of an
+      // earlier run as if this dispatch produced them.
+      if (!view.get(id)) {
+        emit({ev: 'root', id});
+        return {id};
+      }
       if (id.startsWith('complex:')) {
         for (const port of view.outputRefs(id))
           outputs[port.id] =
@@ -655,7 +742,7 @@ function createGraphInterpreter(document, saved, env) {
               : unwrap(await entryAt(port.ref, readScope(ctx), new Set()));
       } else {
         const node = nodes.get(id);
-        if (!node) Object.assign(outputs, reported(id));
+        if (!node) return {id, outputs};
         else if (node.running && event.input_port === undefined) {
           await track(run(id, ctx), batch.pending); // a Script runs as if a signal reached it, an event node carries its data and fires
           Object.assign(outputs, reported(node.scope ?? id));
@@ -672,7 +759,9 @@ function createGraphInterpreter(document, saved, env) {
   }
 
   return {
+    flush: flushEvents,
     update(document) {
+      flushEvents();
       const previous = view;
       view = createGraphView(document, {context: env.context});
       states.clear();
@@ -706,6 +795,7 @@ function createGraphInterpreter(document, saved, env) {
       const batch = {pending: new Set(), errors: {}, cancelled: false, wave: newWave(null)};
       const results = await Promise.all(roots.map(id => startRoot(id, batch, event)));
       while (batch.pending.size) await Promise.allSettled([...batch.pending]);
+      flushEvents();
       return {
         outputs: Object.fromEntries(
           results.filter(result => result.outputs).map(result => [result.id, result.outputs])

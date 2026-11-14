@@ -2,9 +2,10 @@
 // A plugin is a card like those of the Library; its menu turns it on or off.
 'use strict';
 
-/** Reads the list of plugins (the cards and the second panel show it). */
+/** Reads the list of plugins (the cards and the second panel show it) and syncs their browser modules. */
 async function loadPlugins() {
   app.plugins = await api('plugins');
+  if (typeof Extensions !== 'undefined') await Extensions.sync(app.plugins);
   renderSidebar();
   return app.plugins;
 }
@@ -12,12 +13,20 @@ async function loadPlugins() {
 /** Stops and starts the plugins again from the folder, then shows the new list. */
 const reloadPlugins = () =>
   api('plugins/reload', {method: 'POST', body: {}})
-    .then(() => go('/plugins', true))
+    .then(async list => {
+      app.plugins = list;
+      if (typeof Extensions !== 'undefined') await Extensions.reload(list);
+      renderSidebar();
+      return go('/plugins', true);
+    })
     .catch(fail);
 
 const setPluginEnabled = (id, enabled) =>
   api(`plugins/${encodeURIComponent(id)}`, {method: 'PUT', body: {enabled}})
-    .then(() => (app.route?.id ? undefined : go('/plugins', true)))
+    .then(async () => {
+      if (typeof Extensions !== 'undefined') await Extensions.reload();
+      return app.route?.id ? undefined : go('/plugins', true);
+    })
     .catch(fail);
 
 const pluginActions = plugin =>
@@ -27,18 +36,54 @@ const pluginActions = plugin =>
       : ['Turn on', () => setPluginEnabled(plugin.id, true), {icon: 'power'}],
   ];
 
-const pluginCard = p =>
-  card({
+const pluginCard = p => {
+  const uiError = typeof Extensions === 'undefined' ? '' : Extensions.errorOf(p.id);
+  return card({
     href: '/plugins/' + encodeURIComponent(p.id),
     glyph: p.icon || 'plug',
     title: p.title,
     attrs: `data-plugin="${esc(p.id)}" title="${esc(p.description || p.id)}"`,
-    preview: p.error ? `<p class="form-error">${esc(p.error)}</p>` : `<code>${esc(p.id)}</code>`,
+    preview: p.error
+      ? `<p class="form-error">${esc(p.error)}</p>`
+      : uiError
+        ? `<p class="form-error">${esc(uiError)}</p>`
+        : `<code>${esc(p.id)}</code>`,
     previewClass: 'card-note',
-    facts: p.error ? 'Failed' : p.running ? 'Running' : 'Off',
+    facts: p.error ? 'Failed' : uiError ? 'Interface failed' : p.running ? (p.client ? 'Running · UI' : 'Running') : 'Off',
     menu: 'plugin:' + p.id,
     tint: p.enabled ? 'k-complex' : '',
   });
+};
+
+/** What a plugin's client.js put into the interface while it is running. */
+function pluginInterface(plugin) {
+  if (!plugin.client)
+    return '<p class="muted">This plugin has no <code>client.js</code>: it works through the server API and the Library only.</p>';
+  if (typeof Extensions === 'undefined') return '<p class="muted">The interface host is not available.</p>';
+  if (!plugin.running)
+    return '<p class="muted">The interface loads while the plugin runs. Turn it on to see its pages, commands and buttons.</p>';
+  const ui = Extensions.describe(plugin.id);
+  const list = (items, empty) =>
+    items.length ? `<ul class="plugin-contributions">${items.map(item => `<li>${esc(item)}</li>`).join('')}</ul>` : `<p class="muted">${empty}</p>`;
+  return `${ui.error ? `<p class="form-error plugin-error">${esc(ui.error)}</p>` : ''}
+    <dl class="page-facts">
+      <div><dt>Pages</dt><dd>${ui.pages.length}</dd></div>
+      <div><dt>Commands</dt><dd>${ui.commands.length}</dd></div>
+      <div><dt>Toolbar</dt><dd>${ui.toolbar.length}</dd></div>
+      <div><dt>Menus</dt><dd>${ui.menu.length}</dd></div>
+      <div><dt>Styles</dt><dd>${ui.styles}</dd></div>
+    </dl>
+    ${
+      ui.pages.length
+        ? `<h3>Pages</h3><ul class="plugin-contributions">${ui.pages
+            .map(page => `<li><a href="${esc(page.href)}" data-link>${esc(page.title)}</a></li>`)
+            .join('')}</ul>`
+        : ''
+    }
+    ${ui.commands.length ? `<h3>Commands</h3>${list(ui.commands, 'No commands.')}` : ''}
+    ${ui.menu.length ? `<h3>Menus</h3>${list(ui.menu, 'No menu items.')}` : ''}
+    ${ui.home.length ? `<h3>Dashboard</h3>${list(ui.home, 'No cards.')}` : ''}`;
+}
 
 /** The form of the settings a plugin declares (see plugin-host.js). A password is never shown: only whether one is saved. */
 function pluginSettingsForm(plugin) {
@@ -98,8 +143,9 @@ async function pluginPage(view, route) {
     <section><h2>Information</h2><dl class="page-facts">
       <div><dt>State</dt><dd><span class="plugin-state ${state[0]}">${state[1]}</span></dd></div>
       <div><dt>Folder</dt><dd><code>data/plugins/${esc(plugin.id)}</code></dd></div>
-      <div><dt>Entry point</dt><dd><code>main.js</code></dd></div>
+      <div><dt>Entry point</dt><dd><code>main.js</code>${plugin.client ? ' · <code>client.js</code>' : ''}</dd></div>
     </dl></section>
+    <section><h2>Interface</h2>${pluginInterface(plugin)}</section>
     ${plugin.readme ? `<section><h2>Details</h2><div class="markdown">${renderMarkdown(plugin.readme)}</div></section>` : ''}
     ${plugin.settings.length ? `<section><h2>Settings</h2>${pluginSettingsForm(plugin)}</section>` : ''}
     <section><h2>Routes</h2>${routeList}</section>

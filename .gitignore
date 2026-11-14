@@ -6,5 +6,10 @@ data/plugins/*
 data/plugins/ai/*
 !data/plugins/ai/main.js
 !data/plugins/ai/README.md
+!data/plugins/hello-ui/
+data/plugins/hello-ui/*
+!data/plugins/hello-ui/main.js
+!data/plugins/hello-ui/client.js
+!data/plugins/hello-ui/README.md
 __pycache__/
 *.py[cod]

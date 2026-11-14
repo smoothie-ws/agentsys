@@ -37,6 +37,7 @@ function toast(message, error = false) {
   linkedText(text, message);
   text.addEventListener('click', event => event.target.closest('a, button') && item.remove());
   const close = document.createElement('button');
+  close.type = 'button';
   close.className = 'icon';
   close.setAttribute('aria-label', 'Dismiss notification');
   close.innerHTML = icon('x');

@@ -143,7 +143,7 @@ function card({
   extra = '',
 }) {
   const tag = href ? 'a' : 'div';
-  return `<article class="card ${tint}" ${extra}><${tag} class="card-main" ${href ? `href="${esc(href)}" data-link` : ''}><header class="card-head"><span class="head-icon">${icon(glyph)}</span><h3><span ${attrs}>${esc(title)}</span></h3></header><div class="card-preview ${previewClass}" ${previewAttrs}>${preview}</div>${facts ? `<p class="card-facts">${facts}</p>` : ''}</${tag}><span class="card-actions">${menu ? `<button class="icon" data-menu="${esc(menu)}" aria-label="Actions of ${esc(title)}">${icon('dots')}</button>` : ''}</span></article>`;
+  return `<article class="card ${tint}" ${extra}><${tag} class="card-main" ${href ? `href="${esc(href)}" data-link` : ''}><header class="card-head"><span class="head-icon">${icon(glyph)}</span><h3><span ${attrs}>${esc(title)}</span></h3></header><div class="card-preview ${previewClass}" ${previewAttrs}>${preview}</div>${facts ? `<p class="card-facts">${facts}</p>` : ''}</${tag}><span class="card-actions">${menu ? `<button type="button" class="icon" data-menu="${esc(menu)}" aria-label="Actions of ${esc(title)}">${icon('dots')}</button>` : ''}</span></article>`;
 }
 
 function inlineRename(title, value, save, {maxLength = 100, pattern = ''} = {}) {

@@ -55,6 +55,19 @@ route(
   {unlocked: true, needs: {PUT: ['system.admin']}, body: {values: {}}}
 );
 route(
+  'GET',
+  'plugins/{id}/client',
+  'Read the browser module of a plugin',
+  async (c, {id}) => {
+    const host = pluginHost();
+    if (!host) throw missing('Plugins need the server');
+    const source = host.clientSource(id);
+    if (!source) throw missing('This plugin has no client.js');
+    return source;
+  },
+  {unlocked: true, needs: {GET: ['system.admin']}}
+);
+route(
   'GET POST PUT DELETE',
   'plugins/{id}/{name}',
   'Call a route a plugin registered',

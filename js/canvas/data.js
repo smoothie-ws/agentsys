@@ -138,19 +138,33 @@ function visibleNodes() {
 // Visibility and port resolution depend on the graph, not selection, execution status or camera.
 function canvasGraphCache() {
   if (W.graphCache?.snapshot !== W.snapshot || W.graphCache?.hidden !== W.hidden) {
-    W.graphCache = {snapshot: W.snapshot, hidden: W.hidden};
+    W.graphCache = {
+      snapshot: W.snapshot,
+      hidden: W.hidden,
+      chains: new Map(),
+      descendants: new Map(),
+      complexOf: new Map(),
+    };
     W.innerNodeCache = new WeakMap();
   }
   return W.graphCache;
 }
 /** The groups a node sits in, innermost first. */
 function groupChain(id) {
-  const chain = [];
-  for (let g = W.snapshot.groups.find(x => x.members.includes(id)), n = 0; g && n < 64; g = W.groups.get(g.parent), n++)
-    chain.push(g);
-  return chain;
+  const cache = canvasGraphCache();
+  if (!cache.chains.has(id)) {
+    const chain = [];
+    for (let g = W.snapshot.groups.find(x => x.members.includes(id)), n = 0; g && n < 64; g = W.groups.get(g.parent), n++)
+      chain.push(g);
+    cache.chains.set(id, chain);
+  }
+  return cache.chains.get(id);
 }
-const descendantGroups = gid => W.snapshot.groups.filter(g => isUnder(g, gid));
+function descendantGroups(gid) {
+  const cache = canvasGraphCache();
+  if (!cache.descendants.has(gid)) cache.descendants.set(gid, W.snapshot.groups.filter(g => isUnder(g, gid)));
+  return cache.descendants.get(gid);
+}
 /** Everything that moves with a group frame: its nodes and collapsed Complex Nodes, also in subgroups. */
 function frameContent(gid) {
   const group = W.groups.get(gid),

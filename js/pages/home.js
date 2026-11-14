@@ -105,7 +105,9 @@ PAGES.home = async (view, route) => {
             )
             .join('') +
           '</ul></section>'
-        : '');
+        : '') +
+      '<div id="dashboard-extensions"></div>';
+    if (typeof Extensions !== 'undefined') Extensions.renderHome($('#dashboard-extensions', region));
   };
   draw(projects);
   livePage(route, async () => {

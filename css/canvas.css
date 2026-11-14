@@ -1194,6 +1194,11 @@
   background: transparent;
   box-shadow: none;
 }
+/* The editor's own well is what the eye follows, so the focus is shown on the well. */
+.code-editor:focus-within {
+  outline: 2px solid var(--ring);
+  outline-offset: -2px;
+}
 .code-editor textarea::selection {
   background: color-mix(in srgb, var(--accent) 28%, transparent);
 }

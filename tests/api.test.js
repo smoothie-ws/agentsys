@@ -638,3 +638,18 @@ test('graph import inserts connected nodes and nested groups into the chosen wor
   await assert.rejects(app.api('POST', `projects/${p.id}/import-graph`, {...body, graph: {}}), /Expected/);
   assert.equal((await snapshot()).nodes.length, 0);
 });
+
+test('the generated OpenAPI contract describes every operation and its needs', async () => {
+  const app = createApp(),
+    spec = JSON.parse(JSON.stringify(app.eval('Backend.openapi()')));
+  let operations = 0;
+  for (const [path, item] of Object.entries(spec.paths))
+    for (const [method, operation] of Object.entries(item)) {
+      operations++;
+      assert.equal(typeof operation.summary, 'string', `${method} ${path} has a summary`);
+      assert.ok(operation.summary.length > 0, `${method} ${path} has a non-empty summary`);
+      assert.ok(Array.isArray(operation['x-needs']), `${method} ${path} declares its needs`);
+      assert.ok(operation.responses?.['200'], `${method} ${path} documents success`);
+    }
+  assert.ok(operations >= 60, `the contract lists the routes (${operations})`);
+});

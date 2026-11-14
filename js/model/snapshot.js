@@ -3,13 +3,14 @@
 'use strict';
 
 /** Attach port lists to nodes and Complex Nodes and return the canvas edge list. */
-function annotate(nodes, groups, complexes, stored) {
+function annotate(nodes, groups, complexes, stored, schemaOf) {
   const all = new Map(nodes.map(n => [n.id, n]));
   for (const group of groups) all.set('group:' + group.id, {id: 'group:' + group.id, kind: 'group', name: group.name});
   for (const cx of complexes) all.set('complex:' + cx.id, {...cx, id: 'complex:' + cx.id, kind: 'complex'});
-  const edges = stored
-    .filter(e => all.has(e.source) && all.has(e.target))
-    .map(e => ({...e, id: 'port:' + e.id, kind: 'data'}));
+  const complexById = new Map(complexes.map(cx => ['complex:' + cx.id, cx]));
+  const edges = [];
+  for (const e of stored)
+    if (all.has(e.source) && all.has(e.target)) edges.push({...e, id: 'port:' + e.id, kind: 'data'});
   const binding = (nid, pid, direction) => {
     const node = all.get(nid);
     return node?.kind === 'complex' ? node.interface[direction].find(p => p.id === pid) : undefined;
@@ -21,6 +22,7 @@ function annotate(nodes, groups, complexes, stored) {
       ['outputs', 'source'],
     ]) {
       occupied[direction].add(key(edge[side], edge[side + '_port']));
+      if (!complexById.has(edge[side])) continue;
       for (const b of binding(edge[side], edge[side + '_port'], direction)?.bound ?? [])
         occupied[direction].add(key(b.node_id, b.port_id));
     }
@@ -34,7 +36,7 @@ function annotate(nodes, groups, complexes, stored) {
     complexes.flatMap(c => c.interface.inputs.flatMap(p => (p.bound ?? []).map(b => key(b.node_id, b.port_id))))
   );
   for (const node of all.values()) {
-    const spec = schema(node),
+    const spec = schemaOf(node),
       inputs = signalsFirst(spec.inputs.map(p => ({...p})));
     node.inputs = inputs;
     node.outputs = signalsFirst(spec.outputs.map(p => ({...p})));
@@ -42,7 +44,7 @@ function annotate(nodes, groups, complexes, stored) {
     for (const p of inputs) p.connected = occupied.inputs.has(key(node.id, p.id)) || exposed.has(key(node.id, p.id));
     for (const p of node.outputs) p.connected = occupied.outputs.has(key(node.id, p.id));
     if (node.kind === 'complex') {
-      const cx = complexes.find(c => 'complex:' + c.id === node.id);
+      const cx = complexById.get(node.id);
       Object.assign(cx, {inputs, outputs: node.outputs});
     }
   }
@@ -52,6 +54,13 @@ function annotate(nodes, groups, complexes, stored) {
 
 /** A Reroute passes values through, so it takes the type of what feeds it (or, unfed, of what it feeds). */
 function typeReroutes(nodes, edges) {
+  let reroutes = false;
+  for (const node of nodes.values())
+    if (node.node_type === 'reroute') {
+      reroutes = true;
+      break;
+    }
+  if (!reroutes) return;
   const portType = (nodeId, portId, direction) =>
     nodes.get(nodeId)?.[direction]?.find(p => p.id === portId)?.type || '';
   // The wires of each node, in the order they are stored (the first one with a known type decides).
@@ -106,7 +115,7 @@ function bindingProblem(cx, nodes, p, direction, types) {
   return '';
 }
 
-function diagnostics(snapshot) {
+function diagnostics(snapshot, schemaOf = schema) {
   const nodes = new Map(snapshot.nodes.map(n => [n.id, n]));
   for (const c of snapshot.complex) nodes.set('complex:' + c.id, {...c, id: 'complex:' + c.id, kind: 'complex'});
   const types = new TypeTable(snapshot.types);
@@ -127,7 +136,7 @@ function diagnostics(snapshot) {
           report('Custom node output names must be unique', nid, p.id, 'outputs');
     }
     for (const direction of ['inputs', 'outputs'])
-      for (const p of schema(node)[direction]) {
+      for (const p of schemaOf(node)[direction]) {
         if (!p.name.trim()) report('Name this slot', nid, p.id, direction);
         if (!types.shape(p.type)) report('Unknown type of ' + p.name, nid, p.id, direction);
         const problem = node.kind === 'complex' && bindingProblem(node, nodes, p, direction, types);
@@ -214,8 +223,14 @@ function diagnostics(snapshot) {
 
 /** Fills in children, depth and the nodes of every group, including those of the groups inside it. */
 function groupTree(groups) {
-  const byId = new Map(groups.map(g => [g.id, g]));
-  for (const g of groups) g.children = groups.filter(c => c.parent === g.id).map(c => c.id);
+  const byId = new Map(groups.map(g => [g.id, g])),
+    children = new Map();
+  for (const g of groups) {
+    const list = children.get(g.parent) ?? [];
+    list.push(g.id);
+    children.set(g.parent, list);
+  }
+  for (const g of groups) g.children = children.get(g.id) ?? [];
   const visit = (g, trail = new Set()) => {
     if (g.all_members) return g;
     trail.add(g.id);
@@ -274,11 +289,25 @@ function buildSnapshot(project, workflow, doc, structure = false) {
   }
   const byId = new Map(groups.map(g => [g.id, g]));
   const wrapped = new Set(doc.complex.map(c => c.id).filter(id => byId.has(id)));
+  // The Complex Nodes nested in each one, in group order: one walk up the parents instead of a
+  // scan of every group for every Complex Node.
+  const innerOf = new Map();
+  for (const g of groups)
+    if (wrapped.has(g.id)) {
+      const trail = new Set();
+      for (let up = byId.get(g.parent); up && !trail.has(up.id); up = byId.get(up.parent)) {
+        trail.add(up.id);
+        if (!wrapped.has(up.id)) continue;
+        const list = innerOf.get(up.id) ?? [];
+        list.push('complex:' + g.id);
+        innerOf.set(up.id, list);
+      }
+    }
   const complexes = doc.complex
     .filter(c => byId.has(c.id))
     .map(c => {
       const g = byId.get(c.id),
-        inner = groups.filter(o => o.id !== g.id && wrapped.has(o.id) && isInside(byId, o, g.id));
+        inner = innerOf.get(g.id) ?? [];
       // Linked Library instances keep their definition ownership. Inline compositions
       // belong to this workflow and can be opened and edited with the existing controls.
       const locked = !!c.source;
@@ -304,12 +333,22 @@ function buildSnapshot(project, workflow, doc, structure = false) {
         collapsed: locked || !!c.collapsed,
         compact_width: c.compact_width ?? 240,
         compact_height: c.compact_height ?? 90,
-        members: [...g.all_members, ...inner.map(o => 'complex:' + o.id)],
+        members: [...g.all_members, ...inner],
       };
     });
   for (const g of groups) g.has_complex = wrapped.has(g.id);
   const types = doc.types ?? [];
-  const edges = structure ? [] : annotate(nodes, groups, complexes, doc.port_edges);
+  // schema() copies port lists: ask once per node, for ports and diagnostics alike.
+  const schemas = new Map();
+  const schemaOf = node => {
+    let found = schemas.get(node.id);
+    if (!found) {
+      found = schema(node);
+      schemas.set(node.id, found);
+    }
+    return found;
+  };
+  const edges = structure ? [] : annotate(nodes, groups, complexes, doc.port_edges, schemaOf);
   const snapshot = {
     project_id: project.id,
     workflow_id: workflow.id,
@@ -324,7 +363,7 @@ function buildSnapshot(project, workflow, doc, structure = false) {
     library_nodes: clone(doc.library_nodes ?? []),
     root: doc.root ?? null,
   };
-  snapshot.diagnostics = structure ? [] : diagnostics(snapshot);
+  snapshot.diagnostics = structure ? [] : diagnostics(snapshot, schemaOf);
   return snapshot;
 }
 /** True when `group` sits somewhere below the group `ancestor`. */

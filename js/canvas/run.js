@@ -127,10 +127,16 @@ function queuePassGlows(events) {
  */
 function litBy(id) {
   const found = new Set();
+  const cache = canvasGraphCache();
   const visit = x => {
     if (found.has(x)) return;
     found.add(x);
-    for (const c of W.complex.values()) if (c.members.includes(x)) visit('complex:' + c.id);
+    if (!cache.complexOf.has(x)) {
+      const list = [];
+      for (const c of W.complex.values()) if (c.members.includes(x)) list.push(c);
+      cache.complexOf.set(x, list);
+    }
+    for (const c of cache.complexOf.get(x)) visit('complex:' + c.id);
   };
   visit(id);
   return found;

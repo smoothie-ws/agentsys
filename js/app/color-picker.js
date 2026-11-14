@@ -41,7 +41,7 @@ function colorPicker(anchor, {color: current, alpha: withOpacity = true, none = 
   menu.innerHTML = `<div class="color-picker"><div class="color-options">${SWATCHES.filter(color => color || none)
     .map(
       color =>
-        `<button class="swatch" data-node-color="${color || ''}" style="${color ? `background:${color}` : ''}" title="${color || 'Default'}" aria-label="${color || 'Default color'}"></button>`
+        `<button type="button" class="swatch" data-node-color="${color || ''}" style="${color ? `background:${color}` : ''}" title="${color || 'Default'}" aria-label="${color || 'Default color'}"></button>`
     )
     .join('')}</div>
     <div class="sv" tabindex="0" aria-label="Saturation and brightness"><i class="sv-dot"></i></div>
