@@ -95,3 +95,19 @@ Additional defect found while testing migration: a duplicate provider record wit
 
 Still open: engine regression scenarios, resource/bench measurements, UI checks and screenshots, API/perf
 matrix, deployment artefacts, final audit.
+
+## 2026-11-14T15:52 — Final audit and report; session ends at 55 min 56 s
+
+- Final `node --test`: **322 pass, 0 fail** (11.3 s). Browser suite: **6/6** (platform, plugin_security, ux,
+  execution_ui, shell, design). Stress: 0 run failures, 0 running runtimes after Stop.
+- Final code commit `e9a6889`; the report and this entry follow it.
+- Measured duration: 14:56:29 → 15:52:25 = **55 min 56 s**. The 12-hour interval was not reached; the session
+  returned control to the harness. `FINAL-REPORT.md` states this in its first paragraphs and in the metrics
+  table, and section 12 lists the ordered backlog for a resumed or externally driven cycle.
+- Defects: 20 found, 20 fixed with tests. Security findings: 9 (6 fixed, 3 accepted and documented).
+- Documents written in this phase: `CHECKPOINT-01..09.md`, `BENCHMARKS.md`,
+  `DEPLOYMENT-VERIFICATION.md`, `FINAL-REPORT.md`, plus updates to `docs/security.md`, `docs/server.md`,
+  `docs/deployment.md`, `docs/testing.md`, `README.md`.
+- Not done, and not pretended: systemd/nginx/Caddy/TLS on a real Linux host, Firefox/WebKit, a 24-hour soak,
+  and checkpoints 10–12. They are items 4, 8, 9 and 12 of the backlog.
+
