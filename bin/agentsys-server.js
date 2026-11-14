@@ -30,6 +30,7 @@ Start options:
       --token <token>        API token (or AGENTSYS_TOKEN)
       --allowed-origin <url> Exact browser origin allowed by CORS (repeatable)
       --allowed-host <name>  Extra Host header accepted on loopback (repeatable)
+      --allow-net <host>     Restrict POST /api/net and Script net.fetch to these hosts (repeatable, * allowed)
       --tls-cert <file>      TLS certificate (PEM) — enables HTTPS
       --tls-key <file>       TLS private key (PEM)
       --session-hours <n>    Session lifetime in hours (default 12)
@@ -68,6 +69,10 @@ function parse(argv) {
       .split(',')
       .map(value => value.trim())
       .filter(Boolean),
+    allowedNet: String(process.env.AGENTSYS_ALLOW_NET || '')
+      .split(',')
+      .map(value => value.trim())
+      .filter(Boolean),
     name: process.env.AGENTSYS_NAME || '',
     quiet: false,
     json: false,
@@ -100,6 +105,7 @@ function parse(argv) {
     else if (flag === '--token') result.token = read();
     else if (flag === '--allowed-origin') result.allowedOrigins.push(read());
     else if (flag === '--allowed-host') result.allowedHosts.push(read());
+    else if (flag === '--allow-net') result.allowedNet.push(read());
     else if (flag === '--name') result.name = read();
     else if (flag === '--tls-cert') result.tlsCert = read();
     else if (flag === '--tls-key') result.tlsKey = read();
@@ -161,6 +167,7 @@ async function start(options) {
     token: options.token,
     allowedOrigins: options.allowedOrigins,
     allowedHosts: options.allowedHosts,
+    allowedNetHosts: options.allowedNet,
     name: options.name,
     serverVersion: Protocol.VERSION,
     sessionTtlMs: Math.round(options.sessionHours * 60 * 60 * 1000),

@@ -65,6 +65,12 @@ route(
     }
     if (!['https:', 'http:'].includes(url.protocol) || url.username || url.password)
       throw bad('Use an HTTP(S) URL without credentials');
+    if (!netHostAllowed(url.host))
+      throw new ApiError(
+        'permission_denied',
+        `This server does not fetch ${url.host}; it allows ${NET_ALLOW.join(', ')}.`,
+        403
+      );
     const executionSignal = c.scriptContext?.signal;
     {
       const request = await injectSecrets(c.body);

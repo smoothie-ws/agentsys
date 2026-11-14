@@ -187,6 +187,38 @@ async def main():
             assert 'name' in error.lower(), error
             print('PASS a refused write returns a readable message', flush=True)
 
+            # Collections: create one, add a record, see a validation error, correct it, delete both.
+            await page.set_viewport_size({'width': 1280, 'height': 900})
+            await page.goto(f'http://127.0.0.1:{client_port}/#/collections')
+            await page.wait_for_selector('[data-collection-add]')
+            await page.click('[data-collection-add]')
+            await page.wait_for_selector('#modal[open] input[name=name]')
+            await page.fill('#modal input[name=name]', 'notes')
+            await page.fill('#modal input[name=title]', 'Notes')
+            await page.fill(
+                '#modal textarea[name=schema]',
+                '{"type":"object","properties":{"text":{"type":"string"}},"required":["text"]}',
+            )
+            await page.click('#modal button.primary')
+            await page.wait_for_selector('h1:has-text("Notes")')
+            await page.click('[data-record-add]')
+            await page.wait_for_selector('#modal[open] textarea[name=data]')
+            # A body that is not JSON is refused in place, with the dialog open.
+            await page.fill('#modal textarea[name=data]', '{bad')
+            await page.click('#modal button.primary')
+            await page.wait_for_selector('#modal[open] [data-form-error]:not([hidden])')
+            assert 'JSON' in await page.locator('#modal [data-form-error]').inner_text()
+            await page.fill('#modal textarea[name=data]', '{"text":"hello from the UI"}')
+            await page.click('#modal button.primary')
+            await page.wait_for_selector('#collection-records tr:has-text("hello from the UI")')
+            await page.click('[data-record-delete]')
+            await page.wait_for_selector('#collection-records td:has-text("No records yet.")')
+            await page.click('[data-collection-delete]')
+            await page.wait_for_selector('#modal[open]')
+            await page.click('#modal button[value=ok]')
+            await page.wait_for_selector('h1:has-text("Collections")')
+            print('PASS collections: create, validate a bad record, add, delete record and collection through the UI', flush=True)
+
             # WebKit reports a cross-origin fetch to an unreachable server as "due to access control
             # checks"; that is the expected state of the deliberately closed environment, not a page error.
             real_errors = [error for error in errors if 'due to access control checks' not in error]

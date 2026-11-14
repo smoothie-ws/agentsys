@@ -205,6 +205,15 @@ function createServer(options = {}) {
     PLUGIN_LIMIT = Math.max(1, Math.min(10000, Number(options.pluginSessionLimit || 1000))),
     ALLOW_SHARED_DATA = options.allowSharedData === true || process.env.AGENTSYS_ALLOW_SHARED_DATA === '1',
     LOCK_FILE = path.join(DATA, '.server.lock'),
+    // Optional server-wide egress allowlist for POST /api/net and a Script's net.fetch (a deployment control on
+    // top of the per-Script host grant). Empty means no extra restriction.
+    NET_ALLOW = (
+      options.allowedNetHosts ||
+      String(process.env.AGENTSYS_ALLOW_NET || '')
+        .split(',')
+        .map(value => value.trim())
+        .filter(Boolean)
+    ),
     // Sign-in attempts from one address are limited: a wrong token must not be a free brute-force oracle. A
     // successful sign-in clears the count.
     AUTH_ATTEMPTS = Math.max(1, Number(options.authAttempts || process.env.AGENTSYS_AUTH_ATTEMPTS || 10)),
@@ -310,16 +319,23 @@ function createServer(options = {}) {
     const now = Date.now();
     for (const [hash, token] of PLUGIN_TOKENS) if (token.expires <= now) PLUGIN_TOKENS.delete(hash);
   }
-  /** Issues a token limited to `capabilities`; the oldest goes when the map is at its limit. */
+  /** Issues a token limited to `capabilities`; at the limit it refuses instead of silently revoking a live token. */
   function issuePluginToken(capabilities) {
     sweepPluginTokens();
+    if (PLUGIN_TOKENS.size >= PLUGIN_LIMIT) {
+      const error = new Error(
+        `This server already holds ${PLUGIN_LIMIT} plugin tokens; revoke one (or disable a plugin) and try again.`
+      );
+      error.status = 429;
+      error.code = 'too_many_tokens';
+      throw error;
+    }
     const token = PLUGIN_TOKEN_PREFIX + crypto.randomBytes(32).toString('base64url');
     PLUGIN_TOKENS.set(sessionHash(token), {
       caps: capabilities,
       expires: Date.now() + PLUGIN_TTL_MS,
       created: Date.now(),
     });
-    while (PLUGIN_TOKENS.size > PLUGIN_LIMIT) PLUGIN_TOKENS.delete(PLUGIN_TOKENS.keys().next().value);
     return {token, expires_in: Math.floor(PLUGIN_TTL_MS / 1000), capabilities};
   }
   /** Validated, de-duplicated capabilities for a plugin token; never administrative. */
@@ -479,7 +495,7 @@ function createServer(options = {}) {
     return value;
   }
   const madeDirs = new Set(); // directories this process created or found: no mkdir per file written
-  function atomicText(file, text) {
+  function atomicText(file, text, mode) {
     try {
       if (fs.readFileSync(file, 'utf8') === text) return;
     } catch (error) {
@@ -491,12 +507,18 @@ function createServer(options = {}) {
       madeDirs.add(dir);
     }
     const tmp = `${file}.tmp-${process.pid}`;
-    fs.writeFileSync(tmp, text);
+    fs.writeFileSync(tmp, text, mode ? {mode} : undefined);
     // On Windows another program (antivirus, indexer, sync, editor) may hold the target for a moment, and rename then fails with
     // EPERM/EBUSY/EACCES. Retry briefly; if the target stays locked, fail without replacing it with a partial write.
     for (let attempt = 0; ; attempt++) {
       try {
         fs.renameSync(tmp, file);
+        // A rename keeps the temporary file's mode; a pre-existing file may have another one, so set it here too.
+        if (mode && process.platform !== 'win32') {
+          try {
+            fs.chmodSync(file, mode);
+          } catch {}
+        }
         return;
       } catch (error) {
         if (!['EPERM', 'EBUSY', 'EACCES'].includes(error.code)) {
@@ -570,7 +592,7 @@ function createServer(options = {}) {
         }
       return;
     }
-    atomicText(file, JSON.stringify(value, null, 2) + '\n');
+    atomicText(file, JSON.stringify(value, null, 2) + '\n', key.startsWith('secrets/') ? 0o600 : undefined);
   }
   function removeKey(key) {
     madeDirs.clear();
@@ -637,7 +659,7 @@ function createServer(options = {}) {
     const keys = [...Object.keys(set), ...remove];
     if (!keys.every(k => VALID_KEY.test(k))) throw new Error('Invalid storage key');
     replayTransaction();
-    atomicText(transactionFile, JSON.stringify({set, remove}));
+    atomicText(transactionFile, JSON.stringify({set, remove}), 0o600);
     const transactionFd = fs.openSync(transactionFile, 'r+');
     try {
       fs.fsyncSync(transactionFd);
@@ -655,6 +677,7 @@ function createServer(options = {}) {
     backend = loadBackend({
       root: ROOT,
       scripts: 'worker',
+      allowedNetHosts: NET_ALLOW,
       store: {
         dir: DATA,
         get(key) {
@@ -861,6 +884,7 @@ function createServer(options = {}) {
       client_plugins: false,
       server_plugins: false,
       plugin_tokens: true,
+      net_allowlist: NET_ALLOW.length > 0,
       tls: !!TLS,
     },
   });  /** The API page is also a platform reference: add the HTTP-level endpoints to the generated contract. */
@@ -1057,6 +1081,10 @@ function createServer(options = {}) {
   async function handleStatic(req, res, url, editor = false) {
     if (!SERVE_CLIENT) return send(res, 404, 'This server does not host the client. Use the AgentSys Client.', 'text/plain');
     let rel = decodeURIComponent(url.pathname);
+    // A colon opens a Windows drive or an NTFS alternate data stream (`file.js::$DATA`), and a backslash or NUL is
+    // never part of a served path. Refuse them before the file is looked up, so a stream suffix cannot slip past
+    // the server-only pattern below.
+    if (/[:\\\0]/.test(rel)) return send(res, 404, 'Not found', 'text/plain');
     const pageRoute = editor && (!path.extname(rel) || /^\/(?:p|library|ext)\//.test(rel));
     if (rel.endsWith('/')) rel += 'index.html';
     let file = path.join(ROOT, rel);

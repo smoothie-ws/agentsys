@@ -89,6 +89,12 @@ function main() {
       return res.end('Bad request');
     }
     if (pathname === '/') pathname = '/index.html';
+    // No colon (a Windows drive or NTFS stream suffix), no backslash and no NUL: a served path never needs them,
+    // and `file.js::$DATA` would otherwise read a server-only file past the pattern below.
+    if (/[:\\\0]/.test(pathname)) {
+      res.writeHead(404, {'Content-Type': 'text/plain; charset=utf-8'});
+      return res.end('Not found');
+    }
     if (!path.extname(pathname) || /^\/(?:p|library|ext|plugins|environments|settings)\//.test(pathname))
       pathname = '/index.html';
     const file = path.join(ROOT, pathname);

@@ -384,3 +384,17 @@ test('sign-in attempts are limited per address, and a success clears the count',
     assert.equal((await login('wrong')).status, 401);
   });
 });
+
+test('on POSIX a secret file and the commit record are readable by their owner only', {skip: process.platform === 'win32'}, async () => {
+  await withServer({}, async ({base, dir}) => {
+    const response = await request(base, 'secrets/provider-key', {method: 'PUT', headers: json, body: {value: 'sk-live-1'}});
+    assert.equal(response.status, 200);
+    const file = path.join(dir, 'secrets', 'provider-key.json');
+    assert.equal(fs.statSync(file).mode & 0o777, 0o600, 'the stored secret is 0600');
+    // The commit record carries the value too, and is written 0600 before the data files are applied.
+    const transaction = path.join(dir, '.transaction.json');
+    assert.equal(fs.existsSync(transaction), false, 'the record is gone after the commit');
+    const stored = JSON.parse(fs.readFileSync(file, 'utf8'));
+    assert.equal(stored.value, 'sk-live-1');
+  });
+});

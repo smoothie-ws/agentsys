@@ -165,7 +165,7 @@ test('a revoked token stops working at once, even when a valid session cookie is
   });
 });
 
-test('a token expires, and the number of live tokens is bounded', async () => {
+test('a token expires, and the number of live tokens is bounded without silently revoking one', async () => {
   const sleep = ms => new Promise(resolve => setTimeout(resolve, ms));
   await withServer({pluginSessionTtlMs: 1000, pluginSessionLimit: 2}, async ({base, app}) => {
     const first = (await mint(base, ['graph.read'])).body.token;
@@ -177,13 +177,14 @@ test('a token expires, and the number of live tokens is bounded', async () => {
 
     const a = (await mint(base, ['graph.read'])).body.token;
     const b = (await mint(base, ['graph.read'])).body.token;
-    const c = (await mint(base, ['graph.read'])).body.token;
-    assert.equal((await use(base, a, 'GET', 'projects')).status, 401, 'the oldest token was evicted');
+    const c = await mint(base, ['graph.read']);
+    assert.equal(c.status, 429, 'at the limit a new token is refused');
+    assert.equal(c.body.error.code, 'too_many_tokens');
+    assert.equal((await use(base, a, 'GET', 'projects')).status, 200, 'the oldest live token was not revoked');
     assert.equal((await use(base, b, 'GET', 'projects')).status, 200);
-    assert.equal((await use(base, c, 'GET', 'projects')).status, 200);
     const diagnostics = await (await fetch(base + '/api/diagnostics', {headers: OWNER})).json();
     assert.equal(diagnostics.plugin_sessions, 2);
-    assert.equal(JSON.stringify(diagnostics).includes(b), false, 'diagnostics names no token');
+    assert.equal(JSON.stringify(diagnostics).includes(a), false, 'diagnostics names no token');
     assert.ok(app);
   });
 });

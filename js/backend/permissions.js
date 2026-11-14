@@ -17,6 +17,16 @@ function routeNeeds(pattern, method) {
 }
 const allows = (list, capability) =>
   list.some(value => value === capability || (value.endsWith(':*') && capability.startsWith(value.slice(0, -1))));
+// An optional server-wide egress allowlist (`AGENTSYS_ALLOW_NET` / `allowedNetHosts`): a pattern may contain `*`.
+const NET_ALLOW = typeof AGENTSYS_NET_ALLOW !== 'undefined' && Array.isArray(AGENTSYS_NET_ALLOW) ? AGENTSYS_NET_ALLOW : [];
+const netHostAllowed = host =>
+  !NET_ALLOW.length ||
+  NET_ALLOW.some(pattern => {
+    if (typeof pattern !== 'string' || !pattern) return false;
+    if (pattern === host) return true;
+    if (!pattern.includes('*')) return false;
+    return new RegExp('^' + pattern.replace(/[.+?^${}()|[\]\\]/g, '\\$&').replace(/\*/g, '.*') + '$').test(host);
+  });
 // Permissions come from the placed instances. Library defaults are copied on placement, never checked at runtime.
 const grantedBy = (permissions, capability) => permissions.chain.every(list => allows(list, capability));
 async function permissionNeeds(method, path, body) {

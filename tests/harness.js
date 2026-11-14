@@ -33,8 +33,8 @@ const TEST_PERMISSIONS = [
 ];
 
 /** A fresh, empty application (new in-memory database) with a Backend and a way to run the code of Scripts in Node. */
-function createApp({scripts = 'inline', developer = true, store = null} = {}) {
-  const {Backend, context, eval: evaluate, workerStats} = loadBackend({root, scripts, store});
+function createApp({scripts = 'inline', developer = true, store = null, allowedNetHosts = null} = {}) {
+  const {Backend, context, eval: evaluate, workerStats} = loadBackend({root, scripts, store, allowedNetHosts});
   evaluate(
     `const TEST_OBSERVATIONS = new Map();route('GET PUT','test-observations/{key}','Test-only side effect probe',async(c,{key})=>{if(c.method==='PUT')TEST_OBSERVATIONS.set(key,c.body.value);return {value:TEST_OBSERVATIONS.get(key)};},{needs:{GET:['graph.read'],PUT:['graph.write']}});`
   );

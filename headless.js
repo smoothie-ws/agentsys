@@ -71,7 +71,7 @@ class NodeWorker {
  * `store` ({dir, get(key), commit({set, remove})}) keeps the data somewhere durable; without it the data is in memory.
  * `scripts` is 'worker' (worker threads) or 'inline'.
  */
-function loadBackend({root, store = null, scripts = 'worker'} = {}) {
+function loadBackend({root, store = null, scripts = 'worker', allowedNetHosts = null} = {}) {
   const workerStats = {started: 0, terminated: 0, exited: 0};
   root = path.resolve(root || __dirname);
   const files = FILES;
@@ -92,6 +92,7 @@ function loadBackend({root, store = null, scripts = 'worker'} = {}) {
     fetch: globalThis.fetch,
   };
   if (store) sandbox.AGENTSYS_STORE = store;
+  if (allowedNetHosts && allowedNetHosts.length) sandbox.AGENTSYS_NET_ALLOW = allowedNetHosts.slice();
   if (scripts === 'worker') sandbox.AGENTSYS_SPAWN_WORKER = source => new NodeWorker(source, workerStats);
   const context = vm.createContext(sandbox);
   context.self = context;
