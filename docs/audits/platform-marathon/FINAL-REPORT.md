@@ -8,10 +8,10 @@ generic collections, migration, and no server plugin loading. The previous repor
 defects at the new seams — the client transport never aborted anything, one plugin could drive another, a plugin
 link could run script in the client origin, two servers on one data folder lost writes, and several failure paths
 were promised but not implemented. Twenty defects were reproduced and fixed, each with a test. Two new browser
-scenarios and ten new Node test files lock the behaviour in.
+scenarios and eleven new Node test files lock the behaviour in.
 
-**The 12-hour cycle was not completed.** This session ran **55 minutes 56 seconds** of measured wall time
-(2026-11-14T14:56:29 → 15:52:25, UTC+10), then returned control to the harness. The objective's condition for a
+**The 12-hour cycle was not completed.** This session ran **59 minutes 8 seconds** of measured wall time
+(2026-11-14T14:56:29 → 15:55:37, UTC+10), then returned control to the harness. The objective's condition for a
 12-hour cycle (a full 43 200-second interval, or an external controller resuming from the journal) was not met.
 Nothing in this report pretends otherwise. Because the work is resumable, the remaining backlog is written down
 in section 12 and the journal is current.
@@ -21,13 +21,13 @@ in section 12 and the journal is current.
 | Item | Value |
 |---|---|
 | Start | 2026-11-14T14:56:29+10:00 (Unix 1794632189) |
-| End of measured work | 2026-11-14T15:52:25+10:00 (Unix 1794635545) |
-| Actual duration | **55 min 56 s** (3 356 s) |
+| End of measured work | 2026-11-14T15:55:37+10:00 (Unix 1794635737) |
+| Actual duration | **59 min 8 s** (3 548 s) |
 | Planned deadline | 2026-11-15T02:56:29+10:00 (not reached) |
 | Source branch / commit | `platform/server-client` / `5123643be41a0227f6cb5e9ea586cfee816e1946` |
 | Audit branch | `audit/12h-platform-hardening` |
-| Final code commit | `e9a6889` |
-| Commits added | 8 (`3278854`, `8779303`, `af2b637`, `76be783`, `ca40106`, `edf09e6`, `7475045`, `e9a6889`) |
+| Final code commit | `7944c07` |
+| Commits added | 11 before this report (`3278854`, `8779303`, `af2b637`, `76be783`, `ca40106`, `edf09e6`, `7475045`, `e9a6889`, `4e25b8e`, `e571cf5`, `7944c07`) |
 | `main` | untouched |
 
 The session was bounded by the agent environment, not by the work: the backlog in section 12 is what a resumed
@@ -37,10 +37,10 @@ or externally driven session should pick up, in order.
 
 | Metric | Requirement | Result |
 |---|---|---|
-| Actual duration | measured | 55 min 56 s, stated above; not 12 h |
+| Actual duration | measured | 59 min 8 s, stated above; not 12 h |
 | Initial tests | exact | `node --test`: **245** on `main`, **242** on the source branch, 0 failures |
-| Final tests | exact | **322** pass, 0 fail, ~11.3 s (Linux CI configured for Node 20; measured on Node 20.11/Windows) |
-| New tests | count and purpose | **80 Node tests** in 10 files + **2 browser scenarios** (12 checks); listed in section 5 |
+| Final tests | exact | **326** pass, 0 fail, ~12.1 s (Linux CI configured for Node 20; measured on Node 20.11/Windows) |
+| New tests | count and purpose | **84 Node tests** in 11 files + **2 browser scenarios** (12 checks); listed in section 5 |
 | Restored tests | count and purpose | **0** deleted tests restored: the 14 removed server-plugin tests have no subject in this architecture, and their coverage is replaced by platform/migration/permission/plugin tests (table in `BASELINE.md`) |
 | Defects found | priorities | **20** (4 high, 6 medium, 10 low) in section 4 |
 | Defects fixed | with tests | **20/20**, each with a reproducing test |
@@ -113,6 +113,7 @@ semantics, which is evidence that the refactor did not damage it.
 | `tests/resource.test.js` | 6 | 200 round trips, 12 parallel runs, stream cleanup, session cap, 600-node graph, 1000 records |
 | `tests/api-contract.test.js` | 8 | 405/404, malformed bodies, protocol header, public discovery, pagination, older clients, client independence, cursor |
 | `tests/backup.test.js` | 3 | stopped backup/restore, live refusal and `--force`, corrupted file reporting |
+| `tests/graph-format.test.js` | 4 | 200 generated documents round-trip through encode/decode (modulo the canonical collection order), encode is idempotent, a script default becomes a sidecar and returns, damaged/unreferenced/escaping/proto-polluting packets are refused, runtime stays opaque |
 | `tests/browser_plugin_security.py` | 4 checks | a read-only plugin cannot write/fetch/spend a secret/run another command/add a link; a granted plugin can write exactly that; HTML sanitized |
 | `tests/browser_ux.py` | 8 checks | desktop/tablet/phone, empty states, unreachable server, keyboard search, readable errors, screenshots |
 | extended `tests/migration.test.js` | +4 | duplicates, unreadable plugin data, missing folder, plugin callers, existing collections |
@@ -191,13 +192,13 @@ asserts loose bounds so a leak or a quadratic path fails it, not a slow machine.
 
 | Check | Command | Result |
 |---|---|---|
-| Node suite | `node --test` | 322 pass, 0 fail (11.3 s) |
+| Node suite | `node --test` | 326 pass, 0 fail (12.1 s) |
 | Browser suite | `python tests/browser_suite.py` | 6/6 pass: platform, plugin_security, ux, execution_ui, shell, design |
 | Stress | `node --expose-gc tools/stress.js` | recorded in `BENCHMARKS.md`; 0 run failures, 0 running runtimes after Stop |
 | Boundaries | `node --test tests/architecture.test.js` | 7/7 |
 | Backup | `node tools/backup.js` via `tests/backup.test.js` | 3/3 |
 | CLI | `agentsys-server version`, `help`, `status`, no-token refusal | as documented |
-| Diff review | `git diff --stat main...e9a6889` | 106 files, +9 943/−1 302; no temporary or user data |
+| Diff review | `git diff --stat main...7944c07` | 107 files, +9 943/−1 302; no temporary or user data |
 | Working tree | `git status --short` | clean after the final commit |
 | Migration | `tests/migration.test.js` | 6/6, including idempotency and a pre-platform folder |
 

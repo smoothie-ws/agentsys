@@ -96,15 +96,17 @@ Additional defect found while testing migration: a duplicate provider record wit
 Still open: engine regression scenarios, resource/bench measurements, UI checks and screenshots, API/perf
 matrix, deployment artefacts, final audit.
 
-## 2026-11-14T15:52 — Final audit and report; session ends at 55 min 56 s
+## 2026-11-14T15:55 — Final audit and report; session ends at 59 min 8 s
 
-- Final `node --test`: **322 pass, 0 fail** (11.3 s). Browser suite: **6/6** (platform, plugin_security, ux,
+- Final `node --test`: **326 pass, 0 fail** (12.1 s). Browser suite: **6/6** (platform, plugin_security, ux,
   execution_ui, shell, design). Stress: 0 run failures, 0 running runtimes after Stop.
-- Final code commit `e9a6889`; the report and this entry follow it.
-- Measured duration: 14:56:29 → 15:52:25 = **55 min 56 s**. The 12-hour interval was not reached; the session
+- Final code commit `7944c07`; the report and this entry follow it.
+- Measured duration: 14:56:29 → 15:55:37 = **59 min 8 s**. The 12-hour interval was not reached; the session
   returned control to the harness. `FINAL-REPORT.md` states this in its first paragraphs and in the metrics
   table, and section 12 lists the ordered backlog for a resumed or externally driven cycle.
 - Defects: 20 found, 20 fixed with tests. Security findings: 9 (6 fixed, 3 accepted and documented).
+- Property tests for the text-graph format (`tests/graph-format.test.js`, 4 tests, 200 generated documents) were
+  the last addition; they found no format defect, only documented the canonical ordering contract.
 - Documents written in this phase: `CHECKPOINT-01..09.md`, `BENCHMARKS.md`,
   `DEPLOYMENT-VERIFICATION.md`, `FINAL-REPORT.md`, plus updates to `docs/security.md`, `docs/server.md`,
   `docs/deployment.md`, `docs/testing.md`, `README.md`.

@@ -1,4 +1,4 @@
-﻿# Testing
+# Testing
 
 ## Node suite
 
@@ -10,7 +10,7 @@ Uses only Node built-in modules. Each test builds an independent in-memory backe
 Coverage includes graph editing, types, wires, nested nodes, signals, reads, loops, execution controls,
 permissions, Data and Graph nodes, durable JSON, the HTTP server, collections, migration, the client transport,
 architectural boundaries, the plugin capability layer, concurrency and resource bounds. Recent result:
-**319 pass, 0 fail** (~20 s).
+**326 pass, 0 fail** (~12 s).
 
 Useful focused runs:
 
@@ -26,6 +26,7 @@ node --test tests/plugin-capabilities.test.js tests/client-plugins.test.js
 node --test tests/storage-integrity.test.js tests/backup.test.js
 node --test tests/concurrency.test.js tests/api-contract.test.js
 node --test tests/engine-regression.test.js tests/resource.test.js
+node --test tests/graph-format.test.js
 ```
 
 `tests/platform.test.js` checks the platform split itself: no server plugin route, no client/server script
