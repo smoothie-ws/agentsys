@@ -8,7 +8,9 @@ generic collections, migration, and no server plugin loading. The previous repor
 defects at the new seams — the client transport never aborted anything, one plugin could drive another, a plugin
 link could run script in the client origin, two servers on one data folder lost writes, and several failure paths
 were promised but not implemented. Twenty defects were reproduced and fixed, each with a test. Two new browser
-scenarios and eleven new Node test files lock the behaviour in.
+scenarios and twelve new Node test files lock the behaviour in. A second phase closed the largest remaining
+security gap: plugin capabilities are now enforced by the server through scoped tokens, not only by the host
+page that issues them.
 
 **The 12-hour cycle was not completed.** This session ran **62 minutes 49 seconds** of wall time
 (2026-11-14T14:56:29 → 15:59:18, UTC+10, including the last verification), then returned control to the
@@ -22,13 +24,13 @@ in section 12 and the journal is current.
 | Item | Value |
 |---|---|
 | Start | 2026-11-14T14:56:29+10:00 (Unix 1794632189) |
-| End of measured work | 2026-11-14T15:59:18+10:00 (Unix 1794635958), after the final verification |
-| Actual duration | **62 min 49 s** (3 769 s) |
+| End of measured work | 2026-11-14T16:20:00+10:00 (Unix 1794637200), after the second phase |
+| Actual duration | **83 min 31 s** (5 011 s) |
 | Planned deadline | 2026-11-15T02:56:29+10:00 (not reached) |
 | Source branch / commit | `platform/server-client` / `5123643be41a0227f6cb5e9ea586cfee816e1946` |
 | Audit branch | `audit/12h-platform-hardening` |
-| Final code commit | `7944c07` |
-| Commits added | 11 before this report (`3278854`, `8779303`, `af2b637`, `76be783`, `ca40106`, `edf09e6`, `7475045`, `e9a6889`, `4e25b8e`, `e571cf5`, `7944c07`) |
+| Final code commit | `73e4ae0` |
+| Commits added | 16 before this report (`3278854`, `8779303`, `af2b637`, `76be783`, `ca40106`, `edf09e6`, `7475045`, `e9a6889`, `4e25b8e`, `e571cf5`, `7944c07`, `c6bcae4`, `7b7048d`, `6a46261`, `35fdcb0`, `73e4ae0`) |
 | `main` | untouched |
 
 The session was bounded by the agent environment, not by the work: the backlog in section 12 is what a resumed
@@ -38,10 +40,10 @@ or externally driven session should pick up, in order.
 
 | Metric | Requirement | Result |
 |---|---|---|
-| Actual duration | measured | 62 min 49 s, stated above; not 12 h |
+| Actual duration | measured | 83 min 31 s, stated above; not 12 h |
 | Initial tests | exact | `node --test`: **245** on `main`, **242** on the source branch, 0 failures |
-| Final tests | exact | **326** pass, 0 fail, ~12.1 s (Linux CI configured for Node 20; measured on Node 20.11/Windows) |
-| New tests | count and purpose | **84 Node tests** in 11 files + **2 browser scenarios** (12 checks); listed in section 5 |
+| Final tests | exact | **338** pass, 0 fail, ~12 s (Linux CI configured for Node 20; measured on Node 20.11/Windows) |
+| New tests | count and purpose | **96 Node tests** in 12 files + **3 browser scenarios** (25 checks, one also on Firefox); listed in section 5 |
 | Restored tests | count and purpose | **0** deleted tests restored: the 14 removed server-plugin tests have no subject in this architecture, and their coverage is replaced by platform/migration/permission/plugin tests (table in `BASELINE.md`) |
 | Defects found | priorities | **20** (4 high, 6 medium, 10 low) in section 4 |
 | Defects fixed | with tests | **20/20**, each with a reproducing test |
@@ -105,17 +107,18 @@ semantics, which is evidence that the refactor did not damage it.
 | File | Tests | Purpose |
 |---|---|---|
 | `tests/architecture.test.js` | 7 | boundaries: manifest, no DOM in the server, client never loads server code, one transport, acyclic requires, neutral shared modules, no compiled-in addresses |
-| `tests/environments.test.js` | 11 | the client transport in a Node vm: discovery, token confinement, 401 renewal once, no retry of writes, abort on switch, stale answers, removal, rapid switching, reconnect, incompatibility |
+| `tests/environments.test.js` | 13 | the client transport in a Node vm: discovery, token confinement, 401 renewal once, no retry of writes, abort on switch, stale answers, removal, rapid switching, reconnect, incompatibility |
 | `tests/plugin-capabilities.test.js` | 8 | classification and refusal by method/path/body; read-only default; named secrets; host-scoped network; shipped packages declare what they use |
-| `tests/security.test.js` | 14 | anonymous access, invalid/logged-out sessions, CSRF+Origin, Host/rebinding, CORS, anonymous SSE, credential conflicts, 413, unknown routes/methods/escapes, diagnostics, redaction, non-loopback without token, OpenAPI, CSP |
-| `tests/storage-integrity.test.js` | 10 | redo replay, unreadable record, path escape, tmp file, corrupted JSON, folder copy as backup, 25 parallel records, sidecar scripts, lock takeover, deletion |
-| `tests/concurrency.test.js` | 5 | If-Match conflict, no lost update, shared events, cross-server isolation, stop visible to a second client, restart, vanished client |
+| `tests/security.test.js` | 15 | anonymous access, invalid/logged-out sessions, CSRF+Origin, Host/rebinding, CORS, anonymous SSE, credential conflicts, 413, unknown routes/methods/escapes, diagnostics, redaction, non-loopback without token, OpenAPI, CSP |
+| `tests/storage-integrity.test.js` | 11 | redo replay, unreadable record, path escape, tmp file, corrupted JSON, folder copy as backup, 25 parallel records, sidecar scripts, lock takeover, deletion |
+| `tests/concurrency.test.js` | 6 | If-Match conflict, no lost update, shared events, cross-server isolation, stop visible to a second client, restart, vanished client |
 | `tests/engine-regression.test.js` | 4 | dynamic graph editing during a run, bounded creation, self-deletion, worker settlement |
 | `tests/resource.test.js` | 6 | 200 round trips, 12 parallel runs, stream cleanup, session cap, 600-node graph, 1000 records |
 | `tests/api-contract.test.js` | 8 | 405/404, malformed bodies, protocol header, public discovery, pagination, older clients, client independence, cursor |
 | `tests/backup.test.js` | 3 | stopped backup/restore, live refusal and `--force`, corrupted file reporting |
 | `tests/graph-format.test.js` | 4 | 200 generated documents round-trip through encode/decode (modulo the canonical collection order), encode is idempotent, a script default becomes a sidecar and returns, damaged/unreferenced/escaping/proto-polluting packets are refused, runtime stays opaque |
-| `tests/browser_plugin_security.py` | 4 checks | a read-only plugin cannot write/fetch/spend a secret/run another command/add a link; a granted plugin can write exactly that; HTML sanitized |
+| `tests/plugin-tokens.test.js` | 7 | server-enforced plugin tokens: issuance, refusal by capability family, named secrets, host-scoped net, auth/events/diagnostics denied, revocation under a valid cookie, expiry and a bounded token map, and agreement between the host and server matchers |
+| `tests/browser_plugin_security.py` | 5 checks | a read-only plugin cannot write/fetch/spend a secret/run another command/add a link; a granted plugin can write exactly that; HTML sanitized |
 | `tests/browser_ux.py` | 8 checks | desktop/tablet/phone, empty states, unreachable server, keyboard search, readable errors, screenshots |
 | extended `tests/migration.test.js` | +4 | duplicates, unreadable plugin data, missing folder, plugin callers, existing collections |
 | extended `tests/client-plugins.test.js` | same count, more assertions | capabilities in the package store |
@@ -130,10 +133,10 @@ semantics, which is evidence that the refactor did not damage it.
 | SEC-03 | `javascript:` sidebar link (client-origin XSS) | fixed |
 | SEC-04 | SVG script bypass in the HTML sanitizer | fixed |
 | SEC-05 | Unbounded session memory | fixed (sweep + cap) |
-| SEC-06 | No capability model for plugin API calls | fixed (host-enforced layer, read-only default) |
+| SEC-06 | No capability model for plugin API calls | fixed twice over: a host-side layer (read-only default) and a server-enforced scoped token per plugin |
 | SEC-07 | `POST /api/net` is reachable by any token holder (SSRF) and can inject `{{secret:…}}` | **accepted**: a token is an operator credential; plugins need `net.fetch:<host>` and `secrets.use:<name>`. Documented in `docs/security.md` |
 | SEC-08 | Plugin CSS can restyle the client (clickjacking inside the page) | **accepted**, documented in `docs/plugins.md` |
-| SEC-09 | No rate limit on `POST /api/auth/session` | **accepted for now**: the token is 64 hex characters and compared in constant time; noted in section 9 |
+| SEC-09 | No rate limit on `POST /api/auth/session` | fixed: 10 attempts per minute per address by default, 429 with `Retry-After`, success clears the count |
 
 Checks that found no bypass: CSRF on cookie writes (header + Origin), CORS allowlist (never `*`), Host pinning
 on loopback (including the session endpoint), SSE authentication, expired/logged-out session replay, bearer vs
@@ -162,11 +165,14 @@ asserts loose bounds so a leak or a quadratic path fails it, not a slow machine.
 - **Architecture**: boundaries are enforced by tests rather than described; `SERVER_ONLY` includes the root
   server; one default-server resolver; a per-process data-folder lock; a session cap; 405 semantics.
 - **Security**: a client plugin capability layer (`js/app/plugin-capabilities.js`, shown and editable on the
-  Plugins page), command scoping, path-only sidebar links, a stricter sanitizer, a session sweep, a real 413,
-  CSP/frame policy on the combined server.
-- **Client**: real cancellation per environment generation; status/meta ownership per attempt; a failed page
-  keeps its context and offers a retry; Environments and Collections searchable; Escape closes search.
-- **Data**: lock file, backup tool with validation and manifest, migration key preservation.
+  Plugins page) plus **server-enforced scoped tokens** (`POST/DELETE /api/auth/plugin-session`), command
+  scoping, path-only sidebar links, a stricter sanitizer, a session sweep and cap, a sign-in rate limit, a real
+  413, CSP/frame policy on the combined server.
+- **Client**: real cancellation per environment generation; status/meta ownership per attempt; scoped plugin
+  token minting, caching, renewal and revocation; a failed page keeps its context and offers a retry;
+  Environments and Collections searchable; Escape closes search.
+- **Data**: lock file, backup tool with validation and manifest, migration key preservation, per-record
+  versions with conditional writes (`If-Match`), and the record upgrade path.
 - **Docs**: `README.md`, `docs/plugins.md` (capabilities), `docs/security.md` (threat model and residual risks),
   `docs/server.md` (lock, sessions, 405/413), `docs/deployment.md` (backup, update, Windows, lock),
   `docs/testing.md` (current suites and tools), plus this audit folder.
@@ -177,13 +183,13 @@ asserts loose bounds so a leak or a quadratic path fails it, not a slow machine.
 
 | Risk | Severity | Note |
 |---|---|---|
-| Plugin capabilities are enforced in the host page | Medium | Holds against a plugin; an operator who edits the client or calls the API directly is beyond it. The server trusts the token, by design |
+| Plugin capabilities on a server from before this release | Low | Such a server answers 404 to the token request, and the host-side check is the boundary. Current servers enforce the scoped token themselves |
 | Token holders can make the server fetch arbitrary URLs and inject secrets through `/api/net` | Medium | Operator-level trust; the plugin layer narrows it. A future server-side capability token would close it |
 | No multi-user roles or audit log | Medium | Out of scope in this cycle; one token means one operator |
 | Sessions live in server memory | Low | A restart signs every client out; clients holding their token renew silently |
-| No rate limiting on session creation or API requests | Low | Token strength is the control; a reverse proxy can add limits |
+| No general API rate limiting (beyond sign-in) | Low | A reverse proxy can add per-address limits; a token is an operator credential |
 | Plugin CSS can restyle the client | Low | Documented; there is no per-plugin stylesheet isolation |
-| Browser tests only on Chromium | Low | Firefox/WebKit untested; the client uses standard APIs |
+| Browser tests on Chromium and Firefox; WebKit untested | Low | `tests/browser_ux.py firefox` passes; Safari/WebKit is not covered |
 | Undo history is in memory per process | Low | Lost on restart by design; not covered by a durability test |
 | Linux, systemd, nginx/Caddy, a real certificate | Untested here | Artefacts and expectations are written down in `DEPLOYMENT-VERIFICATION.md`; must be exercised on the target host |
 | Collections rewrite one document per write | Low | 255 writes/s measured; a high-volume workload needs a different schema, not a code change |
@@ -193,13 +199,15 @@ asserts loose bounds so a leak or a quadratic path fails it, not a slow machine.
 
 | Check | Command | Result |
 |---|---|---|
-| Node suite | `node --test` | 326 pass, 0 fail (12.1 s) |
+| Node suite | `node --test` | 338 pass, 0 fail (~12 s) |
 | Browser suite | `python tests/browser_suite.py` | 6/6 pass: platform, plugin_security, ux, execution_ui, shell, design |
+| Second engine | `python tests/browser_ux.py firefox` | 8/8 interface checks pass; screenshots `*-firefox.jpg` |
 | Stress | `node --expose-gc tools/stress.js` | recorded in `BENCHMARKS.md`; 0 run failures, 0 running runtimes after Stop |
 | Boundaries | `node --test tests/architecture.test.js` | 7/7 |
 | Backup | `node tools/backup.js` via `tests/backup.test.js` | 3/3 |
+| Plugin tokens | `node --test tests/plugin-tokens.test.js` | 7/7, including a server refusal with the host layer bypassed in the browser |
 | CLI | `agentsys-server version`, `help`, `status`, no-token refusal | as documented |
-| Diff review | `git diff --stat main...7944c07` | 107 files, +9 943/−1 302; no temporary or user data |
+| Diff review | `git diff --stat main...73e4ae0` | 113 files, +11 202/−1 311; no temporary or user data |
 | Working tree | `git status --short` | clean after the final commit |
 | Migration | `tests/migration.test.js` | 6/6, including idempotency and a pre-platform folder |
 
@@ -216,6 +224,9 @@ eleven of its checks pass.
 - No timestamp in the journal was invented. The worklog records wall-clock times; where an entry covers a span,
   it says so.
 - The engine audit produced no defect. That is reported as a negative result rather than turned into a change.
+- A second phase ran after the first report (16:00–16:20) because the objective is a long cycle: it closed the
+  server-side capability gap, added record versions and the sign-in limit, and reproduced the interface checks
+  on Firefox. The report was updated rather than replaced.
 - One reviewer-visible simplification: the sidecar-script test asserts that the file is removed when the node
   stops being a Script, not the exact node id path; the behaviour is what matters.
 
@@ -223,21 +234,21 @@ eleven of its checks pass.
 
 Priority A — correctness and data:
 
-1. Per-record versioning for collections (an `If-Match` per record) so two writers to one collection can be
-   merged instead of serialised.
+1. ~~Per-record versioning for collections~~ — done in the second phase (versions + `If-Match`, 409 on a
+   stale write or delete, old records read as version 1).
 2. Undo/redo durability across a restart, or an explicit statement and test that it is per-process.
-3. Property-based tests for the text-graph format: random documents → encode → decode → equal, and mutated
-   documents → clear errors, no partial writes.
-4. Finish the checkpoint cadence with an external controller: resume from `WORKLOG.md` and produce
-   `CHECKPOINT-10..12` at the next real hour marks.
+3. ~~Property-based tests for the text-graph format~~ — done (`tests/graph-format.test.js`, 200 generated
+   documents, hostile packets).
+4. Finish the hourly checkpoint cadence with an external controller: resume from `WORKLOG.md` and continue
+   at the next real hour marks.
 
 Priority B — security:
 
-5. Server-side capability tokens for plugins (a short-lived token scoped to the capabilities the host granted),
-   removing the "host-enforced only" limit.
+5. ~~Server-side capability tokens for plugins~~ — done (`POST /api/auth/plugin-session`, enforced per call,
+   revocable, bounded).
 6. A server-side allowlist or per-project policy for `/api/net` hosts, so an operator token is not an SSRF
    credential.
-7. Rate limiting at the proxy for `/api/auth/session` and a lockout policy.
+7. ~~Rate limiting for `/api/auth/session`~~ — done in the server; a proxy limit is still worth adding.
 
 Priority C — reliability:
 
@@ -248,8 +259,8 @@ Priority C — reliability:
 
 Priority D — developer experience:
 
-11. Error codes documented one by one in `docs/api.md` (there is `openapi.json` but no prose table of codes).
-12. Browser coverage in Firefox and WebKit.
+11. ~~Error codes documented one by one~~ — done as the Errors table in `docs/server.md`.
+12. ~~Browser coverage in Firefox~~ — done; WebKit still untested.
 13. A `--json` machine-readable summary for the whole test suite (counts by file) for trend tracking.
 
 Priority E — maintenance:
@@ -262,7 +273,8 @@ Priority E — maintenance:
 
 - `BASELINE.md` — what was measured before any change.
 - `WORKLOG.md` — the journal, with real times.
-- `CHECKPOINT-01..09.md` — phase reports; hours 10–12 did not happen in this session.
+- `CHECKPOINT-01..10.md` — phase reports; 10 covers the second phase. Hours 11–12 did not happen in this
+  session.
 - `BENCHMARKS.md` — the stress numbers.
 - `DEPLOYMENT-VERIFICATION.md` — what ran and what did not.
 - `screenshots/` — dashboard, projects empty, environments disconnected, phone dashboard.

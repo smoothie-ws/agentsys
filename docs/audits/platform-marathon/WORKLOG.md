@@ -110,6 +110,26 @@ matrix, deployment artefacts, final audit.
 - Documents written in this phase: `CHECKPOINT-01..09.md`, `BENCHMARKS.md`,
   `DEPLOYMENT-VERIFICATION.md`, `FINAL-REPORT.md`, plus updates to `docs/security.md`, `docs/server.md`,
   `docs/deployment.md`, `docs/testing.md`, `README.md`.
-- Not done, and not pretended: systemd/nginx/Caddy/TLS on a real Linux host, Firefox/WebKit, a 24-hour soak,
-  and checkpoints 10–12. They are items 4, 8, 9 and 12 of the backlog.
+- Not done, and not pretended: systemd/nginx/Caddy/TLS on a real Linux host, WebKit, a 24-hour soak,
+  and checkpoints 11–12. They are items 4, 8, 9 and 12 of the backlog.
+
+## 2026-11-14T16:16 — Second phase
+
+Continued after the first report, because the objective asks for a long cycle and the largest residual risk was
+still open. Work of 16:00–16:16:
+
+- **Server-enforced plugin tokens** (`POST/DELETE /api/auth/plugin-session`): the server, not only the host page,
+  refuses a plugin call outside the capabilities its package declared. Tests: `tests/plugin-tokens.test.js` 7/7;
+  a browser check proves it with the host layer bypassed; the host mints, caches, renews and revokes the token,
+  and falls back on a server that has no such route.
+- **Per-record versions** for collections: `If-Match` makes a write or delete conditional (409 on a mismatch);
+  records from the previous release read as version 1. `concurrency.test.js` 6/6, `storage-integrity.test.js`
+  11/11.
+- **Sign-in rate limit**: 10 attempts per minute per address, 429 with `Retry-After`, success clears the count.
+  `security.test.js` 15/15.
+- **Second browser engine**: `browser_ux.py firefox` passes all eight checks; screenshots get a `-firefox` suffix.
+- Docs: `docs/server.md` gains an Errors table and the token endpoint; `docs/security.md` and `docs/plugins.md`
+  state the two-layer model honestly; `docs/architecture.md` lists the endpoint; CI installs both engines.
+- Node total: **338**. Final code commit `73e4ae0`.
+
 
