@@ -65,6 +65,17 @@ private HTTP server is expected to fail; use HTTPS or a tunnel/VPN.
 - Network responses are scrubbed of any stored secret value before returning to a Script.
 - Error messages redact bearer tokens and `apiKey/password/secret/token` assignments.
 - Collection records may contain a `{{secret:name}}` reference; the value remains in `data/secrets`.
+- The stored secret file and the commit record that carries it for a moment are written `0600` on POSIX. The
+  systemd unit sets `UMask=0077` as well; a manual run relies on the file mode. A backup folder containing
+  `secrets/` must be protected like the data folder.
+
+## Static files
+
+The combined server and the standalone client serve only `index.html` and the `js/`, `css/`, `docs/`, `shared/`
+and `client-plugins/` trees. Server code (`js/backend/`, `js/storage/db.js`, `js/model/executor.js`, `bin/`,
+`server/`, `legacy/`) is never served. A request path containing a colon, backslash or NUL is refused before the
+lookup: on NTFS, `file.js::$DATA` would otherwise read a file past the server-only pattern. Traversal, encoded
+separators, stream suffixes and trailing dots/spaces are covered by `tests/static-serving.test.js`.
 
 ## Script sandbox
 
@@ -106,7 +117,9 @@ is the plugin's. See [plugins.md](plugins.md).
 - Generic collections and Script nodes are user data. The server validates their shape but cannot know whether a
   workflow has harmful external side effects; permissions and project policy are the control.
 - `POST /api/net` is reachable by any token holder and by a plugin with `net.fetch:<host>`; the host, not the
-  method, decides what is fetched. Treat a token as an operator credential.
+  method, decides what is fetched. Treat a token as an operator credential. A deployment can set
+  `--allow-net host[,host]` (or `AGENTSYS_ALLOW_NET`) to restrict every caller, Scripts included; it is empty by
+  default, so the per-Script grant remains the normal control.
 - A plugin's `graph.write` (or `library.write`) is a real write to the user's data. Capabilities bound the
   plugin's reach; they do not make an untrusted plugin safe to install.
 - No multi-user roles, no per-user audit log. These are future work.

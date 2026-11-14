@@ -8,12 +8,13 @@ generic collections, migration, and no server plugin loading. The previous repor
 defects at the new seams — the client transport never aborted anything, one plugin could drive another, a plugin
 link could run script in the client origin, two servers on one data folder lost writes, and several failure paths
 were promised but not implemented. Twenty defects were reproduced and fixed, each with a test. Two new browser
-scenarios and fourteen new Node test files lock the behaviour in. A second phase closed the largest remaining
+scenarios and sixteen new Node test files lock the behaviour in. A second phase closed the largest remaining
 security gap: plugin capabilities are now enforced by the server through scoped tokens, not only by the host
-page that issues them.
+page that issues them. Later phases closed a Windows static-file bypass, added egress and session limits, and
+put the editor's menu/undo/run path and the Collections flow under browser tests on three engines.
 
-**The 12-hour cycle was not completed.** This session ran **94 minutes 13 seconds** of wall time
-(2026-11-14T14:56:29 → 16:30:42, UTC+10, including all three phases), then returned control to the
+**The 12-hour cycle was not completed.** This session ran **113 minutes 31 seconds** of wall time
+(2026-11-14T14:56:29 → 16:50:00, UTC+10, including all four phases), then returned control to the
 harness. The objective's condition for a
 12-hour cycle (a full 43 200-second interval, or an external controller resuming from the journal) was not met.
 Nothing in this report pretends otherwise. Because the work is resumable, the remaining backlog is written down
@@ -24,13 +25,13 @@ in section 12 and the journal is current.
 | Item | Value |
 |---|---|
 | Start | 2026-11-14T14:56:29+10:00 (Unix 1794632189) |
-| End of measured work | 2026-11-14T16:30:42+10:00 (Unix 1794637842), after the third phase |
-| Actual duration | **94 min 13 s** (5 653 s) |
+| End of measured work | 2026-11-14T16:50:00+10:00 (Unix 1794639000), after the fourth phase |
+| Actual duration | **113 min 31 s** (6 811 s) |
 | Planned deadline | 2026-11-15T02:56:29+10:00 (not reached) |
 | Source branch / commit | `platform/server-client` / `5123643be41a0227f6cb5e9ea586cfee816e1946` |
 | Audit branch | `audit/12h-platform-hardening` |
-| Final code commit | `fe0639f` (the report and its figures follow in later docs commits) |
-| Commits added | 20 audit commits on top of the 3 platform commits (`git log main..HEAD`: 23); the last is `fe0639f` |
+| Final code commit | `f8da522` (the report and its figures follow in later docs commits) |
+| Commits added | 24 audit commits on top of the 3 platform commits (`git log main..HEAD`: 27); the last code commit is `f8da522` |
 | `main` | untouched |
 
 The session was bounded by the agent environment, not by the work: the backlog in section 12 is what a resumed
@@ -40,10 +41,10 @@ or externally driven session should pick up, in order.
 
 | Metric | Requirement | Result |
 |---|---|---|
-| Actual duration | measured | 94 min 13 s, stated above; not 12 h |
+| Actual duration | measured | 113 min 31 s, stated above; not 12 h |
 | Initial tests | exact | `node --test`: **245** on `main`, **242** on the source branch, 0 failures |
-| Final tests | exact | **343** pass, 0 fail, ~13 s (Linux CI configured for Node 20; measured on Node 20.11/Windows) |
-| New tests | count and purpose | **101 Node tests** (14 new files plus 4 added to migration) + **3 browser scenarios** (24 checks on Chromium; the interface ones also on Firefox and WebKit); listed in section 5 |
+| Final tests | exact | **351** (350 pass, 0 fail, 1 skipped: a POSIX-only file-mode check), ~13 s (Linux CI configured for Node 20; measured on Node 20.11/Windows) |
+| New tests | count and purpose | **109 Node tests** (16 new files plus 4 added to migration) + **7 browser scenarios** (4 on the split client with 33 checks; the interface one also on Firefox and WebKit); listed in section 5 |
 | Restored tests | count and purpose | **0** deleted tests restored: the 14 removed server-plugin tests have no subject in this architecture, and their coverage is replaced by platform/migration/permission/plugin tests (table in `BASELINE.md`) |
 | Defects found | priorities | **20** (4 high, 6 medium, 10 low) in section 4 |
 | Defects fixed | with tests | **20/20**, each with a reproducing test |
@@ -98,6 +99,7 @@ holds the fix.
 | 19 | Low | `SERVER_ONLY` did not cover the root `server.js` (defence in depth only; the public path filter still blocked it) | code | pattern extended | `architecture.test.js` |
 | 20 | Low | An aborted request left `readBody` pending | code | `aborted` rejects | code path exercised by security tests |
 | 21 | Medium | Five editing routes were absent from the undo set: adding a Script/Event primitive, splitting a wire, typing an output value, changing workflow types, changing a Script's grants | reproduction + randomized test | all five are edits; undo restores them | `graph-mutation.test.js` |
+| 22 | Medium | Both static servers served `js/storage/db.js` and `js/model/executor.js` when the URL ended in `::$DATA` (Windows NTFS alternate data stream), bypassing the server-only pattern | reproduction on Windows | reject a colon, backslash or NUL in a request path before lookup | `static-serving.test.js` |
 
 Negative result, recorded deliberately: **the graph engine needed no change**. Four new scenarios (a Script
 editing its own graph, bounded creation, self-deletion, repeated runs with Stop) all passed against the existing
@@ -110,7 +112,7 @@ semantics, which is evidence that the refactor did not damage it.
 | `tests/architecture.test.js` | 7 | boundaries: manifest, no DOM in the server, client never loads server code, one transport, acyclic requires, neutral shared modules, no compiled-in addresses |
 | `tests/environments.test.js` | 13 | the client transport in a Node vm: discovery, token confinement, 401 renewal once, no retry of writes, abort on switch, stale answers, removal, rapid switching, reconnect, incompatibility |
 | `tests/plugin-capabilities.test.js` | 8 | classification and refusal by method/path/body; read-only default; named secrets; host-scoped network; shipped packages declare what they use |
-| `tests/security.test.js` | 15 | anonymous access, invalid/logged-out sessions, CSRF+Origin, Host/rebinding, CORS, anonymous SSE, credential conflicts, 413, unknown routes/methods/escapes, diagnostics, redaction, non-loopback without token, OpenAPI, CSP |
+| `tests/security.test.js` | 17 | anonymous access, invalid/logged-out sessions, CSRF+Origin, Host/rebinding, CORS, anonymous SSE, credential conflicts, 413, unknown routes/methods/escapes, diagnostics, redaction, non-loopback without token, OpenAPI, CSP |
 | `tests/storage-integrity.test.js` | 12 | redo replay, unreadable record, path escape, tmp file, corrupted JSON, folder copy as backup, 25 parallel records, sidecar scripts, lock takeover, deletion |
 | `tests/concurrency.test.js` | 6 | If-Match conflict, no lost update, shared events, cross-server isolation, stop visible to a second client, restart, vanished client |
 | `tests/engine-regression.test.js` | 4 | dynamic graph editing during a run, bounded creation, self-deletion, worker settlement |
@@ -118,11 +120,14 @@ semantics, which is evidence that the refactor did not damage it.
 | `tests/api-contract.test.js` | 8 | 405/404, malformed bodies, protocol header, public discovery, pagination, older clients, client independence, cursor |
 | `tests/backup.test.js` | 3 | stopped backup/restore, live refusal and `--force`, corrupted file reporting |
 | `tests/graph-mutation.test.js` | 3 | 5 seeds × 30 random editor operations through the API with invariants after every step (unique ids, every edge endpoint exists, every group member exists, finite positions, monotonic cursor), redo restores what undo removed, a mutated graph still runs, and every editing route is undoable |
+| `tests/static-serving.test.js` | 3 | both static servers: public files served, server-only and non-public files refused for traversal, encoded separators, backslashes, NULs, trailing dots/spaces and NTFS stream suffixes |
+| `tests/net-allowlist.test.js` | 3 | the optional egress allowlist: exact host, wildcard, lookalike, a Script with a net.fetch grant, and the meta flag |
+| `tests/browser_editor.py` | 6 checks | Add menu, toolbar undo/redo, keyboard delete and undo, persistence across a reload, Run and display on the split client |
 | `tests/soak.test.js` | 1 | an 8 s create/edit/run/delete loop with fixed thresholds: no error, progress, no running runtime, bounded heap |
 | `tests/graph-format.test.js` | 4 | 200 generated documents round-trip through encode/decode (modulo the canonical collection order), encode is idempotent, a script default becomes a sidecar and returns, damaged/unreferenced/escaping/proto-polluting packets are refused, runtime stays opaque |
 | `tests/plugin-tokens.test.js` | 7 | server-enforced plugin tokens: issuance, refusal by capability family, named secrets, host-scoped net, auth/events/diagnostics denied, revocation under a valid cookie, expiry and a bounded token map, and agreement between the host and server matchers |
 | `tests/browser_plugin_security.py` | 5 checks | a read-only plugin cannot write/fetch/spend a secret/run another command/add a link; a granted plugin can write exactly that; HTML sanitized |
-| `tests/browser_ux.py` | 8 checks | desktop/tablet/phone, empty states, unreachable server, keyboard search, readable errors, screenshots |
+| `tests/browser_ux.py` | 11 checks | desktop/tablet/phone, empty states, one heading and named controls per page, unreachable server, environment removal, keyboard search, readable errors, Collections create/validate/add/delete, screenshots |
 | extended `tests/migration.test.js` | +4 | duplicates, unreadable plugin data, missing folder, plugin callers, existing collections |
 | extended `tests/client-plugins.test.js` | same count, more assertions | capabilities in the package store |
 | extended `tests/browser_platform.py` | +1 check | a plugin-created node runs with the plugin disabled |
@@ -137,9 +142,11 @@ semantics, which is evidence that the refactor did not damage it.
 | SEC-04 | SVG script bypass in the HTML sanitizer | fixed |
 | SEC-05 | Unbounded session memory | fixed (sweep + cap) |
 | SEC-06 | No capability model for plugin API calls | fixed twice over: a host-side layer (read-only default) and a server-enforced scoped token per plugin |
-| SEC-07 | `POST /api/net` is reachable by any token holder (SSRF) and can inject `{{secret:…}}` | **accepted**: a token is an operator credential; plugins need `net.fetch:<host>` and `secrets.use:<name>`. Documented in `docs/security.md` |
+| SEC-07 | `POST /api/net` is reachable by any token holder (SSRF) and can inject `{{secret:…}}` | **accepted**: a token is an operator credential; plugins need `net.fetch:<host>` and `secrets.use:<name>`. An optional server-wide allowlist (`--allow-net` / `AGENTSYS_ALLOW_NET`) restricts every caller; it is empty (no extra restriction) by default. Documented in `docs/security.md` |
 | SEC-08 | Plugin CSS can restyle the client (clickjacking inside the page) | **accepted**, documented in `docs/plugins.md` |
 | SEC-09 | No rate limit on `POST /api/auth/session` | fixed: 10 attempts per minute per address by default, 429 with `Retry-After`, success clears the count |
+| SEC-10 | Windows NTFS stream suffix bypassed the server-only static-file pattern | fixed in both static servers; tested |
+| SEC-11 | Secret files were world-readable on POSIX unless the unit's umask applied | fixed: 0600 on the file and the commit record |
 
 Checks that found no bypass: CSRF on cookie writes (header + Origin), CORS allowlist (never `*`), Host pinning
 on loopback (including the session endpoint), SSE authentication, expired/logged-out session replay, bearer vs
@@ -176,6 +183,8 @@ asserts loose bounds so a leak or a quadratic path fails it, not a slow machine.
 - **Client**: real cancellation per environment generation; status/meta ownership per attempt; scoped plugin
   token minting, caching, renewal and revocation; a failed page keeps its context and offers a retry;
   Environments and Collections searchable; Escape closes search.
+- **Server**: static files refuse stream/backslash/NUL paths; secret files are 0600; an optional egress
+  allowlist covers HTTP and Scripts; a token flood is refused rather than silently revoking a live plugin.
 - **Data**: lock file, backup tool with validation and manifest, migration key preservation, per-record
   versions with conditional writes (`If-Match`), and the record upgrade path.
 - **Docs**: `README.md`, `docs/plugins.md` (capabilities), `docs/security.md` (threat model and residual risks),
@@ -194,7 +203,7 @@ asserts loose bounds so a leak or a quadratic path fails it, not a slow machine.
 | Sessions live in server memory | Low | A restart signs every client out; clients holding their token renew silently |
 | No general API rate limiting (beyond sign-in) | Low | A reverse proxy can add per-address limits; a token is an operator credential |
 | Plugin CSS can restyle the client | Low | Documented; there is no per-plugin stylesheet isolation |
-| Browser tests on Chromium and Firefox; WebKit untested | Low | `tests/browser_ux.py firefox` passes; Safari/WebKit is not covered |
+| Browser tests on Chromium, Firefox and WebKit; the editor scenario runs on Chromium only | Low | the interface checks pass on all three; Safari's real build and the editor flow there are not covered |
 | Undo history is in memory per process | Low | Documented in `docs/runtime.md` and asserted by `storage-integrity.test.js`; a restart keeps the document and clears the history |
 | Linux, systemd, nginx/Caddy, a real certificate | Untested here | Artefacts and expectations are written down in `DEPLOYMENT-VERIFICATION.md`; must be exercised on the target host |
 | Collections rewrite one document per write | Low | 255 writes/s measured; a high-volume workload needs a different schema, not a code change |
@@ -204,16 +213,17 @@ asserts loose bounds so a leak or a quadratic path fails it, not a slow machine.
 
 | Check | Command | Result |
 |---|---|---|
-| Node suite | `node --test` | 343 pass, 0 fail (~13 s) |
-| Browser suite | `python tests/browser_suite.py` | 6/6 pass: platform, plugin_security, ux, execution_ui, shell, design |
-| Other engines | `python tests/browser_ux.py firefox` / `… webkit` | 8/8 each; screenshots `*-firefox.jpg`, `*-webkit.jpg` |
+| Node suite | `node --test` | 350 pass, 0 fail, 1 skipped (~13 s) |
+| Browser suite | `python tests/browser_suite.py` | 7/7 pass: platform, plugin_security, editor, ux, execution_ui, shell, design |
+| Other engines | `python tests/browser_ux.py firefox` / `… webkit` | 11/11 each; screenshots `*-firefox.jpg`, `*-webkit.jpg` |
 | Soak | `node --expose-gc tools/soak.js --seconds 60` | 450 cycles, 0 errors, heap 5→11 MB, 450/450 workers settled, 0 running runtimes |
 | Stress | `node --expose-gc tools/stress.js` | recorded in `BENCHMARKS.md`; 0 run failures, 0 running runtimes after Stop |
 | Boundaries | `node --test tests/architecture.test.js` | 7/7 |
 | Backup | `node tools/backup.js` via `tests/backup.test.js` | 3/3 |
 | Plugin tokens | `node --test tests/plugin-tokens.test.js` | 7/7, including a server refusal with the host layer bypassed in the browser |
+| Static files | `node --test tests/static-serving.test.js` | 3/3, including the NTFS stream suffix on both servers |
 | CLI | `agentsys-server version`, `help`, `status`, no-token refusal | as documented |
-| Diff review | `git diff --stat main...fe0639f` | 122 files, +11 861/−1 312; no temporary or user data |
+| Diff review | `git diff --stat main...f8da522` | 127 files, +12 389/−1 319; no temporary or user data |
 | Working tree | `git status --short` | clean after the final commit |
 | Migration | `tests/migration.test.js` | 6/6, including idempotency and a pre-platform folder |
 
@@ -230,10 +240,11 @@ eleven of its checks pass.
 - No timestamp in the journal was invented. The worklog records wall-clock times; where an entry covers a span,
   it says so.
 - The engine audit produced no defect. That is reported as a negative result rather than turned into a change.
-- Two further phases ran after the first report (16:00–16:30) because the objective is a long cycle: they closed
+- Further phases ran after the first report (16:00–17:00) because the objective is a long cycle: they closed
   the server-side capability gap, added record versions, the sign-in limit and randomized editing tests, fixed
-  five routes missing from undo, ran a bounded soak, and reproduced the interface checks on Firefox and WebKit.
-  The report was updated rather than replaced.
+  five routes missing from undo, ran a bounded soak, reproduced the interface checks on Firefox and WebKit,
+  closed a Windows static-file bypass, added secret modes, session expiry, egress and token limits, and put the
+  editor and Collections flows under browser tests. The report was updated rather than replaced.
 - One reviewer-visible simplification: the sidecar-script test asserts that the file is removed when the node
   stops being a Script, not the exact node id path; the behaviour is what matters.
 
@@ -254,8 +265,8 @@ Priority B — security:
 
 5. ~~Server-side capability tokens for plugins~~ — done (`POST /api/auth/plugin-session`, enforced per call,
    revocable, bounded).
-6. A server-side allowlist or per-project policy for `/api/net` hosts, so an operator token is not an SSRF
-   credential.
+6. ~~A server-side allowlist for `/api/net` hosts~~ — done as an optional deployment control; it is empty by
+   default, so a per-project default-deny policy is still open.
 7. ~~Rate limiting for `/api/auth/session`~~ — done in the server; a proxy limit is still worth adding.
 
 Priority C — reliability:
@@ -282,8 +293,8 @@ Priority E — maintenance:
 
 - `BASELINE.md` — what was measured before any change.
 - `WORKLOG.md` — the journal, with real times.
-- `CHECKPOINT-01..11.md` — phase reports; 10 and 11 cover the second and third phases. Hour 12 did not
-  happen in this session.
+- `CHECKPOINT-01..12.md` — phase reports (the checkpoints are per phase, not per elapsed hour); 10–12 cover the
+  second, third and fourth phases.
 - `BENCHMARKS.md` — the stress numbers.
 - `DEPLOYMENT-VERIFICATION.md` — what ran and what did not.
 - `screenshots/` — dashboard, projects empty, environments disconnected, phone dashboard.

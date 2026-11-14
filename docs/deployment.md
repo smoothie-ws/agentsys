@@ -83,6 +83,8 @@ WantedBy=multi-user.target
 ```sh
 AGENTSYS_TOKEN=<64 hex characters: openssl rand -hex 32>
 AGENTSYS_ALLOWED_ORIGINS=https://client.example.com
+# Optional: only these hosts may be fetched by POST /api/net or a Script's net.fetch (`*` allowed).
+# AGENTSYS_ALLOW_NET=api.example.com,*.example.com
 ```
 
 The directory `/var/lib/agentsys/data` must be writable by `agentsys` and by nobody else. The server creates

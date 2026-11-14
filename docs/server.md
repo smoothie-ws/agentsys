@@ -23,13 +23,15 @@ node bin/agentsys-server.js migrate --data ./data --dry-run
 | `--token <token>` | API token; also `AGENTSYS_TOKEN` |
 | `--allowed-origin <url>` | Exact browser origin allowed by CORS (repeatable) |
 | `--allowed-host <name>` | Accepted `Host` name on loopback, or the pinned names when remotely bound |
+| `--allow-net <host>` | Restrict `POST /api/net` and a Script's `net.fetch` to these hosts (repeatable; `*` allowed) |
 | `--tls-cert`, `--tls-key` | PEM files; enables HTTPS directly |
 | `--session-hours <n>` | Session lifetime; default 12 |
 | `--trust-proxy` | Trust `X-Forwarded-Proto` from a local reverse proxy (Secure cookies) |
 | `-q, --quiet` | Print only errors |
 
 Environment variables: `AGENTSYS_TOKEN`, `AGENTSYS_ALLOWED_ORIGINS` (comma separated), `ALLOWED_HOSTS`,
-`DATA_DIR`, `HOST`, `PORT`, `AGENTSYS_NAME`, `AGENTSYS_TRUST_PROXY=1`.
+`AGENTSYS_ALLOW_NET` (comma separated egress hosts), `DATA_DIR`, `HOST`, `PORT`, `AGENTSYS_NAME`,
+`AGENTSYS_TRUST_PROXY=1`.
 
 ## Startup and shutdown
 

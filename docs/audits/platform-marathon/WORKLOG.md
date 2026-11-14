@@ -151,5 +151,23 @@ still open. Work of 16:00–16:16:
   `BENCHMARKS.md`, this journal and `CHECKPOINT-11.md`. Final commit `fe0639f`; total wall time at the last
   verification 14:56:29 → 16:30:42 = **94 min 13 s** (5 653 s).
 
+## 2026-11-14T16:50 — Fourth phase
 
-
+- **Defect 22 found and fixed**: `/js/storage/db.js::$DATA` (and the executor) answered 200 on both static
+  servers because NTFS reads the default stream and the anchored server-only pattern did not match. Both servers
+  now refuse a colon, backslash or NUL in the path; tests cover traversal, encodings, stream suffixes, trailing
+  dots/spaces and server-only files.
+- **Secrets at rest**: secret files and the commit record are written 0600 on POSIX (the unit's UMask was the
+  only protection before); POSIX-only test, skipped on Windows.
+- **Plugin tokens at the limit**: a new token is refused with 429 `too_many_tokens` instead of silently revoking a
+  live plugin's token. The test asserts the two existing tokens still work.
+- **Egress allowlist** (`--allow-net` / `AGENTSYS_ALLOW_NET` / `allowedNetHosts`): enforced in the shared net
+  route, so a Script with a `net.fetch` grant obeys it too; empty by default. 3 tests.
+- **Session expiry** covered with a 1 s TTL (the floor is now 1 s for tests; production default unchanged).
+- **Interface coverage**: `browser_editor.py` (6 checks: Add menu, toolbar undo/redo, keyboard delete and undo,
+  reload persistence, Run and display) and `browser_ux.py` grows to 11 checks (headings and accessible names on
+  every page, environment removal, Collections create/validate/add/delete) and passes on Chromium, Firefox and
+  WebKit.
+- Node total: **351** (350 pass, 1 POSIX-only skipped). Browser suite 7/7. Docs updated: server, deployment,
+  security, testing, `CHECKPOINT-12.md`. Final code commit `f8da522`; total wall time at this point
+  14:56:29 → 16:50:00 = **113 min 31 s** (6 811 s), still not the 12-hour cycle.

@@ -63,9 +63,14 @@ Selected scenarios:
 - `plugin_security` - installs a read-only plugin that tries to write, fetch, read a secret, run another
   plugin's command and add a `javascript:` link: every attempt is refused, the victim command never runs; then a
   plugin with `graph.write` performs exactly that write, and plugin page HTML is sanitized.
-- `ux` - desktop, tablet and phone layouts with no horizontal overflow; empty states; an unreachable server that
-  keeps the page title and offers a retry; keyboard search (Ctrl+K, Escape); a readable API error. Saves
-  screenshots to `docs/audits/platform-marathon/screenshots/`.
+- `editor` - the workflow editor through its own controls on the split client: add a node from the Add menu,
+  undo and redo from the toolbar, delete a selected node with the keyboard and restore it, reload and find the
+  stored graph, then Run from the toolbar and read the display.
+- `ux` - desktop, tablet and phone layouts; empty states; one heading and named controls on every page; an
+  unreachable server that keeps its title and offers a retry; removing an environment from its row; keyboard
+  search; a readable API error; creating a collection and a record through the interface (including a refused
+  invalid body). Runs on Chromium, Firefox and WebKit. Saves screenshots to
+  `docs/audits/platform-marathon/screenshots/`.
 - `execution_ui` - Run/Pause/Resume/Stop and previews across tabs and reloads on the combined local server.
 - `shell` - navigation, tabs, toolbar and responsive shell.
 - `design` - page geometry at desktop, tablet and phone widths; node/signal appearance.
