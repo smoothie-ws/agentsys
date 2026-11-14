@@ -52,6 +52,9 @@ PLAYWRIGHT_CHROMIUM_EXECUTABLE=/path/to/chrome python tests/browser_suite.py
 
 Selected scenarios:
 
+- `ux` can also run on another engine: `python tests/browser_ux.py firefox` (after
+  `python -m playwright install firefox`); screenshots get a `-firefox` suffix. The other scenarios use Chromium.
+
 - `platform` - **the split end-to-end test**: starts an API-only server and a static client as separate
   processes; checks no local Backend/DB, the Environments page, a workflow run, continuation after the client
   page closes, reconnect, a second server with isolated data, a sandboxed plugin creating a Library node, and a

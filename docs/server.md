@@ -98,8 +98,35 @@ Errors are JSON:
   server also accepts loopback origins so the split local launcher works.
 - A known path called with an unsupported method answers `405` and names the methods in `Allow`; an unknown path
   is `404`; a body over the limit is `413`.
+- `POST /api/auth/plugin-session` issues a short-lived token scoped to a list of capabilities for a client plugin
+  (`{"capabilities":["graph.read", …]}`); the server enforces it on every call, an issued token cannot issue
+  another, and `DELETE` with the token revokes it. Tokens live in memory (one hour by default,
+  `pluginSessionTtlMs`; at most 1000, `pluginSessionLimit`) and diagnostics reports their count, never a value.
 
 See [security.md](security.md) and [deployment.md](deployment.md).
+
+## Errors
+
+Every API error has the shape `{"error": {"code": "...", "message": "..."}}`. Codes a client should branch on:
+
+| Code | HTTP | Meaning |
+|---|---|---|
+| `invalid_request` | 400 | The body, a value, a schema or a path is malformed |
+| `unauthorized` | 401 | No credential, or the token/session is not valid |
+| `plugin_token_invalid` / `plugin_token_expired` | 401 | A scoped plugin token was revoked, is unknown, or timed out |
+| `forbidden` | 403 | Host, Origin or CSRF check refused the request |
+| `permission_denied` | 403 | A capability or Script grant does not cover this call; the message names it |
+| `developer_mode_required` | 403 | Editing Custom nodes by hand needs developer mode |
+| `not_found` | 404 | Unknown route, project, record or collection |
+| `method_not_allowed` | 405 | The path exists with other methods; `Allow` names them |
+| `conflict` | 409 | `If-Match` did not match the workflow cursor or the record version; read again and retry |
+| `too_large` | 413 | The body is over the route's limit (20 MB for graph routes, 64 KB for a session request) |
+| `rate_limited` | 429 | Too many sign-in attempts from this address; `Retry-After` says how long |
+| `internal` | 500 | An unexpected failure; the message is redacted and the details are in diagnostics |
+
+The client also produces `network_error` (the server could not be reached), `stale_environment` (an answer of a
+previous environment was discarded) and `invalid_response` (the address did not answer as an AgentSys server) —
+those never come from the server.
 
 ## Multiple clients
 

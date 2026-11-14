@@ -84,11 +84,14 @@ secrets and network hosts are each named explicitly. Anything outside the table 
 routes, another plugin's secret) is refused whatever the package declares. `api.request` rejects with a message
 that names the missing capability, and the Plugins page shows and edits the list.
 
-**Limits, stated honestly:** the capability check runs in the host page, because the server authenticates the
-browser session, not the plugin. It therefore holds against a plugin's code, which is the sandboxed attacker
-here, but not against a user who edits the client or calls the API directly. That user is the operator and has
-the token, so the server's trust boundary is the token, not the plugin. Install untrusted plugins knowing that
-the sandbox protects your browser session, and that a granted write capability is a real write.
+**Limits, stated honestly:** the capability check runs twice. The host refuses a call the package did not declare
+(with a readable message), and — when the server supports it — the host exchanges its own credential for a
+short-lived token scoped to exactly those capabilities (`POST /api/auth/plugin-session`), which the plugin's
+calls carry; the server enforces that token on every call. A disabled plugin's token is revoked immediately.
+Against a server from before this feature (it answers 404), the host-side check is the whole boundary. Neither
+check protects you from yourself: an operator who edits the client or calls the API with the owner token is
+outside the plugin model. Install untrusted plugins knowing that the sandbox protects your browser session, and
+that a granted write capability is a real write.
 
 ## Plugin API
 

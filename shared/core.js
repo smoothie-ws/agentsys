@@ -36,7 +36,16 @@ const WIRE_STYLE_IDS = ['bezier', 'linear', 'step', 'rounded'];
 // A node's grants are checked in the editor as well as by the server. `plugins.call` remains accepted for
 // projects made before the server plugin architecture was removed; no server route grants it now.
 const CAPABILITY =
-  /^(graph\.(read|write)|library\.(read|write)|collections\.(read|write)|net\.fetch:[A-Za-z0-9.*:\[\]-]+|run\.(read|start)|notifications\.(read|write)|plugins\.call|secrets\.use:[A-Za-z0-9_-]+)$/;
+  /^(graph\.(read|write)|library\.(read|write)|collections\.(read|write)|net\.fetch:[A-Za-z0-9.*:\[\]-]+|run\.(read|start)|notifications\.(read|write)|settings\.(read|write)|plugins\.call|secrets\.use:[A-Za-z0-9_-]+)$/;
+
+/** Whether a capability list allows `need`. A `*` inside a capability stands for any run of characters. */
+function capabilityAllows(list, need) {
+  return (Array.isArray(list) ? list : []).some(grant => {
+    if (grant === need) return true;
+    if (typeof grant !== 'string' || !grant.includes('*')) return false;
+    return new RegExp('^' + grant.replace(/[.+?^${}()|[\]\\]/g, '\\$&').replace(/\*/g, '.*') + '$').test(need);
+  });
+}
 function checkManifest(manifest) {
   for (const field of ['grants'])
     if (
@@ -47,3 +56,23 @@ function checkManifest(manifest) {
     )
       throw bad(`Invalid ${field}`);
 }
+
+// The server (Node) imports these; the browser and the server runtime use the globals above.
+if (typeof module === 'object' && module.exports)
+  module.exports = {
+    ApiError,
+    bad,
+    missing,
+    uid,
+    clone,
+    isObject,
+    finite,
+    hashText,
+    parentPath,
+    underPath,
+    GRAPH_RANGES,
+    WIRE_STYLE_IDS,
+    CAPABILITY,
+    checkManifest,
+    capabilityAllows,
+  };

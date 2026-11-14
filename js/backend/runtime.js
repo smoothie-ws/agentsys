@@ -534,7 +534,7 @@ const Backend = {
   get storage() {
     return {mode: DB.mode, directory: DB.directory};
   },
-  /** Read-only server diagnostics: counts and the states of live runtimes, never workflow data or secrets. */
+  /** A read-only server diagnostics snapshot: counts and the states of live runtimes, never workflow data or secrets. */
   diagnostics() {
     const runtimes = [...GRAPH_RUNTIMES.values()].map(entry => ({
       workflow_id: entry.workflow,
@@ -552,6 +552,10 @@ const Backend = {
       hook_log: HOOKS.log.slice(-20),
       pending_hooks: HOOKS.pending.size,
     };
+  },
+  /** The capabilities a scoped token needs for a call (see permissions.js). Used by the HTTP layer. */
+  async scopedNeeds(method, path, body) {
+    return scopedNeeds(String(method || 'GET').toUpperCase(), String(path || '').replace(/^\/+|\/+$/g, ''), body ?? {});
   },
   /** An OpenAPI-style description of every call, for the API page. */
   openapi() {

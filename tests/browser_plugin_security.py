@@ -174,6 +174,26 @@ async def main():
             assert [p['name'] for p in projects] == ['made by a granted plugin'], projects
             print('PASS a plugin with graph.write creates a project; its secret capability is still absent', flush=True)
 
+            # The server enforces the capability even when the host layer is bypassed: a scoped token minted
+            # for graph.read reads projects and is refused a write by the server itself.
+            server_side = await page.evaluate(
+                """async () => {
+                  const token = await Environment.pluginToken(['graph.read']);
+                  if (!token) return {supported: false};
+                  const headers = {Authorization: 'Bearer ' + token, 'Content-Type': 'application/json', 'X-AgentSys': '1'};
+                  const read = await fetch(Environment.apiURL('projects'), {headers, credentials: 'include'});
+                  const write = await fetch(Environment.apiURL('projects'), {
+                    method: 'POST', headers, credentials: 'include', body: JSON.stringify({name: 'server bypass'}),
+                  });
+                  return {supported: true, read: read.status, write: write.status, body: await write.text()};
+                }"""
+            )
+            assert server_side['supported'], 'the server issues scoped tokens'
+            assert server_side['read'] == 200, server_side
+            assert server_side['write'] == 403, server_side
+            assert 'graph.write' in server_side['body'], server_side
+            print('PASS the server enforces a scoped plugin token even when the host layer is bypassed', flush=True)
+
             # Plugin HTML is sanitized, including namespaced SVG script elements.
             await page.goto(f'http://127.0.0.1:{client_port}/#/ext/granted/report')
             await page.wait_for_selector('#report-body')

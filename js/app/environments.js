@@ -29,6 +29,8 @@ const Environment = (() => {
   let reconnectAttempt = 0;
   let started = false;
   let switching = 0; // a setActive() is between its start and its answer
+  // Scoped tokens handed to client plugins, per environment and capability set. They die with the generation.
+  const pluginTokens = new Map();
 
   /** Starts a new environment generation: older answers are rejected, their requests and the event stream are aborted. */
   function beginGeneration() {
@@ -36,6 +38,7 @@ const Environment = (() => {
     controller?.abort();
     controller = new AbortController();
     closeStream();
+    pluginTokens.clear(); // a scoped token of the previous server is useless and must not be sent again
     return controller.signal;
   }
 
@@ -161,10 +164,10 @@ const Environment = (() => {
   /** One transport for every API call. Network failures and mutations are never retried: a repeated Run may
    * have side effects. A clean 401 is different: the server rejected the request before running it, so after
    * renewing the session the same call may be sent once. */
-  async function request(method, path, {body, query, edit, signal, env} = {}) {
-    return requestOnce(method, path, {body, query, edit, signal, env}, true);
+  async function request(method, path, {body, query, edit, signal, env, auth} = {}) {
+    return requestOnce(method, path, {body, query, edit, signal, env, auth}, true);
   }
-  async function requestOnce(method, path, {body, query, edit, signal, env: target}, mayRenew) {
+  async function requestOnce(method, path, {body, query, edit, signal, env: target, auth}, mayRenew) {
     const env = target || active || ensureDefaults();
     // A server that speaks another protocol is not asked: its answers would be read as this protocol's.
     if (status === 'incompatible')
@@ -176,7 +179,7 @@ const Environment = (() => {
     const gen = generation;
     const gate = controller?.signal;
     const timeout = method === 'GET' ? 30000 : 120000;
-    const headers = {'X-AgentSys': '1', ...authHeaders(env)};
+    const headers = {'X-AgentSys': '1', ...(auth ? {Authorization: 'Bearer ' + auth} : authHeaders(env))};
     if (body !== undefined) headers['Content-Type'] = 'application/json';
     if (edit) headers['X-Edit'] = edit;
     let response;
@@ -278,6 +281,44 @@ const Environment = (() => {
     stream?.abort();
     stream = null;
     streamTask = null;
+  }
+
+  /** A scoped token for a client plugin, cached per environment and capability set. Null when the server does not
+   * issue them (an older server) or will not issue them to this caller: the host-side check remains the boundary. */
+  async function pluginToken(capabilities, {refresh = false} = {}) {
+    const env = active || ensureDefaults();
+    const caps = [...capabilities].sort();
+    const key = env.id + '|' + caps.join(',');
+    if (refresh) pluginTokens.delete(key);
+    const cached = pluginTokens.get(key);
+    if (cached && cached.generation === generation && (cached.token === null || cached.expires > Date.now()))
+      return cached.token;
+    let answer;
+    try {
+      answer = await request('POST', 'auth/plugin-session', {body: {capabilities: caps}});
+    } catch (error) {
+      // An older server has no such route: remember that for a while instead of asking on every plugin call.
+      if (error.status === 404) {
+        pluginTokens.set(key, {token: null, expires: Date.now() + 5 * 60 * 1000, generation});
+        return null;
+      }
+      if ([401, 403].includes(error.status)) return null;
+      throw error;
+    }
+    if (!answer?.token) return null;
+    pluginTokens.set(key, {
+      token: answer.token,
+      expires: Date.now() + Math.max(30, Number(answer.expires_in || 3600) - 30) * 1000,
+      generation,
+    });
+    return answer.token;
+  }
+
+  /** Ends a scoped token now (a plugin was disabled or removed), instead of waiting for it to expire. */
+  function revokePluginToken(token) {
+    if (!token) return;
+    for (const [key, cached] of pluginTokens) if (cached.token === token) pluginTokens.delete(key);
+    request('DELETE', 'auth/plugin-session', {auth: token}).catch(() => {});
   }
 
   /** Reads the server's Server-Sent Events through fetch so the same auth headers apply. Reconnects with backoff. */
@@ -477,8 +518,11 @@ const Environment = (() => {
     /** Drops the token for this tab and tells the server to end the session cookie when it can. */
     async signOut(id = active?.id) {
       if (!id) return;
+      const scoped = [...pluginTokens.values()].map(entry => entry.token);
       setToken(id, '');
       const url = environments.find(env => env.id === id)?.url || active?.url || '';
+      // Scoped plugin tokens are independent credentials: end them explicitly rather than leaving them valid.
+      for (const token of scoped) request('DELETE', 'auth/plugin-session', {auth: token}).catch(() => {});
       try {
         await fetch(new URL(url, PROTOCOL.LOGOUT_PATH), {
           method: 'POST',
@@ -528,6 +572,8 @@ const Environment = (() => {
       }
     },
     request,
+    pluginToken,
+    revokePluginToken,
     /** Changes from the server: `(keys, {by, generation})`; returns the unsubscribe function. */
     subscribe(listener, _options) {
       listeners.add(listener);

@@ -94,6 +94,7 @@ const Extensions = (() => {
       this.pending = new Map();
       this.serial = 0;
       this.dead = false;
+      this.token = null; // a server-issued token scoped to this plugin's capabilities
       this.ready = new Promise((resolve, reject) => {
         this.resolveReady = resolve;
         this.rejectReady = reject;
@@ -169,8 +170,35 @@ const Extensions = (() => {
     emit(name, args) {
       this.frame.contentWindow?.postMessage({__agentsys: 'host', kind: 'event', name, args}, '*');
     }
-    async receive(data) {
-      const plugin = this.plugin;
+    /** One API call on behalf of this plugin: with the scoped token when the server issues one, retried once after
+     * the token expires or the server restarts. */
+    async sendRequest(method, path, body, query) {
+      if (this.dead) throw new Error('The plugin is not running.');
+      const upper = String(method || 'GET').toUpperCase();
+      if (!this.token && typeof Environment.pluginToken === 'function') {
+        try {
+          this.token = await Environment.pluginToken(this.capabilities);
+        } catch {
+          this.token = null;
+        }
+      }
+      const send = () => Environment.request(upper, path, {body, query, auth: this.token || undefined});
+      try {
+        return await send();
+      } catch (error) {
+        if (this.token && ['plugin_token_expired', 'plugin_token_invalid'].includes(error.code)) {
+          this.token = null;
+          try {
+            this.token = await Environment.pluginToken(this.capabilities, {refresh: true});
+          } catch {
+            this.token = null;
+          }
+          return send();
+        }
+        throw error;
+      }
+    }
+    async receive(data) {      const plugin = this.plugin;
       switch (data.kind) {
         case 'request': {
           const [method, path, body, query] = data.args || [];
@@ -188,7 +216,9 @@ const Extensions = (() => {
             );
             if (!decision.ok) throw new Error(decision.reason);
           }
-          return Environment.request(String(method || 'GET').toUpperCase(), clean, {body, query});
+          // The server enforces the same capabilities on a token scoped to this plugin. An older server does not
+          // issue one; the host-side check above is then the whole boundary.
+          return this.sendRequest(String(method || 'GET').toUpperCase(), clean, body, query);
         }
         case 'storage.get':
           return PluginStore.storage(plugin.id).get(data.args?.[0], data.args?.[1]);
@@ -367,6 +397,10 @@ const Extensions = (() => {
     dispose() {
       this.dead = true;
       clearTimeout(this.timer);
+      // A disabled plugin's scoped token ends now, not when it happens to expire.
+      if (this.token && typeof Environment !== 'undefined' && typeof Environment.revokePluginToken === 'function')
+        Environment.revokePluginToken(this.token);
+      this.token = null;
       window.removeEventListener('message', this.onMessage);
       this.frame.remove();
       if (this.url) URL.revokeObjectURL(this.url);
@@ -384,7 +418,7 @@ const Extensions = (() => {
               ? {ok: true}
               : PluginCapabilities.check(this.capabilities, String(method || 'GET').toUpperCase(), path, body);
           if (!decision.ok) return Promise.reject(new Error(decision.reason));
-          return Environment.request(method, path, {body, query});
+          return this.sendRequest(String(method || 'GET').toUpperCase(), String(path || '').replace(/^\/+/, ''), body, query);
         },
       };
     }

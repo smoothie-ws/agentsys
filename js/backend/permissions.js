@@ -35,8 +35,7 @@ async function permissionNeeds(method, path, body) {
   }
   return needs.map(need => need.replace(/{(\w+)}/g, (_, k) => params[k] ?? '*'));
 }
-async function assertScriptPermission(context, method, path, body) {
-  const step = context.step;
+async function assertScriptPermission(context, method, path, body) {  const step = context.step;
   const permissions = step?.permissions ?? {chain: [[]]};
   const policy = (await DB.get('policy:' + context.project_id)) ?? {allow: ['graph.read']};
   let needs = await permissionNeeds(method, path, body);
@@ -48,6 +47,36 @@ async function assertScriptPermission(context, method, path, body) {
     throw new ApiError('permission_denied', 'Permission denied: ' + denied, 403);
   }
 }
+/**
+ * The capabilities a scoped token (a client plugin) needs for one call. It refines `system.admin` only for the
+ * families a plugin may legitimately use (preferences, one named secret, the session probe); everything else that
+ * the route table treats as administrative keeps `system.admin`, which no plugin token can hold.
+ */
+async function scopedNeeds(method, path, body = {}) {
+  const needs = await permissionNeeds(method, path, body);
+  const refined = [];
+  for (const need of needs) {
+    if (need !== 'system.admin') {
+      refined.push(need);
+      continue;
+    }
+    if (/^(settings|ui-state)$/.test(path) || path === 'migration/ui-state') {
+      refined.push(method === 'GET' ? 'settings.read' : 'settings.write');
+      continue;
+    }
+    const secret = /^secrets\/([A-Za-z0-9_-]+)$/.exec(path);
+    if (secret) {
+      refined.push('secrets.use:' + secret[1]);
+      continue;
+    }
+    if (path === 'session' && method === 'GET') continue;
+    refined.push('system.admin');
+  }
+  for (const match of JSON.stringify(body ?? {}).matchAll(/\{\{secret:([A-Za-z0-9_-]+)\}\}/g))
+    if (!refined.includes('secrets.use:' + match[1])) refined.push('secrets.use:' + match[1]);
+  return [...new Set(refined)];
+}
+
 function quarantineWrite(value) {
   if (!value || typeof value !== 'object') return value;
   if (value.format === TextGraph.FORMAT) {

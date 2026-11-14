@@ -85,9 +85,16 @@ by method, path and (for `net`) the body, and refuses calls the package did not 
 `capabilities` is read-only; writes, runs, secrets and network hosts are named explicitly
 (`graph.write`, `run.start`, `secrets.use:<name>`, `net.fetch:<host>`). Auth endpoints are never reachable.
 
-This is still isolation of code inside a trusted browser session, not authorization of the person: the check runs
-in the host page, so it holds against the plugin, not against an operator who edits the client and calls the API
-directly. **Install plugins with the capabilities you are willing to grant.** See [plugins.md](plugins.md).
+The same capabilities are enforced by the **server**: the host exchanges its session for a short-lived token
+scoped to the package's capabilities (`POST /api/auth/plugin-session`), the plugin's calls carry it, and the
+server checks the required capability for the method, path and body before running anything. A token cannot
+mint another token, cannot read events, diagnostics or the contract, and is revoked when the plugin is disabled.
+The capability list is never `system.admin`. A server from before this feature answers 404 and the host keeps
+its own check; nothing else changes.
+
+**Install plugins with the capabilities you are willing to grant.** An operator who edits the client or calls the
+API with the owner token is outside the plugin model: the token is the server's trust boundary, the scoped token
+is the plugin's. See [plugins.md](plugins.md).
 
 ## Remaining risks
 

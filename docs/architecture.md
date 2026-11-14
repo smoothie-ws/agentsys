@@ -88,6 +88,7 @@ The application API is the existing backend route table, exposed as HTTP. It is 
 |---|---|
 | `GET /api/meta` | Public version/protocol/capability discovery; no secrets. |
 | `POST /api/auth/session` | Exchange a bearer token for an HttpOnly session cookie. |
+| `POST /api/auth/plugin-session` | Issue a short-lived token scoped to client plugin capabilities; `DELETE` revokes it. |
 | `POST /api/auth/logout` | End the session. |
 | `GET /api/events` | Authenticated SSE stream of `change` and `hook` events. |
 | `GET /api/diagnostics` | Uptime, version, worker counts, runtime states, recent errors. Authenticated. |

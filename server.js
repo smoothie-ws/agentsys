@@ -17,6 +17,7 @@ const http = require('http'),
 const {loadBackend} = require('./headless');
 const TextGraph = require('./js/storage/format');
 const Protocol = require('./shared/protocol');
+const {capabilityAllows, CAPABILITY} = require('./shared/core');
 const {SERVER_ONLY} = require('./server/manifest');
 
 const ROOT = __dirname;
@@ -196,6 +197,12 @@ function createServer(options = {}) {
     SESSIONS = new Map(),
     SESSION_TTL_MS = Math.max(60000, Number(options.sessionTtlMs || 12 * 60 * 60 * 1000)),
     SESSION_LIMIT = Math.max(1, Math.min(100000, Number(options.sessionLimit || 10000))),
+    // Scoped tokens for client plugins: short-lived, limited to the capabilities the host asked for, and enforced
+    // by the server on every call (not only by the host page that issued them).
+    PLUGIN_TOKENS = new Map(),
+    PLUGIN_TOKEN_PREFIX = 'pst_',
+    PLUGIN_TTL_MS = Math.max(1000, Number(options.pluginSessionTtlMs || 60 * 60 * 1000)),
+    PLUGIN_LIMIT = Math.max(1, Math.min(10000, Number(options.pluginSessionLimit || 1000))),
     ALLOW_SHARED_DATA = options.allowSharedData === true || process.env.AGENTSYS_ALLOW_SHARED_DATA === '1',
     LOCK_FILE = path.join(DATA, '.server.lock'),
     // Sign-in attempts from one address are limited: a wrong token must not be a free brute-force oracle. A
@@ -276,8 +283,57 @@ function createServer(options = {}) {
     const now = Date.now();
     for (const [hash, session] of SESSIONS) if (session.expires <= now) SESSIONS.delete(hash);
   }
-  const sessionSweep = setInterval(sweepSessions, 5 * 60 * 1000);
+  const sessionSweep = setInterval(() => {
+    sweepSessions();
+    sweepPluginTokens();
+  }, 5 * 60 * 1000);
   sessionSweep.unref();
+  // ----- scoped tokens for client plugins -----
+  /** Which plugin token (if any) this request presents: `{entry, hash}`, `{invalid: true, expired}` or null. */
+  const pluginTokenOf = req => {
+    const bearer = /^Bearer\s+(.+)$/i.exec(String(req.headers.authorization || ''))?.[1] || '';
+    if (!bearer.startsWith(PLUGIN_TOKEN_PREFIX)) return null;
+    const hash = sessionHash(bearer),
+      found = PLUGIN_TOKENS.get(hash);
+    if (!found) return {invalid: true, expired: false};
+    if (found.expires <= Date.now()) {
+      PLUGIN_TOKENS.delete(hash);
+      return {invalid: true, expired: true};
+    }
+    return {entry: found, hash};
+  };
+  const pluginTokenProblem = presented =>
+    presented?.expired
+      ? {code: 'plugin_token_expired', message: 'The plugin token expired; ask the host for a new one.'}
+      : {code: 'plugin_token_invalid', message: 'The plugin token is not valid; ask the host for a new one.'};
+  function sweepPluginTokens() {
+    const now = Date.now();
+    for (const [hash, token] of PLUGIN_TOKENS) if (token.expires <= now) PLUGIN_TOKENS.delete(hash);
+  }
+  /** Issues a token limited to `capabilities`; the oldest goes when the map is at its limit. */
+  function issuePluginToken(capabilities) {
+    sweepPluginTokens();
+    const token = PLUGIN_TOKEN_PREFIX + crypto.randomBytes(32).toString('base64url');
+    PLUGIN_TOKENS.set(sessionHash(token), {
+      caps: capabilities,
+      expires: Date.now() + PLUGIN_TTL_MS,
+      created: Date.now(),
+    });
+    while (PLUGIN_TOKENS.size > PLUGIN_LIMIT) PLUGIN_TOKENS.delete(PLUGIN_TOKENS.keys().next().value);
+    return {token, expires_in: Math.floor(PLUGIN_TTL_MS / 1000), capabilities};
+  }
+  /** Validated, de-duplicated capabilities for a plugin token; never administrative. */
+  function pluginCapabilities(value) {
+    if (!Array.isArray(value) || value.length > 50)
+      throw Object.assign(new Error('capabilities must be a list of at most 50 values'), {status: 400, code: 'invalid_request'});
+    const caps = [];
+    for (const cap of value) {
+      if (typeof cap !== 'string' || !CAPABILITY.test(cap))
+        throw Object.assign(new Error(`Unknown capability: ${String(cap).slice(0, 80)}`), {status: 400, code: 'invalid_request'});
+      if (!caps.includes(cap)) caps.push(cap);
+    }
+    return caps;
+  }
   // Failed sign-ins per address, in a fixed window.
   const authFailures = new Map();
   function authEntry(key) {
@@ -710,13 +766,13 @@ function createServer(options = {}) {
     const m = /^Bearer\s+(.+)$/i.exec(String(req.headers.authorization || ''));
     return !!(TOKEN && m && same(m[1], TOKEN));
   };
-  /** True when this request is authenticated by a bearer token or by a server-issued session cookie. */
-  const authenticated = req => (!TOKEN ? loopbackBound : tokenGiven(req) || !!sessionOf(req));
+  /** True when this request is authenticated by a bearer token, a scoped plugin token or a server-issued session. */
+  const authenticated = req => (!TOKEN ? loopbackBound : tokenGiven(req) || !!sessionOf(req) || !!pluginTokenOf(req)?.entry);
   const unsafe = method => !['GET', 'HEAD', 'OPTIONS'].includes(String(method || 'GET').toUpperCase());
   /** A cookie-authenticated write must come from this origin (or an allowed one) and carries the CSRF header. */
   const csrfOk = req => {
     if (!unsafe(req.method)) return true;
-    if (tokenGiven(req)) return true; // a bearer token is not sent automatically by a browser
+    if (tokenGiven(req) || pluginTokenOf(req)?.entry) return true; // a bearer token is not sent automatically
     if (!originAllowed(req)) return false;
     return req.headers[Protocol.CSRF_HEADER.toLowerCase()] === '1';
   };
@@ -769,6 +825,7 @@ function createServer(options = {}) {
       runtime: backend?.Backend.diagnostics?.() ?? null,
       clients: eventClients.size,
       sessions: SESSIONS.size,
+      plugin_sessions: PLUGIN_TOKENS.size,
       recent_errors: recentErrors.slice(),
     };
   }
@@ -803,6 +860,7 @@ function createServer(options = {}) {
       collections: true,
       client_plugins: false,
       server_plugins: false,
+      plugin_tokens: true,
       tls: !!TLS,
     },
   });  /** The API page is also a platform reference: add the HTTP-level endpoints to the generated contract. */
@@ -819,6 +877,13 @@ function createServer(options = {}) {
     add('/api/meta', 'get', 'Read server version, protocol and features', 'Public discovery; no secrets. ' + external);
     add('/api/auth/session', 'post', 'Exchange a token for an HttpOnly session', 'Body: {"token":"…"}. ' + external);
     add('/api/auth/logout', 'post', 'End the current session', external);
+    add(
+      '/api/auth/plugin-session',
+      'post',
+      'Issue a short-lived token scoped to client plugin capabilities',
+      'Body: {"capabilities":["graph.read", …]}. The server enforces them on every call. ' + external
+    );
+    add('/api/auth/plugin-session', 'delete', 'Revoke a scoped plugin token', 'Send the plugin token itself. ' + external);
     add('/api/events', 'get', 'Stream change and hook events (SSE)', 'Requires a token or session cookie. ' + external);
     add('/api/diagnostics', 'get', 'Read server diagnostics', 'Requires authentication. ' + external);
     return spec;
@@ -882,8 +947,48 @@ function createServer(options = {}) {
       res.setHeader('Set-Cookie', `${Protocol.SESSION_COOKIE}=; HttpOnly; SameSite=Strict; Path=/; Max-Age=0`);
       return sendJSON(res, 200, {ok: true});
     }
+    // A scoped token for a client plugin: the host asks for exactly the capabilities the package declared, and the
+    // server enforces them on every call. Revoking is immediate (DELETE with the token itself).
+    if (rel === 'auth/plugin-session') {
+      const presented = pluginTokenOf(req);
+      if (req.method === 'DELETE') {
+        if (presented?.entry) {
+          PLUGIN_TOKENS.delete(presented.hash);
+          return sendJSON(res, 200, {revoked: true});
+        }
+        return sendJSON(res, 401, {error: pluginTokenProblem(presented)});
+      }
+      if (req.method !== 'POST') {
+        res.setHeader('Allow', 'POST, DELETE');
+        return sendJSON(res, 405, {error: {code: 'method_not_allowed', message: 'Use POST to issue, DELETE to revoke'}});
+      }
+      if (presented?.entry)
+        return sendJSON(res, 403, {
+          error: {code: 'permission_denied', message: 'A plugin token cannot issue another token'},
+        });
+      if (presented?.invalid) return sendJSON(res, 401, {error: pluginTokenProblem(presented)});
+      const blocked = refuse(req);
+      if (blocked)
+        return sendJSON(res, blocked[0], {error: {code: blocked[0] === 401 ? 'unauthorized' : 'forbidden', message: blocked[1]}});
+      const body = await parseJSONBody(req, 64 * 1024);
+      let capabilities;
+      try {
+        capabilities = pluginCapabilities(body.capabilities);
+      } catch (error) {
+        return sendJSON(res, error.status || 400, {error: {code: error.code || 'invalid_request', message: error.message}});
+      }
+      return sendJSON(res, 200, issuePluginToken(capabilities));
+    }
+    // A token that was issued but is no longer valid is refused explicitly: it must not fall back to the cookie.
+    const presented = pluginTokenOf(req);
+    if (presented?.invalid) return sendJSON(res, 401, {error: pluginTokenProblem(presented)});
     const denied = refuse(req);
     if (denied) return sendJSON(res, denied[0], {error: {code: denied[0] === 401 ? 'unauthorized' : 'forbidden', message: denied[1]}});
+    // A plugin token reaches data routes only; the host's own session reads events, diagnostics and the contract.
+    if (presented?.entry && ['events', 'diagnostics', 'openapi.json'].includes(rel))
+      return sendJSON(res, 403, {
+        error: {code: 'permission_denied', message: 'A plugin token cannot read server events, diagnostics or the contract'},
+      });
     if (req.method === 'GET' && rel === 'events') {
       res.writeHead(200, {
         'Content-Type': 'text/event-stream',
@@ -925,6 +1030,19 @@ function createServer(options = {}) {
       if (query.if_version === undefined) query.if_version = value;
     }
     const body = req.method === 'GET' || req.method === 'DELETE' ? {} : await parseJSONBody(req, 20e6);
+    // A scoped plugin token is checked here, from the method, path and body the server is about to use — not from
+    // anything the plugin claims.
+    if (presented?.entry) {
+      const needs = await Backend.scopedNeeds(req.method, rel, body);
+      const missing = needs.filter(need => !capabilityAllows(presented.entry.caps, need));
+      if (missing.length)
+        return sendJSON(res, 403, {
+          error: {
+            code: 'permission_denied',
+            message: `This plugin token may not ${req.method} /api/${rel}: it needs ${missing.join(', ')}.`,
+          },
+        });
+    }
     const edit = req.headers['x-edit'];
     if (edit !== undefined && (typeof edit !== 'string' || edit.length > 100))
       throw Object.assign(new Error('Invalid edit token'), {status: 400, code: 'invalid_request'});

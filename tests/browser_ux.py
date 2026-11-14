@@ -3,6 +3,7 @@ screenshots for comparison. Starts its own server and client on free ports; no p
 """
 import asyncio
 import os
+import sys
 import shutil
 import socket
 import subprocess
@@ -15,6 +16,8 @@ from playwright.async_api import async_playwright
 
 ROOT = Path(__file__).resolve().parents[1]
 EXE = os.environ.get('PLAYWRIGHT_CHROMIUM_EXECUTABLE')
+BROWSER = sys.argv[1] if len(sys.argv) > 1 else 'chromium'
+SHOT_SUFFIX = '' if BROWSER == 'chromium' else '-' + BROWSER
 SHOTS = ROOT / 'docs' / 'audits' / 'platform-marathon' / 'screenshots'
 
 
@@ -72,22 +75,24 @@ async def main():
         wait_http(f'http://127.0.0.1:{client_port}/')
 
         async with async_playwright() as playwright:
-            browser = await playwright.chromium.launch(executable_path=EXE)
+            browser = await getattr(playwright, BROWSER).launch(
+                **({'executable_path': EXE} if BROWSER == 'chromium' and EXE else {})
+            )
             page = await browser.new_page(viewport={'width': 1440, 'height': 900})
             errors = []
             page.on('pageerror', lambda error: errors.append(str(error)))
             await page.goto(f'http://127.0.0.1:{client_port}/')
             await page.wait_for_function("Environment && Environment.status().status === 'connected'")
             await page.wait_for_selector('.page.dashboard')
-            await page.screenshot(path=str(SHOTS / 'dashboard-desktop.jpg'), type='jpeg', quality=72)
-            print('PASS the dashboard renders at 1440x900', flush=True)
+            await page.screenshot(path=str(SHOTS / f'dashboard-desktop{SHOT_SUFFIX}.jpg'), type='jpeg', quality=72)
+            print(f'PASS the dashboard renders at 1440x900 ({BROWSER})', flush=True)
 
             # Empty states are explicit, not a blank page.
             await page.goto(f'http://127.0.0.1:{client_port}/#/projects')
             await page.wait_for_selector('h1:has-text("Projects")')
             empty = await page.locator('.empty').first.inner_text()
             assert 'project' in empty.lower(), empty
-            await page.screenshot(path=str(SHOTS / 'projects-empty.jpg'), type='jpeg', quality=72)
+            await page.screenshot(path=str(SHOTS / f'projects-empty{SHOT_SUFFIX}.jpg'), type='jpeg', quality=72)
             await page.goto(f'http://127.0.0.1:{client_port}/#/plugins')
             await page.wait_for_selector('h1:has-text("Plugins")')
             assert await page.locator('.card').count() >= 2, 'the bundled catalog is listed'
@@ -123,7 +128,7 @@ async def main():
             status = await page.locator('.environment-row', has_text='Closed port').locator('.environment-status').inner_text()
             assert status in {'Disconnected', 'Connection error'}, status
             assert await page.locator('[data-env-use]').count() >= 1
-            await page.screenshot(path=str(SHOTS / 'environments-disconnected.jpg'), type='jpeg', quality=72)
+            await page.screenshot(path=str(SHOTS / f'environments-disconnected{SHOT_SUFFIX}.jpg'), type='jpeg', quality=72)
             # The rest of the interface still works on the saved (unreachable) environment.
             await page.goto(f'http://127.0.0.1:{client_port}/#/projects')
             await page.wait_for_selector('h1:has-text("Projects")')
@@ -167,7 +172,7 @@ async def main():
             assert await page.locator('#subnav a, #subnav button').count() > 0, 'the sheet lists destinations'
             await page.keyboard.press('Escape')
             await page.wait_for_function("!document.body.classList.contains('mobile-subnav-open')")
-            await page.screenshot(path=str(SHOTS / 'dashboard-mobile.jpg'), type='jpeg', quality=72)
+            await page.screenshot(path=str(SHOTS / f'dashboard-mobile{SHOT_SUFFIX}.jpg'), type='jpeg', quality=72)
             print('PASS the phone layout uses its own navigation and closes it with Escape', flush=True)
 
             # An API error is reported in words, not as a silent failure. Creating without a name makes

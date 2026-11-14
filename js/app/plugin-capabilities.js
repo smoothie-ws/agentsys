@@ -46,7 +46,10 @@
     const pattern = grant.replace(/[.+?^${}()|[\]\\]/g, '\\$&').replace(/\*/g, '.*');
     return new RegExp('^' + pattern + '$').test(need);
   };
-  const allows = (capabilities, need) => capabilities.some(value => matches(value, need));
+  const allows = (capabilities, need) =>
+    typeof capabilityAllows === 'function'
+      ? capabilityAllows(capabilities, need) // shared/core.js, loaded first in the browser
+      : capabilities.some(value => value === need || (value.includes('*') && matches(value, need)));
 
   /**
    * The capability one API call needs: `{capability}` (null for a public read), `{denied}` for a call no plugin may

@@ -160,9 +160,11 @@ test('shared modules stay environment-neutral', () => {
   }
   // Both wrappers export the same thing: the browser global and module.exports.
   assert.match(read('shared/protocol.js'), /module\.exports = factory\(\)/, 'protocol.js exports for Node');
-  // core.js is a plain globals script: the browser gets `ApiError`/`uid`, the server vm gets them in its context.
+  // core.js is a globals script with a guarded CommonJS export at the end: the server imports its capability
+  // helpers, the browser and the vm keep using the globals.
   assert.match(read('shared/core.js'), /class ApiError extends Error/);
-  assert.doesNotMatch(read('shared/core.js'), /module\.exports/);
+  assert.match(read('shared/core.js'), /if \(typeof module === 'object' && module\.exports\)/);
+  assert.doesNotMatch(read('shared/core.js'), /^module\.exports/m, 'the export is guarded, not unconditional');
 });
 
 test('no server address is compiled into the client beyond the documented default', () => {
