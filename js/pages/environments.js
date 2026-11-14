@@ -33,8 +33,7 @@ function environmentForm(env = {}) {
   </form>`;
 }
 
-const displayServerURL = () =>
-  globalThis.AGENTSYS_DEFAULT_SERVER || (typeof location !== 'undefined' && /^https?:$/.test(location.protocol) ? location.origin : 'http://127.0.0.1:8080');
+const displayServerURL = () => Environment.defaultURL();
 
 function showEnvironmentDialog(env, onDone) {
   const editing = !!env;

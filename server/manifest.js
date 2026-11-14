@@ -35,6 +35,6 @@ const FILES = [
 
 /** Server-only files: the client server and the combined local server never send these to a browser. */
 const SERVER_ONLY =
-  /^(?:js\/storage\/db\.js$|js\/model\/executor\.js$|js\/backend\/|server\/|bin\/|legacy\/|headless\.js$)/;
+  /^(?:server\.js$|js\/storage\/db\.js$|js\/model\/executor\.js$|js\/backend\/|server\/|bin\/|legacy\/|headless\.js$)/;
 
 module.exports = {FILES, SERVER_ONLY};

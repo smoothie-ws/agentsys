@@ -22,12 +22,21 @@ const Environment = (() => {
   let statusDetail = '';
   let meta = null;
   let generation = 0;
-  let controller = null; // aborts requests of the current environment
+  let controller = null; // abort signal of the current environment: a switch cancels its in-flight requests
   let stream = null; // AbortController of the event stream
   let streamTask = null;
   let reconnectTimer = null;
   let reconnectAttempt = 0;
   let started = false;
+
+  /** Starts a new environment generation: older answers are rejected, their requests and the event stream are aborted. */
+  function beginGeneration() {
+    generation++;
+    controller?.abort();
+    controller = new AbortController();
+    closeStream();
+    return controller.signal;
+  }
 
   const normalizeURL = value => {
     const text = String(value || '').trim();
@@ -139,8 +148,9 @@ const Environment = (() => {
   };
   const signalWithTimeout = (signal, ms) => {
     const timeout = AbortSignal.timeout(ms);
-    if (!signal) return timeout;
-    return typeof AbortSignal.any === 'function' ? AbortSignal.any([signal, timeout]) : signal;
+    const signals = [...(Array.isArray(signal) ? signal : [signal]), timeout].filter(Boolean);
+    if (signals.length === 1) return signals[0];
+    return typeof AbortSignal.any === 'function' ? AbortSignal.any(signals) : signals[0];
   };
   const authHeaders = env => {
     const token = tokenOf(env.id);
@@ -155,11 +165,15 @@ const Environment = (() => {
   }
   async function requestOnce(method, path, {body, query, edit, signal}, mayRenew) {
     const env = active || ensureDefaults();
+    // A server that speaks another protocol is not asked: its answers would be read as this protocol's.
+    if (status === 'incompatible')
+      throw new ApiError('incompatible_protocol', statusDetail || 'The server speaks another AgentSys protocol', 409);
     const cleanPath = String(path).replace(/^\/+/, '').replace(/^api\//, '');
     if (!cleanPath || cleanPath.split('/').some(part => part === '.' || part === '..') || /[?#]/.test(cleanPath))
       throw new ApiError('invalid_request', 'Invalid API path', 400);
     path = cleanPath;
     const gen = generation;
+    const gate = controller?.signal;
     const timeout = method === 'GET' ? 30000 : 120000;
     const headers = {'X-AgentSys': '1', ...authHeaders(env)};
     if (body !== undefined) headers['Content-Type'] = 'application/json';
@@ -171,7 +185,7 @@ const Environment = (() => {
         headers,
         credentials: 'include',
         cache: 'no-store',
-        signal: signalWithTimeout(signal, timeout),
+        signal: signalWithTimeout([gate, signal], timeout),
         ...(body === undefined || method === 'GET' || method === 'DELETE' ? {} : {body: JSON.stringify(body)}),
       });
     } catch (error) {
@@ -185,7 +199,7 @@ const Environment = (() => {
       // A restarted server forgets in-memory sessions; the token for this tab can make a new one.
       if (mayRenew && tokenOf(env.id) && !/^auth\//.test(String(path).replace(/^\/+/, ''))) {
         try {
-          await startSession(env);
+          await startSession(env, gate);
           if (gen === generation) return requestOnce(method, path, {body, query, edit, signal}, false);
         } catch {}
       }
@@ -212,12 +226,12 @@ const Environment = (() => {
   }
 
   /** Probes a server without changing the active environment. */
-  async function probe(env) {
+  async function probe(env, gate) {
     const url = new URL(env.url + PROTOCOL.META_PATH);
     const response = await fetch(url, {
       cache: 'no-store',
       credentials: 'include',
-      signal: AbortSignal.timeout(8000),
+      signal: signalWithTimeout(gate, 8000),
       headers: authHeaders(env),
     });
     const text = await response.text();
@@ -241,7 +255,7 @@ const Environment = (() => {
   }
 
   /** Exchanges the optional typed token for a short-lived HttpOnly session cookie. */
-  async function startSession(env) {
+  async function startSession(env, gate) {
     const token = tokenOf(env.id);
     if (!token) return {mode: meta?.auth || 'none'};
     const response = await fetch(new URL(env.url + PROTOCOL.SESSION_PATH), {
@@ -249,7 +263,7 @@ const Environment = (() => {
       credentials: 'include',
       headers: {'Content-Type': 'application/json', 'X-AgentSys': '1'},
       body: JSON.stringify({token}),
-      signal: AbortSignal.timeout(15000),
+      signal: signalWithTimeout(gate, 15000),
     });
     if (response.status === 404) return {mode: 'bearer'}; // an older server: keep using the header
     if (!response.ok)
@@ -357,12 +371,15 @@ const Environment = (() => {
   }
 
   async function connect(env = active) {
+    if (!env) env = ensureDefaults();
     active = env;
+    // A connection attempt is a new generation: answers of the old environment (and its event stream) are void.
+    const gate = beginGeneration();
     setStatus('connecting');
     meta = null;
     try {
-      meta = await probe(env);
-      await startSession(env);
+      meta = await probe(env, gate);
+      await startSession(env, gate);
       // A protected read proves the session (or the loopback trust) is good before the stream opens.
       await request('GET', 'session');
       if (status === 'unauthorized') return false;
@@ -371,6 +388,7 @@ const Environment = (() => {
       if (!started) started = true;
       return true;
     } catch (error) {
+      if (error?.code === 'stale_environment') return false;
       if (error?.code === 'incompatible_protocol') setStatus('incompatible', error.message);
       else if (error?.code === 'unauthorized') setStatus('unauthorized', error.message);
       else setStatus('disconnected', error?.message || 'The server could not be reached.');
@@ -394,15 +412,13 @@ const Environment = (() => {
     if (!env) throw new ApiError('not_found', 'Environment not found', 404);
     if (active?.id === id && status === 'connected') return true;
     await runHooks(beforeSwitch);
-    generation++;
-    controller?.abort();
-    controller = null;
-    closeStream();
+    if (active?.id !== id) beginGeneration();
     active = env;
     activeId = env.id;
     persistActive();
     meta = null;
     if (!reconnect) {
+      beginGeneration(); // even for the same environment: no stream and no answer may outlive a disconnect
       setStatus('disconnected');
       return false;
     }
@@ -447,26 +463,39 @@ const Environment = (() => {
     async signOut(id = active?.id) {
       if (!id) return;
       setToken(id, '');
+      const url = environments.find(env => env.id === id)?.url || active?.url || '';
       try {
-        await fetch(new URL(environments.find(env => env.id === id)?.url || active?.url || '', PROTOCOL.LOGOUT_PATH), {
+        await fetch(new URL(url, PROTOCOL.LOGOUT_PATH), {
           method: 'POST',
           credentials: 'include',
           headers: {'X-AgentSys': '1'},
           signal: AbortSignal.timeout(5000),
         });
       } catch {}
-      setStatus('disconnected', 'Signed out of this server.');
+      if (id === active?.id) {
+        beginGeneration(); // no request or event of the signed-out session may land after this
+        meta = null;
+        setStatus('disconnected', 'Signed out of this server.');
+      }
     },
     remove(id) {
       if (environments.length === 1)
         throw new ApiError('invalid_request', 'Keep at least one environment', 400);
+      const removed = environments.find(item => item.id === id);
+      if (!removed) throw new ApiError('not_found', 'Environment not found', 404);
+      const wasActive = active?.id === id || activeId === id;
       environments = environments.filter(item => item.id !== id);
       setToken(id, '');
       persistList();
-      if (activeId === id) {
+      if (wasActive) {
+        // The removed server must not keep feeding this page: cancel its requests and stream, then reconnect.
         activeId = environments[0].id;
         persistActive();
         active = environments[0];
+        beginGeneration();
+        meta = null;
+        setStatus('disconnected', 'The environment was removed.');
+        connect(active).catch(() => {});
       }
       return this.list();
     },
