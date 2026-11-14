@@ -172,6 +172,7 @@ function autoForm(form, read, write) {
   };
   return Object.assign(flush, {
     changed,
+    element: form,
     // Dirty while a save is still on its way too: a render from the data before it would drop the edit.
     isDirty: () => {
       if (inflight) return true;

@@ -1,0 +1,13 @@
+{
+  "id": "reference-ui-showcase",
+  "name": "Reference: UI Showcase",
+  "version": "1.0.0",
+  "description": "Every client interface extension point: a page, a toolbar action, a canvas context menu, a command, a notification, a dashboard card, settings and an inspector section.",
+  "icon": "palette",
+  "api": 2,
+  "engines": {"agentsys": ">=0.3.0 <1.0.0"},
+  "capabilities": ["graph.read", "library.read", "notifications.write", "settings.read"],
+  "author": "AgentSys reference plugins",
+  "license": "MIT",
+  "main": "main.js"
+}

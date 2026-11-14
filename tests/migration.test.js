@@ -122,6 +122,27 @@ async function readAfter(dir, work) {
   }
 }
 
+test('a migration that fails halfway releases the data folder and leaves the old data readable', async () => {
+  const dir = fixture();
+  try {
+    // A damaged collection file makes the first provider write fail after the backup and preservation steps.
+    fs.mkdirSync(path.join(dir, 'other'), {recursive: true});
+    fs.writeFileSync(path.join(dir, 'other', 'collections.json'), '{"broken":');
+    await assert.rejects(migrateData({dataDir: dir}), /not valid JSON|JSON|Unexpected|Unexpected end/i);
+    assert.equal(fs.existsSync(path.join(dir, '.server.lock')), false, 'the lock was released');
+    // The untouched plugin source is still there; a second run after the damage is repaired converges.
+    assert.equal(fs.readFileSync(path.join(dir, 'plugins', 'ai', 'main.js'), 'utf8').includes('api.route'), true);
+    fs.writeFileSync(path.join(dir, 'other', 'collections.json'), '{}');
+    const report = await migrateData({dataDir: dir});
+    assert.equal(report.migrated.records, 1);
+    await readAfter(dir, async request => {
+      assert.equal((await request('GET', 'collections/providers/records')).total, 1);
+    });
+  } finally {
+    fs.rmSync(dir, {recursive: true, force: true});
+  }
+});
+
 test('a provider without a key is migrated without a secret, and two providers with one id become one record', async () => {
   const dir = fixture();
   try {

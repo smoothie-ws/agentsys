@@ -1,170 +1,60 @@
-# Client plugins
+# Plugins
 
-Plugins exist **only in the client**. The server does not load plugins, does not scan plugin folders for code and
-does not expose a plugin route. A plugin extends the editor; anything it creates on the server is ordinary
-AgentSys data.
+AgentSys plugins are **client-side extensions**. The server never loads plugin code, never scans a plugin folder and
+has no plugin route. A plugin extends the editor; anything it creates on a server is ordinary AgentSys data that
+outlives both the plugin and the browser.
 
-## What a plugin can add
+This page is the index. The platform is documented in:
 
-- Pages (`/ext/<plugin>/<page>`).
-- Commands, toolbar buttons and menu items.
-- Sidebar items and dashboard cards.
-- Scoped CSS (no external URLs or `@import`).
-- Server resources through the normal API: Library nodes, workflows, collection definitions and records,
-  notifications, settings.
-- A Library node created by a plugin is saved by the server and keeps working when the plugin or the client is
-  gone. This is the required boundary.
-
-## Package
-
-A package is one JSON object:
-
-```json
-{
-  "id": "my-plugin",
-  "title": "My plugin",
-  "version": "1.0.0",
-  "description": "What it adds.",
-  "icon": "sparkles",
-  "api": 1,
-  "capabilities": ["graph.read"],
-  "source": "exports.activate = api => { api.commands.register('hi', () => api.ui.toast('Hello'), {title: 'Say hello'}); };"
-}
-```
-
-Install it from **Plugins → Install plugin**: paste the form or import a `.json` file. Packages live in this
-browser (`localStorage`, 400 KB source, at most 50 plugins). They are never uploaded to the server.
-Bundled examples are in `client-plugins/index.json` and are loaded by the client static server.
-A package without `capabilities` runs read-only; see [Capabilities](#capabilities).
-
-## Sandbox
-
-Each plugin runs in its own `<iframe sandbox="allow-scripts">` loaded from a Blob URL. It has an opaque origin:
-
-- No access to the page DOM, `localStorage`, `sessionStorage`, cookies or the server token.
-- No `require`, no network of its own. Server calls go through the host's authenticated transport.
-- Communication is JSON `postMessage` with the host; the host validates plugin ids, page ids and limits.
-
-Page and card HTML returned by a plugin is passive and sanitized: scripts (including `<svg><script>`), frames,
-forms, event-handler attributes and `javascript:`/HTML-data URLs are removed. Plugin CSS is rejected if it
-references external URLs or uses `@import`.
-
-A plugin can only execute its own commands: `api.commands.execute('other:command')` is refused, so one plugin
-cannot drive another. A sidebar item's `href` must be a path of this client (`/…`); an absolute URL or a
-`javascript:` URL is refused at registration.
-
-## Capabilities
-
-The host decides what a plugin may ask the server to do, from the call itself (method, path and, for `net`, the
-body), never from the plugin's own label. A package declares what it needs:
-
-```json
-{
-  "id": "my-plugin",
-  "title": "My plugin",
-  "api": 1,
-  "capabilities": ["graph.read", "library.read", "library.write"],
-  "source": "exports.activate = async api => { … };"
-}
-```
-
-| Capability | Allows |
+| Document | What it covers |
 |---|---|
-| `graph.read` / `graph.write` | Read / change projects, workflows and the graph |
-| `library.read` / `library.write` | Read / change Library nodes and resources |
-| `collections.read` / `collections.write` | Read / change generic collections |
-| `run.read` / `run.start` | Inspect a live run / start, stop, pause or resume it |
-| `notifications.read` / `notifications.write` | Read / post notifications |
-| `settings.read` / `settings.write` | Read / change preferences and interface state |
-| `secrets.use:<name>` | Use one named server secret (no wildcard) |
-| `net.fetch:<host>` | Make the server fetch that host (`*` allowed inside the value) |
+| [plugin-architecture.md](plugin-architecture.md) | How the parts fit: package store, sandbox, capabilities, tokens, deployment |
+| [plugin-sdk.md](plugin-sdk.md) | Every member of the injected `api` object |
+| [plugin-manifest.md](plugin-manifest.md) | Package and manifest fields, versions, dependencies, files, assets |
+| [plugin-lifecycle.md](plugin-lifecycle.md) | Install, enable, disable, reload, update, uninstall, migration, recovery |
+| [plugin-ui.md](plugin-ui.md) | Pages, navigation, toolbar, context menus, commands, settings, dialogs, widgets, inspector, views, notifications |
+| [plugin-library.md](plugin-library.md) | Library sections, Custom Nodes, workflow templates, collections, server-only execution |
+| [plugin-capabilities.md](plugin-capabilities.md) | The capability list and what each name permits |
+| [plugin-security.md](plugin-security.md) | Sandbox, CSP, message validation, secret handling, tokens, isolation |
+| [plugin-packaging.md](plugin-packaging.md) | Building, exporting and installing a package |
+| [plugin-development.md](plugin-development.md) | A complete developer loop, from an empty folder to an update |
+| [plugin-testing.md](plugin-testing.md) | Automated node, browser and server-only tests |
+| [plugin-migration.md](plugin-migration.md) | From old server plugins and from the first client package format |
 
-A package that declares no `capabilities` is **read-only**: the six `*.read` capabilities above. Writes, runs,
-secrets and network hosts are each named explicitly. Anything outside the table (authentication, unknown
-routes, another plugin's secret) is refused whatever the package declares. `api.request` rejects with a message
-that names the missing capability, and the Plugins page shows and edits the list.
-
-**Limits, stated honestly:** the capability check runs twice. The host refuses a call the package did not declare
-(with a readable message), and — when the server supports it — the host exchanges its own credential for a
-short-lived token scoped to exactly those capabilities (`POST /api/auth/plugin-session`), which the plugin's
-calls carry; the server enforces that token on every call. A disabled plugin's token is revoked immediately.
-Against a server from before this feature (it answers 404), the host-side check is the whole boundary. Neither
-check protects you from yourself: an operator who edits the client or calls the API with the owner token is
-outside the plugin model. Install untrusted plugins knowing that the sandbox protects your browser session, and
-that a granted write capability is a real write.
-
-## Plugin API
-
-The `api` object passed to `activate(api)`:
+## In one minute
 
 ```js
 exports.activate = async api => {
-  api.commands.register('greet', name => api.ui.toast('Hello ' + name), {title: 'Greet', icon: 'sparkles'});
-  api.ui.addToolbarButton({id: 'greet', command: 'greet', title: 'Greet'});
-
+  api.commands.register('hello', () => api.ui.toast('Hello'), {title: 'Say hello'});
   api.ui.addPage({
-    id: 'overview',
-    title: 'Overview',
-    icon: 'chart',
-    render: async () => {
-      const projects = await api.request('GET', 'projects');
-      return '<h2>Projects</h2><p>' + projects.length + '</p>';
-    },
-  });
-
-  api.ui.addHomeCard({
-    id: 'hello',
+    id: 'home',
     title: 'Hello',
-    render: () => '<p class="muted">From a client plugin.</p>',
+    render: async () => `<h2>Hello from a plugin</h2><p>${api.escape(api.id)}</p>`,
   });
 };
-
-exports.deactivate = () => {};
 ```
 
-| Member | Purpose |
-|---|---|
-| `api.request(method, path, body?, query?)` | Calls the active server through the host transport, if the plugin's capabilities cover the call. `path` is relative to `/api`. Auth endpoints are blocked. |
-| `api.capabilities` | The capabilities this plugin was granted (read-only list). |
-| `api.storage.get/set/remove` | Private JSON in this browser, scoped by plugin and environment. |
-| `api.settings.get/set` | Shortcut for a settings object in the same store. |
-| `api.commands.register(id, handler, meta)` | A command callable from toolbar, menus and `api.commands.execute`. |
-| `api.ui.addPage({id,title,render,...})` | A page. `render` returns an HTML string (or a Node, converted to HTML). |
-| `api.ui.addSidebarItem`, `addToolbarButton`, `addMenuItem(menu,item)`, `addHomeCard` | Interface contributions. |
-| `api.ui.addStyles(css)` | Adds CSS to the page. `@import`, `url(...)` and `expression(...)` are refused, so it cannot load external resources; it can still restyle the client, so install trusted plugins. |
-| `api.ui.notify`, `toast`, `navigate`, `refresh`, `escape`, `pageHref` | Small host conveniences. |
-| `api.env.info()` | `{id, name, url, status, protocol}` of the active environment. |
-| `api.onDidChange(listener)` / `api.on('change', listener)` | Called with changed storage keys. |
-| `api.log(...)` | Writes to the host console. |
+Install it from the **Plugins** page: open the **⋯** menu and choose **Install plugin…** (write the form, or import a package file). It is stored in this browser
+only. It runs in a sandboxed iframe with no access to the application DOM, `localStorage`, cookies or the server
+token. Server calls go through `api.request`, checked against the capabilities the package declares and, when the
+server supports it, against a short-lived scoped token as well.
 
-A client plugin cannot register a server route. If it needs server-side background work, it created a workflow
-at install time (through the normal API); the workflow then runs on the server independently.
+A package that declares no capabilities is read-only. A package gains writes, runs, secrets and network hosts only by
+naming them in its manifest.
 
-## Standard resources instead of privileged code
+## Client installation is not server deployment
 
-Old server plugins could register arbitrary API routes and hooks. A client plugin has no equivalent and should
-not need one:
+There are two separate actions:
 
-1. Define a generic collection with `PUT /api/collections/<name>` and store records with
-   `POST /api/collections/<name>/records`.
-2. Create a reusable Script node with `POST /api/library/script-nodes`.
-3. Compose those with workflows and the existing `net` API for external calls.
-4. Store credentials as server secrets and reference them as `{{secret:name}}` where the standard API supports
-   it. The plugin itself never receives a secret.
+1. **Install** puts a package in this browser. It changes the editor.
+2. **Deploy resources** (on the plugin page) creates the package's declared collections, Library nodes and workflow
+   templates on the **active server**, through the plugin's own capabilities.
 
-The server validates collections and Script nodes without understanding the plugin's domain.
+Deployment records are kept per environment. Switching servers shows the data of the active server only; deploying
+again on another server creates its own resources and never reuses an id. Server resources keep working when the
+plugin is disabled, removed or the browser is closed.
 
-## Examples
-
-- `hello-ui`: page, command, toolbar button, dashboard card, reads projects through `api.request`.
-- `script-node-builder`: creates a `Greeting` Library node through `POST /api/library/script-nodes`. Disable or
-  remove the plugin: the node remains in the Library and runs on the server.
-
-## Migration from server plugins
-
-The old `data/plugins/*/main.js` code is no longer executed; the removed host and routes are kept, unloaded, in
-`legacy/` as migration reference. `agentsys-server migrate` preserves every plugin
-folder, copies sources and data to `data/plugins-migrated/`, snapshots `data/plugins/`, moves provider
-configurations to the generic `providers` collection and moves API keys to secrets. It reports route
-dependencies and any workflow that calls `plugins/…`; those calls are not rewritten automatically. See
+No server plugins are supported. Old server plugin folders are handled by `agentsys-server migrate`; see
 [migration.md](migration.md).
+
+The certification matrix and test evidence are in [PLUGIN-CERTIFICATION.md](../PLUGIN-CERTIFICATION.md).

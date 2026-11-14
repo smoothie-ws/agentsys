@@ -354,7 +354,7 @@ async function deleteGraphRuntime(workflow) {
 async function removeWorkflow(c, workflow) {
   await deleteGraphRuntime(workflow);
   await c.ctx.remove('wf:' + workflow);
-  histories.delete(workflow);
+  clearHistories(workflow);
 }
 async function dispatchGraphEvent(project, workflow, hook, group, data, removed = null) {
   const entry = await graphRuntime(new Call('GET', {}, {workflow_id: workflow}, null), project);

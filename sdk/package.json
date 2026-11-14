@@ -1,0 +1,8 @@
+{
+  "name": "@agentsys/plugin-sdk",
+  "version": "2.0.0",
+  "private": true,
+  "description": "Public TypeScript declarations for AgentSys client plugins. JavaScript needs no build step.",
+  "types": "agentsys-plugin.d.ts",
+  "files": ["agentsys-plugin.d.ts", "README.md"]
+}

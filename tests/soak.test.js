@@ -15,6 +15,13 @@ test('a short soak finishes with no error, no running runtime and bounded memory
   assert.ok(report.worker_start.started >= 1, 'the work really ran');
   assert.ok(report.heap_growth_mb < 64, `heap grew by ${report.heap_growth_mb} MB`);
   assert.ok(report.heap_max_mb < 256, `heap peaked at ${report.heap_max_mb} MB`);
+  assert.ok(report.rss_growth_mb < 200, `RSS grew by ${report.rss_growth_mb} MB`);
   assert.ok(report.run_p95_ms < 2000, `run p95 ${report.run_p95_ms} ms`);
+  assert.ok(report.request_p95_ms < 500, `request p95 ${report.request_p95_ms} ms`);
+  assert.ok(report.runtimes === 0, `${report.runtimes} runtime(s) survived their deleted workflows`);
+  assert.ok(report.handles_end.handles <= 12, `active handles stayed bounded (${report.handles_end.handles})`);
+  assert.ok(report.handles_end.handles <= report.handles_max.handles, 'no handle outlived the peak sample');
+  assert.ok(report.handles_max.listeners <= report.handles_start.listeners + 8, 'event listeners stayed bounded');
   assert.ok(samples.length >= report.cycles, 'the loop was sampled');
+  assert.ok(samples.every(sample => Number.isFinite(sample.rss_mb) && sample.handles), 'memory and handles were sampled');
 });

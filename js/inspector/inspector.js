@@ -828,6 +828,12 @@ const Inspector = {
         await reload();
       }
     );
+    if (typeof Extensions !== 'undefined') {
+      const host = document.createElement('div');
+      host.className = 'inspector-extensions';
+      this.body().append(host);
+      Extensions.renderInspector(host, {node: {...node, kind: 'function'}, project: W.project, workflow: W.workflow, selection: [node.id]});
+    }
   },
 
   plain(node) {
@@ -890,6 +896,12 @@ const Inspector = {
     );
     this.editing = null;
     this.pending = null;
+    if (typeof Extensions !== 'undefined') {
+      const host = document.createElement('div');
+      host.className = 'inspector-extensions';
+      this.body().append(host);
+      Extensions.renderInspector(host, {node: {...group, kind: 'complex', id: 'complex:' + group.id}, project: W.project, workflow: W.workflow, selection: ['complex:' + group.id]});
+    }
     const form = $('#own-slots');
     if (!form) return;
     this.editing = form;

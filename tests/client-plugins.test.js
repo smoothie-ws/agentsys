@@ -34,6 +34,10 @@ function pluginStore() {
   context.globalThis = context;
   vm.runInContext(fs.readFileSync(path.join(__dirname, '..', 'shared', 'core.js'), 'utf8'), context);
   vm.runInContext(
+    fs.readFileSync(path.join(__dirname, '..', 'js', 'app', 'plugin-manifest.js'), 'utf8'),
+    context
+  );
+  vm.runInContext(
     fs.readFileSync(path.join(__dirname, '..', 'js', 'app', 'plugin-capabilities.js'), 'utf8'),
     context
   );
@@ -90,7 +94,7 @@ test('client plugin packages are validated: id, API version, source and size lim
 
 test('the shipped catalog is valid and has no privileged server surface', () => {
   const catalog = JSON.parse(fs.readFileSync(path.join(__dirname, '..', 'client-plugins', 'index.json'), 'utf8'));
-  assert.ok(Array.isArray(catalog) && catalog.length >= 2);
+  assert.ok(Array.isArray(catalog), 'the catalog is a JSON list');
   for (const plugin of catalog) {
     assert.match(plugin.id, /^[A-Za-z0-9][A-Za-z0-9._-]{0,79}$/);
     assert.equal(plugin.api, 1);

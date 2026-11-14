@@ -102,7 +102,7 @@ test('start() discovers the server, proves the session and opens one event strea
   const status = Environment.status();
   assert.equal(status.status, 'connected');
   assert.equal(status.meta.protocol, Protocol.PROTOCOL);
-  assert.deepEqual(Array.from(Environment.list(), env => env.name), ['Local server']);
+  assert.deepEqual(Array.from(Environment.list(), env => env.name), ['Local Server']);
   // The client is served by an AgentSys server in this harness, so the default is that origin, not a constant.
   assert.equal(Environment.apiURL('projects'), 'http://client.test/api/projects');
   const paths = requests.map(request => new URL(request.url).pathname);
@@ -274,7 +274,7 @@ test('rapid switching settles on the last environment, with no stale status', as
   const results = await Promise.all(attempts);
   assert.equal(results.at(-1), true);
   const state = Environment.status();
-  assert.equal(state.environment.name, 'Local server');
+  assert.equal(state.environment.name, 'Local Server');
   assert.equal(state.status, 'connected');
   assert.equal(state.meta.product, Protocol.PRODUCT);
   // The last stream that was opened is the default server's, not one of the abandoned ones.

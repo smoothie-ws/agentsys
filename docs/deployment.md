@@ -36,7 +36,7 @@ npm run client -- --port 8081 --server http://127.0.0.1:8080
    node bin/agentsys-client.js --host 0.0.0.0 --port 8081 --server http://192.168.1.20:8080
    ```
 
-3. In the client, **Environments → Add environment**, enter `http://192.168.1.20:8080` and the token. Add the
+3. In the client, open the **Server** row in the sidebar, then its **⋯** menu → **Add server**; enter `http://192.168.1.20:8080` and the token. Add the
    client origin to the server's allowlist if it is not the same origin:
 
    ```sh
@@ -85,6 +85,8 @@ AGENTSYS_TOKEN=<64 hex characters: openssl rand -hex 32>
 AGENTSYS_ALLOWED_ORIGINS=https://client.example.com
 # Optional: only these hosts may be fetched by POST /api/net or a Script's net.fetch (`*` allowed).
 # AGENTSYS_ALLOW_NET=api.example.com,*.example.com
+# Optional hardening: refuse loopback, private and link-local destinations (DNS pinned).
+AGENTSYS_NET_DENY_PRIVATE=1
 ```
 
 The directory `/var/lib/agentsys/data` must be writable by `agentsys` and by nobody else. The server creates
@@ -208,6 +210,14 @@ of them.
 start --host 127.0.0.1 --port 8080 --data <folder>`, and keep the token in a user environment variable. Windows
 antivirus and indexers may briefly lock a file during a rename; the store retries the rename and fails without
 replacing the target with a partial write.
+
+## Local TLS verification
+
+`tests/tls.test.js` generates a self-signed certificate with `openssl` when it is installed, starts the real API
+server over HTTPS, and checks the protocol header, the `Secure`/`HttpOnly` session cookie and an authenticated
+read. The same file verifies that `--trust-proxy` marks the cookie `Secure` only when `X-Forwarded-Proto: https`
+is present. A machine without `openssl` skips the first check with that reason; the reverse-proxy path is still
+tested. Nothing in the suite needs a public VPS or a publicly trusted certificate.
 
 ## Troubleshooting
 

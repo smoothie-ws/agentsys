@@ -90,8 +90,9 @@ function main() {
     }
     if (pathname === '/') pathname = '/index.html';
     // No colon (a Windows drive or NTFS stream suffix), no backslash and no NUL: a served path never needs them,
-    // and `file.js::$DATA` would otherwise read a server-only file past the pattern below.
-    if (/[:\\\0]/.test(pathname)) {
+    // and `file.js::$DATA` would otherwise read a server-only file past the pattern below. A Windows 8.3 alias
+    // (`BACKEN~1`) is refused for the same reason.
+    if (/[:\\\0]/.test(pathname) || (process.platform === 'win32' && /(?:^|\/)[^/]*~[0-9][^/]*(?:\/|$)/.test(pathname))) {
       res.writeHead(404, {'Content-Type': 'text/plain; charset=utf-8'});
       return res.end('Not found');
     }

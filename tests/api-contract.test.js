@@ -183,3 +183,15 @@ test('a request that changes the graph returns the new state and its cursor', as
     assert.equal(stale.body.error.code, 'conflict');
   });
 });
+
+test('a collection name is data, never a prototype member', async () => {
+  await withApi(async ({call}) => {
+    for (const name of ['__proto__', 'constructor', 'toString']) {
+      const listed = await call('GET', `collections/${name}/records`);
+      assert.ok([400, 404].includes(listed.status), `${name}: ${listed.status}`);
+      assert.notEqual(listed.body?.total, 0, `${name} must not look like an empty, valid collection`);
+    }
+    const created = await call('PUT', 'collections/__proto__', {title: 'bad'});
+    assert.equal(created.status, 400);
+  });
+});

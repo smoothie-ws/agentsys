@@ -161,6 +161,37 @@ test('a corrupted data file fails its own requests, not the server', async () =>
   }
 });
 
+test('a commit the folder cannot accept does not prevent the next start', async () => {
+  const dir = tmp();
+  let app;
+  try {
+    fs.writeFileSync(path.join(dir, 'other'), 'this file blocks the directory a key needs');
+    app = createServer({dataDir: dir, token: TOKEN, serveClient: false});
+    let base = await app.listen(0);
+    const headers = {Authorization: 'Bearer ' + TOKEN, 'Content-Type': 'application/json', 'X-AgentSys': '1'};
+    const failed = await fetch(base + '/api/ui-state', {
+      method: 'PUT',
+      headers,
+      body: JSON.stringify({values: {'agentsys-sidebar-width': 300}}),
+    });
+    assert.equal(failed.status, 500, 'the write fails, and reports it');
+    assert.equal(exists(dir, '.transaction.json'), true, 'the redo record survives for diagnosis');
+    await app.close();
+    app = null;
+
+    // Starting again must not retry the impossible write forever; the record is set aside and the server is usable.
+    app = createServer({dataDir: dir, token: TOKEN, serveClient: false});
+    base = await app.listen(0);
+    assert.equal((await fetch(base + '/api/meta')).status, 200);
+    assert.equal((await fetch(base + '/api/projects', {headers})).status, 200);
+    assert.equal(exists(dir, '.transaction.json'), false);
+    assert.equal(exists(dir, '.transaction.json.invalid'), true);
+  } finally {
+    if (app) await app.close();
+    clean(dir);
+  }
+});
+
 test('a copy of a stopped data folder is a complete backup, including a pending redo record', async () => {
   const dir = tmp(),
     copy = tmp();

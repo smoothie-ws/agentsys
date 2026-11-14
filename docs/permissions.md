@@ -12,6 +12,8 @@ Only actual API calls check these permissions. Ordinary calculations, signals an
 
 Each API call checks the current graph's enclosing instances and current project policy. Editing grants affects subsequent calls in an already active host. Reading or changing the workflow's own `context.state` needs no API permission.
 
-Checked HTTP requests use `agentsys('POST','net',{url,method,headers,body,timeout})`. Redirects require a separate checked call. Secrets use `{{secret:NAME}}` placeholders; reads return metadata only and reflected credential values are redacted from network responses.
+Checked HTTP requests use `agentsys('POST','net',{url,method,headers,body,timeout})`. Redirects require a separate checked call. Secrets use `{{secret:NAME}}` placeholders in headers or the body; a placeholder in the URL is refused. Reads return metadata only and reflected credential values are redacted from network responses.
+
+A project can narrow its own network egress in addition to the server allowlist. `PUT projects/{id}/policy` accepts `{allow:[…], net:{allow:["api.example.com"], deny_private:true}}`; `net.allow` is a list of host patterns (port included, `*` allowed), and `deny_private` refuses loopback/private/link-local destinations for that project's Scripts. Omitting `net` keeps the existing egress policy; `net:null` returns to the server's policy. The check is applied to the Script's checked `net` call, after the capability layers, and never weakens the server list.
 
 Scripts run in isolated Workers with networking, imports, worker creation, host messaging and Node globals hidden. Node execution uses a separate VM realm inside the Worker. The inline runner is a trusted test harness; security tests use actual Workers.

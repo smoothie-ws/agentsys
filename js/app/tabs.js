@@ -22,7 +22,6 @@ const Tabs = {
         'project-settings': 'ps:' + route.project,
         settings: 'settings',
         environments: 'environments',
-        collections: ['collections', route.name].filter(Boolean).join(':'),
         // (no "/" in a key: an editor's key is project/workflow)
         resources: ['res', route.section, route.id || (route.folder ? 'in:' + encodeURIComponent(route.folder) : '')]
           .filter(Boolean)

@@ -56,8 +56,8 @@ duplicated. The backup and preserved copies remain.
 
 1. Start the server (`node bin/agentsys-server.js start --data ./data`).
 2. Start the client (`node bin/agentsys-client.js --server http://127.0.0.1:8080`).
-3. Open **Environments** and check the connection. For a remote server, add its token.
-4. If the old layout matters, use **Environments → Import old interface state from this server**.
+3. Open **Server** and check the connection. For a remote server, add its token.
+4. If the old layout matters, use **Server → Import old interface state from this server**.
 5. Review `data/client-migration/migration-report.json`.
 6. For each warning about `plugins/…` calls, replace the call in the Script with a standard API call
    (`projects/…`, `library/…`, `collections/…`) or recreate the functionality as a workflow.

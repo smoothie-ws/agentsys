@@ -24,14 +24,19 @@ node bin/agentsys-server.js migrate --data ./data --dry-run
 | `--allowed-origin <url>` | Exact browser origin allowed by CORS (repeatable) |
 | `--allowed-host <name>` | Accepted `Host` name on loopback, or the pinned names when remotely bound |
 | `--allow-net <host>` | Restrict `POST /api/net` and a Script's `net.fetch` to these hosts (repeatable; `*` allowed) |
+| `--deny-private-net` | Refuse loopback, private and link-local destinations; resolve and pin the address |
 | `--tls-cert`, `--tls-key` | PEM files; enables HTTPS directly |
 | `--session-hours <n>` | Session lifetime; default 12 |
-| `--trust-proxy` | Trust `X-Forwarded-Proto` from a local reverse proxy (Secure cookies) |
+| `--trust-proxy` | Trust `X-Forwarded-For` (sign-in limit) and `X-Forwarded-Proto` (Secure cookies) from a local reverse proxy |
 | `-q, --quiet` | Print only errors |
 
 Environment variables: `AGENTSYS_TOKEN`, `AGENTSYS_ALLOWED_ORIGINS` (comma separated), `ALLOWED_HOSTS`,
-`AGENTSYS_ALLOW_NET` (comma separated egress hosts), `DATA_DIR`, `HOST`, `PORT`, `AGENTSYS_NAME`,
-`AGENTSYS_TRUST_PROXY=1`.
+`AGENTSYS_ALLOW_NET` (comma separated egress hosts), `AGENTSYS_NET_DENY_PRIVATE=1`, `DATA_DIR`, `HOST`, `PORT`,
+`AGENTSYS_NAME`, `AGENTSYS_TRUST_PROXY=1`, `AGENTSYS_AUTH_ATTEMPTS`.
+
+Startup validates the address, origins, host names, net patterns, port, session lifetime, both TLS files and that
+the data folder is writable, and reports the offending value. A port already in use says so instead of printing a
+stack trace. `status --json` answers `{online:false,error}` with exit code 1 when the server is away.
 
 ## Startup and shutdown
 
@@ -41,8 +46,9 @@ Environment variables: `AGENTSYS_TOKEN`, `AGENTSYS_ALLOWED_ORIGINS` (comma separ
 3. An interrupted `.transaction.json` is replayed once, then the files are scanned.
 4. The backend loads from the fixed `server/manifest.js`; the API is available immediately.
 5. The file watcher announces external changes to connected clients.
-6. On `SIGINT`/`SIGTERM`: active workflows are stopped, event streams close, the lock is released, and the
-   process exits.
+6. On `SIGINT`/`SIGTERM` (and `SIGBREAK` on Windows): active workflows are stopped, event streams close, the lock
+   is released, and the process exits. A failed redo record is set aside as `.transaction.json.invalid` rather than
+   preventing later starts.
 
 The server restores stored JSON, port values and previews. It does **not** resume JavaScript stacks, timers or
 pending external requests, and it does not automatically re-run workflows that were active before a restart.

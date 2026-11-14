@@ -13,16 +13,15 @@ AgentSys Client
 
 ## Managing environments
 
-Open **Environments** in the sidebar, or the menu beside the server name in the top strip.
+Open the **Server** row in the left sidebar, just above **Settings** (it shows the active server, `Local Server` by default). It opens the Manage servers page, where each saved server is a card. A card's **⋯** menu has Use/Reconnect, Test connection, Edit server and Remove server; the page heading's **⋯** has Add server and Reconnect.
 
 - **Add**: name, base URL and, if the server asks, a token.
 - **Test**: probes `/api/meta` without switching.
-- **Use**: makes it active and loads its data.
+- **Use this server**: makes it active and loads its data.
 - **Edit**: change the name or URL; leave the token field empty to keep the current one.
 - **Remove**: deletes the saved connection only. No server data is touched.
 - **Reconnect**: retries the active server, useful after a restart.
-- **Forget token**: removes this tab's token and asks the server to end the cookie session.
-- **Import old interface state**: one-time import of the old server-side UI layout.
+- **Forget token for this tab** (on an active server with a saved token): removes the tab's token and asks the server to end the cookie session.
 
 Tokens are stored in `sessionStorage`, per tab. They are never written to `localStorage`, never put in a URL
 and never shown again by the client. A token is exchanged for an HttpOnly session cookie; plugin code cannot

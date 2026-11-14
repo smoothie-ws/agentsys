@@ -8,6 +8,9 @@
     "local": "node bin/agentsys-local.js",
     "server": "node bin/agentsys-server.js start",
     "client": "node bin/agentsys-client.js",
-    "test": "node --test"
+    "test": "node --test",
+    "plugin:pack": "node tools/plugin-pack.js",
+    "plugin:check": "node tools/plugin-pack.js --check",
+    "plugin:validate": "node tools/plugin-pack.js --validate"
   }
 }

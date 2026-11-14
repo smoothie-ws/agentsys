@@ -74,7 +74,7 @@ Workflows are not copied between environments. Moving data between servers is a 
 ## Connection states
 
 `connected`, `connecting`, `disconnected`, `unauthorized`, `incompatible`, `error`. They are shown by the dot
-beside the environment name, in the environment menu and on the Environments page, with an actionable message
+beside the server name in the sidebar and on the Server page, with an actionable message
 ("Add its token", "Update the server", "The server could not be reached").
 
 ## Client plugins

@@ -132,7 +132,7 @@ function mountApiReference(box, spec) {
 PAGES.api = async (view, route) => {
   const spec = await api('openapi.json');
   if (app.route !== route) return;
-  view.innerHTML = `<div class="page api-page">${pageHead({title: 'API reference', menu: '', sub: 'Every action of the app is an API call.', actions: `<button type="button" id="api-download" title="Download OpenAPI" aria-label="Download OpenAPI">${icon('download')}<span>Download OpenAPI</span></button>`})}
+  view.innerHTML = `<div class="page api-page">${pageHead({title: 'API reference', sub: 'Every action of the app is an API call.', actions: `<button type="button" id="api-download" title="Download OpenAPI" aria-label="Download OpenAPI">${icon('download')}<span>Download OpenAPI</span></button>`})}
     <section id="api-reference"><div id="api-box"></div></section></div>`;
   const reference = mountApiReference($('#api-box'), spec);
   app.apiReference = reference;

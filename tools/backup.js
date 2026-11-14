@@ -49,8 +49,9 @@ function copyTree(from, to, files = []) {
       copyTree(source, target, files);
       continue;
     }
-    // A temporary file is a write that never finished: the data file it belongs to is the truth.
-    if (entry.name.includes('.tmp-')) continue;
+    // A temporary file is a write that never finished: the data file it belongs to is the truth. The lock names a
+    // process for one folder; copying it into a backup would make the restored folder look owned by another server.
+    if (entry.name.includes('.tmp-') || entry.name === '.server.lock') continue;
     fs.copyFileSync(source, target);
     files.push(path.relative(DATA, source).split(path.sep).join('/'));
   }

@@ -66,8 +66,9 @@ PAGES.settings = async (view, route) => {
             `<span>${esc(label)}</span><button type="button" class="key" data-action="${action}">${esc(shortcutText(action))}</button>`
         )
         .join('')}</div>
-</section></form>`;
+</section></form><div id="settings-extensions"></div>`;
   const form = $('#settings-form');
+  if (typeof Extensions !== 'undefined') Extensions.renderSettings($('#settings-extensions', view));
   showSectionPanel(form);
   let shortcuts = {...(preferences.shortcuts || {})};
   const readStyle = () => ({

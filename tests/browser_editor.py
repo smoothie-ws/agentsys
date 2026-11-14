@@ -137,6 +137,20 @@ async def main():
             await page.wait_for_function(f"W.results.get('{script_id}')?.text === 'ran from the UI'", timeout=15000)
             print('PASS Run from the toolbar executes the edited graph and shows the display', flush=True)
 
+            # The same workflow on a phone: the canvas, Run and Undo are reachable and the page does not scroll
+            # sideways. (The graph itself is panned; the document must not gain a horizontal scrollbar.)
+            await page.set_viewport_size({'width': 390, 'height': 844})
+            await page.goto(f'{base}/#/p/{project["id"]}/w/{project["id"]}')
+            await page.wait_for_selector('#canvas')
+            await page.wait_for_function("document.querySelectorAll('.node').length === 2")
+            overflow = await page.evaluate('document.documentElement.scrollWidth - document.documentElement.clientWidth')
+            assert overflow <= 1, f'the editor overflows by {overflow}px on a phone'
+            assert await page.locator('#start').is_visible(), 'Run is reachable on a phone'
+            assert await page.locator('#undo').count() == 1
+            await page.click('#start')
+            await page.wait_for_function(f"W.results.get('{script_id}')?.text === 'ran from the UI'", timeout=15000)
+            print('PASS the workflow editor is usable at 390x844', flush=True)
+
             assert not errors, errors
             await browser.close()
     finally:

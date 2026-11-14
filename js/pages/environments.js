@@ -29,7 +29,7 @@ function environmentForm(env = {}) {
     ${field('Server address', `<input name="url" required inputmode="url" value="${esc(env.url || displayServerURL())}" placeholder="https://agentsys.example.com" autocomplete="url"><span class="field-help">The base URL of an AgentSys Server. No path, no trailing slash needed.</span>`)}
     ${field('Token', `<input name="token" type="password" value="${esc(token)}" autocomplete="off" spellcheck="false" placeholder="${env.id ? 'Leave empty to keep the saved token' : 'Only if the server requires one'}"><span class="field-help">Kept for this browser tab only. It is exchanged for an HttpOnly session cookie.</span>`)}
     <p class="form-error" data-form-error hidden></p>
-    <div class="button-row"><button type="submit" class="primary">${env.id ? 'Save changes' : 'Add environment'}</button><button type="button" data-test>Test connection</button></div>
+    <div class="button-row"><button type="submit" class="primary">${env.id ? 'Save changes' : 'Add server'}</button><button type="button" data-test>Test connection</button></div>
   </form>`;
 }
 
@@ -37,7 +37,7 @@ const displayServerURL = () => Environment.defaultURL();
 
 function showEnvironmentDialog(env, onDone) {
   const editing = !!env;
-  dialog(editing ? 'Edit environment' : 'Add environment', environmentForm(env || {}), async form => {
+  dialog(editing ? 'Edit server' : 'Add server', environmentForm(env || {}), async form => {
     const value = {
       ...(env || {}),
       name: form.elements.name.value.trim(),
@@ -46,7 +46,7 @@ function showEnvironmentDialog(env, onDone) {
     };
     try {
       const saved = Environment.save(value);
-      toast(editing ? 'Environment saved.' : 'Environment added.');
+      toast(editing ? 'Server saved.' : 'Server added.');
       onDone?.(saved);
     } catch (error) {
       const output = $('[data-form-error]', form);
@@ -77,121 +77,104 @@ async function testEnvironment(env, output) {
   }
 }
 
-PAGES.environments = async (view, route) => {
+/** Actions of the Server section, shared by its sidebar row and its page heading. */
+function environmentSectionActions() {
+  return [
+    ['Add server', () => showEnvironmentDialog(null, () => go('/environments', true).catch(fail)), {icon: 'plus'}],
+    null,
+    [
+      'Reconnect',
+      () =>
+        Environment.reconnect()
+          .then(ok => {
+            if (!ok) toast(stateMessage(Environment.status()), true);
+          })
+          .catch(fail),
+      {icon: 'refresh'},
+    ],
+  ];
+}
+
+/** Actions of one server card, opened from its three dots or a right-click on the card. */
+function environmentActions(id) {
+  const env = Environment.get(id);
+  if (!env) return [];
+  const active = env.id === Environment.active()?.id;
+  return [
+    active
+      ? [
+          'Reconnect',
+          () =>
+            Environment.reconnect()
+              .then(ok => {
+                if (!ok) toast(stateMessage(Environment.status()), true);
+              })
+              .catch(fail),
+          {icon: 'refresh'},
+        ]
+      : ['Use this server', () => chooseEnvironment(env.id).catch(fail), {icon: 'power'}],
+    ['Test connection', () => testEnvironment(env, $('[data-env-output]')), {icon: 'activity'}],
+    null,
+    ['Edit server…', () => showEnvironmentDialog(env, () => go('/environments', true).catch(fail)), {icon: 'settings'}],
+    ...(active && Environment.tokenOf(env.id)
+      ? [
+          [
+            'Forget token for this tab',
+            async () => {
+              await Environment.signOut();
+              await go('/environments', true);
+            },
+            {icon: 'key'},
+          ],
+        ]
+      : []),
+    [
+      'Remove server…',
+      () =>
+        confirmDialog(
+          'Remove server?',
+          `Remove the saved connection “${env.name}”? The server and its data are not touched.`,
+          async () => {
+            try {
+              Environment.remove(env.id);
+              if (Environment.active()?.id === env.id)
+                await Environment.setActive(Environment.list()[0]?.id).catch(() => {});
+              await go('/environments', true);
+            } catch (error) {
+              fail(error);
+            }
+          },
+          'Remove'
+        ),
+      {icon: 'trash', danger: true, disabled: Environment.list().length <= 1},
+    ],
+  ];
+}
+
+PAGES.environments = async view => {
   const state = Environment.status();
   const list = Environment.list();
   const meta = state.meta;
   view.innerHTML = `<div class="page environments-page">
-    ${pageHead({
-      title: 'Environments',
-      sub: 'Each environment is one AgentSys Server with its own projects, Library, runtime and secrets.',
-      menu: '',
-      actions: `<button type="button" class="primary" data-env-add>${icon('plus')}<span>Add environment</span></button>`,
-    })}
-    ${
-      state.status !== 'connected'
-        ? `<div class="callout" data-tone="${state.status === 'unauthorized' ? 'warning' : 'error'}"><p><strong>${esc(
-            environmentStatusText(state)
-          )}</strong>${state.detail ? ` · ${esc(state.detail)}` : ''}</p><p class="muted">Choose another environment below, add one, or reconnect.</p></div>`
-        : `<p class="muted">Connected to <strong>${esc(state.environment?.name || '')}</strong> at <code>${esc(
-            state.environment?.url || ''
-          )}</code> · AgentSys ${esc(meta?.version || '?')} · protocol ${esc(String(meta?.protocol || '?'))} · uptime ${esc(
-            meta?.uptime_seconds != null ? Math.round(meta.uptime_seconds) + ' s' : 'unknown'
-          )}.</p>`
-    }
-    <section>
-      <div class="section-head"><h2>Servers</h2><span class="muted small">One active connection</span></div>
-      <div class="environment-list">${list
-        .map(
-          env => `<article class="environment-row ${env.active ? 'active' : ''}" data-env-row="${esc(env.id)}">
-            <div><h3>${esc(env.name)} ${env.active ? '<span class="badge" data-tone="info">Active</span>' : ''}</h3><p class="muted small"><code>${esc(env.url)}</code></p></div>
-            <div class="button-row">
-              ${environmentStatusBadge(state, env.id)}
-              ${env.active ? '<button type="button" data-env-reconnect>Reconnect</button>' : `<button type="button" class="${state.status === 'connected' ? '' : 'primary'}" data-env-use>Use</button>`}
-              <button type="button" data-env-test>Test</button>
-              <button type="button" class="icon" data-env-edit title="Edit environment" aria-label="Edit environment">${icon('settings')}</button>
-              ${list.length > 1 ? `<button type="button" class="icon danger" data-env-remove title="Remove environment" aria-label="Remove environment">${icon('x')}</button>` : ''}
-            </div>
-          </article>`
-        )
-        .join('')}</div>
-    </section>
-    <section>
-      <h2>This client</h2>
-      <p class="muted">Interface preferences, installed client plugins and the environment list are kept in this browser. Projects, Library nodes and runtime state stay on the active server.</p>
-      <div class="button-row">
-        <button type="button" data-env-import-state>Import old interface state from this server</button>
-        ${Environment.tokenOf(state.environment?.id || '') ? '<button type="button" data-env-sign-out>Forget token for this tab</button>' : ''}
-      </div>
-      <p class="muted small" data-env-client-result></p>
-    </section>
-    <section>
-      <h2>About environments</h2>
-      <p class="muted">Projects, Library nodes, workflows, runtime state and secrets belong to the server. This client stores only the server list, the layout of its interface and the plugins you install here. Switching servers reloads the interface from the new server; it does not move workflows between them.</p>
-      <p class="muted">For a remote server, use HTTPS (directly or through a reverse proxy) and a token. Tokens are transmitted in the <code>Authorization</code> header or exchanged once for a session cookie; they never appear in the address bar.</p>
-    </section>
-    <p class="form-error" data-env-output hidden></p>
-  </div>`;
-
-  const output = $('[data-env-output]', view);
-  const clientResult = $('[data-env-client-result]', view);
-  $('[data-env-import-state]', view)?.addEventListener('click', async () => {
-    try {
-      const values = await api('migration/ui-state');
-      const entries = Object.entries(values || {}).filter(
-        ([key]) => /^(?:agentsys-|fieldHeights:)/.test(key)
-      );
-      for (const [key, value] of entries) await store.set(key, value);
-      clientResult.textContent = entries.length
-        ? `Imported ${entries.length} interface preference(s) into this browser.`
-        : 'This server has no old interface state to import.';
-      if (entries.length) toast('Interface state imported. The server copy is unchanged.');
-    } catch (error) {
-      fail(error);
-    }
-  });
-  $('[data-env-sign-out]', view)?.addEventListener('click', async () => {
-    await Environment.signOut();
-    await go('/environments', true);
-  });
-  $('[data-env-add]', view).onclick = () => showEnvironmentDialog(null, () => go('/environments', true).catch(fail));
-  for (const row of $$('[data-env-row]', view)) {
-    const id = row.dataset.envRow;
-    const env = Environment.get(id);
-    $('[data-env-use]', row)?.addEventListener('click', () => chooseEnvironment(id).catch(fail));
-    $('[data-env-reconnect]', row)?.addEventListener('click', () =>
-      Environment.reconnect()
-        .then(ok => {
-          if (ok) go('/environments', true);
-          else {
-            output.hidden = false;
-            output.className = 'form-error';
-            output.textContent = stateMessage(Environment.status());
-          }
+    ${pageHead({title: 'Servers'})}
+    <div class="cards">${list
+      .map(env =>
+        card({
+          glyph: 'server',
+          title: env.name,
+          extra: `data-env-row="${esc(env.id)}"`,
+          preview: `<div class="environment-card-status">${environmentStatusBadge(state, env.id)}${
+            env.active ? '<span class="badge" data-tone="info">Active</span>' : ''
+          }</div><code class="environment-card-url">${esc(env.url)}</code>`,
+          previewClass: 'card-note environment-card',
+          facts: env.active
+            ? `AgentSys ${esc(meta?.version || '?')} · protocol ${esc(String(meta?.protocol || '?'))}`
+            : 'Saved in this browser',
+          menu: 'environment:' + env.id,
         })
-        .catch(fail)
-    );
-    $('[data-env-test]', row)?.addEventListener('click', () => testEnvironment(env, output));
-    $('[data-env-edit]', row)?.addEventListener('click', () =>
-      showEnvironmentDialog(env, () => go('/environments', true).catch(fail))
-    );
-    $('[data-env-remove]', row)?.addEventListener('click', () => {
-      confirmDialog(
-        'Remove environment?',
-        `Remove the saved connection "${env.name}"? The server and its data are not touched.`,
-        async () => {
-          try {
-            Environment.remove(id);
-            if (Environment.active()?.id === id) await Environment.setActive(Environment.list()[0]?.id).catch(() => {});
-            await go('/environments', true);
-          } catch (error) {
-            fail(error);
-          }
-        },
-        'Remove'
-      );
-    });
-  }
+      )
+      .join('')}</div>
+  </div>`;
 };
 
 // The dialog's Test button works on the values currently typed, before they are saved.

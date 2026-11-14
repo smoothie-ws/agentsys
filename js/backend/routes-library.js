@@ -120,7 +120,19 @@ route(
       throw bad('inputs and outputs are lists of at most 64 ports');
     checkManifest({grants});
     const items = await c.ctx.get('resources', []);
-    if (items.some(item => item.name === name)) throw bad('A node with that name already exists.');
+    const resourceId = c.body.resource_id === undefined || c.body.resource_id === null ? null : String(c.body.resource_id);
+    let existing = null;
+    if (resourceId) {
+      existing = items.find(item => item.id === resourceId);
+      if (!existing) throw missing('Record not found');
+      // A deployed plugin may replace only a node it owns. Without the owner tag this is a person's node, and a
+      // package update must never rewrite it.
+      const owner = existing.payload?.plugin?.id;
+      const claimed = c.body.plugin && isObject(c.body.plugin) ? String(c.body.plugin.id ?? '') : '';
+      if (!owner || owner !== claimed)
+        throw new ApiError('permission_denied', 'This Library node is not owned by that plugin; it was not changed.', 403);
+    }
+    if (items.some(item => item.name === name && item.id !== resourceId)) throw bad('A node with that name already exists.');
     const payload = scriptNodePayload({
       name,
       inputs,
@@ -131,9 +143,35 @@ route(
       folder: String(c.body.folder ?? '').slice(0, 200),
       icon: c.body.icon,
     });
-    return saveResource(c, items, null, name, payload);
+    if (c.body.plugin && isObject(c.body.plugin)) {
+      const owner = String(c.body.plugin.id ?? '');
+      if (!/^[A-Za-z0-9][A-Za-z0-9._-]{0,79}$/.test(owner)) throw bad('Invalid plugin owner id');
+      payload.plugin = {
+        id: owner,
+        name: String(c.body.plugin.name ?? name).slice(0, 100),
+        version: String(c.body.plugin.version ?? '').slice(0, 40),
+        checksum: String(c.body.plugin.checksum ?? '').slice(0, 80),
+      };
+    }
+    const saved = saveResource(c, items, resourceId, name, payload);
+    if (resourceId) {
+      // The editor's private copy of the old graph must not outlive the definition it was built from.
+      await c.ctx.remove('wf:lib-' + resourceId);
+      await c.ctx.remove('policy:lib-' + resourceId);
+    }
+    return saved;
   },
-  {body: {name: 'HTTP Request', code: 'node.output.value = 1;', inputs: [], outputs: ['value']}}
+  {
+    body: {
+      name: 'HTTP Request',
+      code: 'node.output.value = 1;',
+      inputs: [],
+      outputs: ['value'],
+      resource_id: null,
+      plugin: {id: 'my-plugin', name: 'HTTP Request', version: '1.0.0', checksum: 'fnv1a-…'},
+    },
+    note: 'resource_id replaces a Script-backed node that a plugin owns; a user node is never rewritten.',
+  }
 );
 
 // ----- Library graph editor: a private workflow that holds the Custom Node being edited -----

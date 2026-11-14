@@ -73,6 +73,14 @@ test('a running server is refused without --force, and --force says the copy is 
     const forced = run(dir, out, ['--force']);
     assert.equal(forced.code, 0, forced.stderr || '');
     assert.equal(forced.json.live, true);
+    assert.equal(fs.existsSync(path.join(forced.json.destination, '.server.lock')), false, 'the source lock is not copied');
+    // The copy can start on its own folder while the original server still runs.
+    const restored = createApiServer({dataDir: forced.json.destination, token: 't'});
+    try {
+      await restored.listen(0);
+    } finally {
+      await restored.close();
+    }
   } finally {
     await app.close();
     for (const folder of [dir, out]) fs.rmSync(folder, {recursive: true, force: true});

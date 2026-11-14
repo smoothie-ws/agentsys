@@ -21,6 +21,21 @@ store.ready.then(restoreSidebar).catch(fail);
 narrowSidebar.addEventListener('change', restoreSidebar);
 $('#open-search').onclick = () => openSearch();
 
+// A browser close is not a route change, so the leave guards do not run. Warn only when an autosave or an inline
+// edit still holds text that was not sent; a clean page closes silently.
+addEventListener('beforeunload', event => {
+  let dirty = false;
+  try {
+    dirty = !!(app.pageSave?.element?.isConnected && app.pageSave.isDirty?.());
+    if (!dirty && typeof W !== 'undefined' && W?.inlineDirty) dirty = W.inlineDirty();
+  } catch {
+    dirty = false;
+  }
+  if (!dirty) return;
+  event.preventDefault();
+  event.returnValue = '';
+});
+
 /** A keyboard-reachable separator on a panel's boundary; it sits just outside the panel (see .panel-resize). */
 function resizeHandle(panel, edge, label, onkeydown) {
   const handle = document.createElement('div');
@@ -200,8 +215,7 @@ async function destinations() {
     {label: 'Dashboard', hint: 'Page', href: '/'},
     {label: 'Projects', hint: 'Page', href: '/projects'},
     {label: 'Library', hint: 'Page', href: '/library'},
-    {label: 'Collections', hint: 'Page', href: '/collections'},
-    {label: 'Environments', hint: 'Page', href: '/environments'},
+    {label: 'Server', hint: 'Page', href: '/environments'},
     {label: 'API', hint: 'Page', href: '/api'},
     {label: 'Plugins', hint: 'Page', href: '/plugins'},
     {label: 'Settings', hint: 'Page', href: '/settings'},
@@ -325,60 +339,31 @@ let lastEnvironmentStatus = null;
 function renderEnvironmentIndicator(state = Environment.status()) {
   const button = $('#environment-indicator');
   if (!button) return;
-  const name = state.environment?.name || 'No server';
+  const name = state.environment?.name || 'Server';
   $('.env-name', button).textContent = name;
   $('.env-dot', button).dataset.status = state.status;
-  button.title = `AgentSys server: ${name} · ${ENVIRONMENT_LABEL[state.status] || state.status}${
+  button.title = `Server: ${name} · ${ENVIRONMENT_LABEL[state.status] || state.status}${
     state.detail ? ' · ' + state.detail : ''
   }`;
   button.setAttribute('aria-label', button.title);
 }
 
+/** Used by the Manage servers page: switch the active server and report a failed connection. */
 async function chooseEnvironment(id) {
-  const button = $('#environment-indicator');
-  button.disabled = true;
-  try {
-    toast('Switching server…');
-    const ok = await Environment.setActive(id);
-    if (!ok) {
-      toast(stateMessage(Environment.status()), true);
-      await go('/environments');
-    }
-  } finally {
-    button.disabled = false;
+  toast('Switching server…');
+  const ok = await Environment.setActive(id);
+  if (!ok) {
+    toast(stateMessage(Environment.status()), true);
+    await go('/environments');
   }
 }
 
 const stateMessage = state => {
-  if (state.status === 'unauthorized') return 'This server requires a token. Add it in Environments.';
+  if (state.status === 'unauthorized') return 'This server requires a token. Add it on the Server page.';
   if (state.status === 'incompatible') return state.detail || 'This client and server speak different protocol versions.';
   if (state.status === 'disconnected') return state.detail || 'The server could not be reached.';
-  return state.detail || 'The environment is not connected.';
+  return state.detail || 'The server is not connected.';
 };
-
-function environmentMenu() {
-  const state = Environment.status();
-  const items = [
-    [`${ENVIRONMENT_LABEL[state.status] || state.status}${state.meta?.server_name ? ' · ' + state.meta.server_name : ''}`, null, {header: true}],
-    ...Environment.list().map(env => [
-      env.name,
-      env.id === state.environment?.id ? null : () => chooseEnvironment(env.id).catch(fail),
-      {checked: env.id === state.environment?.id, hint: env.url, icon: 'server'},
-    ]),
-    null,
-    ['Reconnect', () => Environment.reconnect().then(ok => ok || toast(stateMessage(Environment.status()), true)).catch(fail), {icon: 'refresh'}],
-    ['Manage environments…', () => go('/environments').catch(fail), {icon: 'settings'}],
-  ];
-  return items;
-}
-
-document.addEventListener('click', event => {
-  const button = event.target.closest('#environment-indicator');
-  if (!button) return;
-  event.preventDefault();
-  const rect = button.getBoundingClientRect();
-  popup(rect.left, rect.bottom + 4, environmentMenu());
-});
 
 // ----- boot -----
 async function boot() {
@@ -392,13 +377,13 @@ async function boot() {
     // A client that lost the stream for a while gets the current state, never a replay of its own mutations.
     if (was && was !== 'connected' && state.status === 'connected' && app.booted) refreshAfterReconnect().catch(fail);
     if (state.status === 'unauthorized' && was !== 'unauthorized' && app.booted)
-      toast('The server rejected this client. Add its token in Environments.', true);
+      toast('The server rejected this client. Add its token on the Server page.', true);
   });
   const connected = await Environment.start();
   lastEnvironmentStatus = Environment.status().status;
   if (!connected) {
     await go('/environments', true).catch(error => {
-      $('#view').innerHTML = `<div class="empty"><h2>Could not open Environments</h2><p>${esc(error.message)}</p></div>`;
+      $('#view').innerHTML = `<div class="empty"><h2>Could not open Server</h2><p>${esc(error.message)}</p></div>`;
     });
     return;
   }
@@ -414,8 +399,7 @@ async function boot() {
 
 async function refreshAfterReconnect() {
   const route = app.route;
-  await Promise.all([loadProjects().catch(() => {}), loadLibrary().catch(() => {})]);
-  if (typeof ClientPlugins !== 'undefined') ClientPlugins.sync().catch(() => {});
+  await Promise.all([loadProjects().catch(() => {}), loadLibrary().catch(() => {}), loadPlugins().catch(() => {})]);
   if (route && ['workflow', 'project', 'home', 'resources'].includes(route.page)) await render().catch(() => {});
   await Tabs.refreshRuntimes().catch(() => {});
 }
@@ -445,7 +429,9 @@ Environment.onAfterSwitch(async () => {
   Object.assign(app, {preferences: session.preferences, shortcutDefaults: session.shortcut_defaults});
   applyStyle(session.preferences.style);
   await api('library/builtin', {method: 'POST', body: {}}).catch(() => {});
-  await Promise.all([loadLibrary(), loadProjects()]);
+  // A plugin's private storage is scoped to the environment, and its UI may show what it read there: restart the
+  // sandboxes so nothing from the previous server is still on screen or in memory.
+  await Promise.all([loadLibrary(), loadProjects(), loadPlugins({reload: true})]);
   await go('/');
   toast(`Connected to ${Environment.status().environment?.name || 'the server'}.`);
 });

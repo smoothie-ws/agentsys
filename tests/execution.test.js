@@ -405,12 +405,12 @@ for (const group of [false, true])
     await app.api('POST', `projects/${id}/execution`, {node_ids: [script.id]});
     await until(app, `projects/${id}/execution`, detail => detail.nodes.some(n => n.status === 'sleeping'));
     assert.equal(app.eval(`GRAPH_RUNTIMES.has('${id}')`), true);
-    assert.equal(app.eval(`histories.has('${id}')`), true);
+    assert.equal(app.eval(`[...histories.keys()].some(k => k.slice(k.indexOf(String.fromCharCode(0)) + 1) === '${id}')`), true);
     if (group) await app.api('POST', 'library/node-folders', {action: 'delete', path: 'Disposable'});
     else await app.api('DELETE', `resources/${opened.resource_id}`);
     assert.equal(app.eval(`GRAPH_RUNTIMES.has('${id}')`), false);
     assert.equal(app.workerStats.terminated, 1);
-    assert.equal(app.eval(`histories.has('${id}')`), false);
+    assert.equal(app.eval(`[...histories.keys()].some(k => k.slice(k.indexOf(String.fromCharCode(0)) + 1) === '${id}')`), false);
     assert.equal(await app.eval(`DB.get('wf:${id}')`), undefined);
     assert.equal(await app.eval(`DB.get(runtimeKey('${id}'))`), undefined);
   });

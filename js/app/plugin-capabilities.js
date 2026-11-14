@@ -9,7 +9,7 @@
   else root.PluginCapabilities = factory();
 })(typeof globalThis !== 'undefined' ? globalThis : this, () => {
   'use strict';
-  const API_VERSION = 1;
+  const API_VERSION = 2;
   // A plugin that declares nothing gets read-only access to the ordinary data.
   const READ_ONLY = ['graph.read', 'library.read', 'collections.read', 'run.read', 'notifications.read', 'settings.read'];
   const PATTERN =
@@ -21,6 +21,7 @@
     if (list === undefined || list === null) return READ_ONLY.slice();
     if (!Array.isArray(list)) throw new Error('capabilities must be a list');
     if (list.length > MAX) throw new Error(`A plugin declares at most ${MAX} capabilities`);
+    if (!list.length) return READ_ONLY.slice(); // an explicit empty list means the same as no declaration
     const out = [];
     for (const value of list) {
       if (typeof value !== 'string' || !PATTERN.test(value))

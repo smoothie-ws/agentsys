@@ -18,6 +18,11 @@ graph content and (by default) client plugins.
 | Sign-in attempts | 10 per minute per address by default (`AGENTSYS_AUTH_ATTEMPTS`, `AGENTSYS_AUTH_WINDOW_MS`). Over the limit answers `429` with `Retry-After`; a successful sign-in clears the count. |
 | Wrong/expired token | `401`; the client shows **Unauthorized** and does not retry with mutations. |
 
+A malformed cookie escape is treated as an anonymous request, not a `500`. An operator token that begins with the
+plugin prefix `pst_` is still the operator token: the prefix is checked only after the configured token, so the
+choice of token text cannot lock an operator out. Event streams are capped (`eventLimit`, 1000 by default) and
+released on disconnect; one caller cannot hold an unbounded number of them.
+
 Tokens are never accepted from query parameters, never written to `localStorage`, never logged, and are redacted
 from error text.
 
@@ -75,7 +80,8 @@ The combined server and the standalone client serve only `index.html` and the `j
 and `client-plugins/` trees. Server code (`js/backend/`, `js/storage/db.js`, `js/model/executor.js`, `bin/`,
 `server/`, `legacy/`) is never served. A request path containing a colon, backslash or NUL is refused before the
 lookup: on NTFS, `file.js::$DATA` would otherwise read a file past the server-only pattern. Traversal, encoded
-separators, stream suffixes and trailing dots/spaces are covered by `tests/static-serving.test.js`.
+separators, stream suffixes, Windows 8.3 aliases (`BACKEN~1`) and trailing dots/spaces are covered by
+`tests/static-serving.test.js` and `tests/server.test.js`.
 
 ## Script sandbox
 
@@ -88,13 +94,21 @@ not rewritten in this cycle; their regression tests still pass.
 
 A client plugin runs in a sandboxed iframe with an opaque origin: no host DOM, no browser storage, no cookies, no
 token, no direct network. It receives a narrow RPC API through the host. Page HTML is sanitized (including
-namespaced `<svg><script>`), CSS cannot load external resources, sidebar links must be paths of this client, and
-a plugin can execute only its own commands.
+namespaced `<svg><script>` and `<style>`), URL schemes are normalized before matching so `java&#10;script:` cannot
+slip through, non-image `data:` URLs are removed, CSS cannot load external resources, sidebar links must be paths
+of this client, and a plugin can execute only its own commands.
 
 On top of the sandbox there is a **capability layer** for server calls: the host classifies every `api.request`
 by method, path and (for `net`) the body, and refuses calls the package did not declare. A package without
 `capabilities` is read-only; writes, runs, secrets and network hosts are named explicitly
 (`graph.write`, `run.start`, `secrets.use:<name>`, `net.fetch:<host>`). Auth endpoints are never reachable.
+Notifications are a server write too: `api.ui.notify` needs `notifications.write` and goes through the scoped
+token instead of the host's session.
+
+The sandbox document itself carries a restrictive CSP: `connect-src 'none'` (no direct `fetch`), `img-src data:
+blob:`, `frame-src 'none'` and `default-src 'none'`. A plugin can therefore reach the network only through the
+checked `api.request`, not from its own script. The host also rejects messages whose `event.origin` is not the
+opaque origin of its own frame, so a frame navigated elsewhere cannot act as the plugin.
 
 The same capabilities are enforced by the **server**: the host exchanges its session for a short-lived token
 scoped to the package's capabilities (`POST /api/auth/plugin-session`), the plugin's calls carry it, and the
@@ -107,6 +121,26 @@ its own check; nothing else changes.
 API with the owner token is outside the plugin model: the token is the server's trust boundary, the scoped token
 is the plugin's. See [plugins.md](plugins.md).
 
+## Network egress
+
+`POST /api/net` and a Script's `agentsys('POST','net',…)` share one checked route:
+
+- Only `http:`/`https:` URLs without embedded credentials are accepted. A `{{secret:name}}` placeholder is refused
+  in the URL, because it would move the host that was checked; secrets belong in headers or the body.
+- Redirects are never followed. A `3xx` is a refusal, so a permitted host cannot bounce the request elsewhere.
+- The response is read with a hard 2 MB limit (declared length and streamed bytes) and a timeout clamped to
+  1–120 s. Stop aborts the request through the same signal as the execution.
+- The optional server allowlist (`--allow-net` / `AGENTSYS_ALLOW_NET`) is compared against the normalized
+  authority: lower-case, root dot removed, port included. A wildcard matches any run of characters but never a
+  look-alike suffix (`*.example.com` does not match `example.com.evil`). IPv4 and bracketed IPv6 literals are
+  supported.
+- `--deny-private-net` (or `AGENTSYS_NET_DENY_PRIVATE=1`) refuses loopback, private, link-local, CGNAT, multicast
+  and documentation destinations. The hostname is resolved first, every answer must be public, and the request is
+  then **pinned** to the checked address (`lookup` is supplied to Node's HTTP client) so DNS rebinding between the
+  check and the connection is not possible. A project may turn the same rule on for its own Scripts, with its own
+  host list, in `PUT /api/projects/{id}/policy` (`{allow:[…], net:{allow:["api.example.com"], deny_private:true}}`).
+- The behavior is reported in `GET /api/meta` (`net_allowlist`, `net_block_private`).
+
 ## Remaining risks
 
 - Loopback trust assumes the machine itself is not hostile. Any local process can use a tokenless loopback API.
@@ -117,9 +151,11 @@ is the plugin's. See [plugins.md](plugins.md).
 - Generic collections and Script nodes are user data. The server validates their shape but cannot know whether a
   workflow has harmful external side effects; permissions and project policy are the control.
 - `POST /api/net` is reachable by any token holder and by a plugin with `net.fetch:<host>`; the host, not the
-  method, decides what is fetched. Treat a token as an operator credential. A deployment can set
-  `--allow-net host[,host]` (or `AGENTSYS_ALLOW_NET`) to restrict every caller, Scripts included; it is empty by
-  default, so the per-Script grant remains the normal control.
+  method, decides what is fetched. Treat a token as an operator credential. `--allow-net` restricts every caller,
+  Scripts included, and `--deny-private-net` blocks internal destinations; both are opt-in, so the per-Script grant
+  and project policy remain the normal controls.
+- Pinning protects a deny-private request from a DNS answer that changes after the check. A host that legitimately
+  resolves to several addresses is refused if any answer is private (fail closed).
 - A plugin's `graph.write` (or `library.write`) is a real write to the user's data. Capabilities bound the
   plugin's reach; they do not make an untrusted plugin safe to install.
 - No multi-user roles, no per-user audit log. These are future work.

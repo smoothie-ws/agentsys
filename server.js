@@ -197,6 +197,8 @@ function createServer(options = {}) {
     SESSIONS = new Map(),
     SESSION_TTL_MS = Math.max(1000, Number(options.sessionTtlMs || 12 * 60 * 60 * 1000)),
     SESSION_LIMIT = Math.max(1, Math.min(100000, Number(options.sessionLimit || 10000))),
+    // One authenticated caller must not be able to hold an unbounded number of event streams open.
+    EVENT_LIMIT = Math.max(1, Math.min(100000, Number(options.eventLimit || 1000))),
     // Scoped tokens for client plugins: short-lived, limited to the capabilities the host asked for, and enforced
     // by the server on every call (not only by the host page that issued them).
     PLUGIN_TOKENS = new Map(),
@@ -214,6 +216,9 @@ function createServer(options = {}) {
         .map(value => value.trim())
         .filter(Boolean)
     ),
+    NET_BLOCK_PRIVATE =
+      options.blockPrivateNet === true ||
+      (options.blockPrivateNet === undefined && process.env.AGENTSYS_NET_DENY_PRIVATE === '1'),
     // Sign-in attempts from one address are limited: a wrong token must not be a free brute-force oracle. A
     // successful sign-in clears the count.
     AUTH_ATTEMPTS = Math.max(1, Number(options.authAttempts || process.env.AGENTSYS_AUTH_ATTEMPTS || 10)),
@@ -257,11 +262,18 @@ function createServer(options = {}) {
   }
   const sessionHash = value => crypto.createHash('sha256').update(String(value)).digest('hex');
   const cookies = req => {
-    const out = {};
+    const out = Object.create(null);
     for (const part of String(req.headers.cookie || '').split(';')) {
       const at = part.indexOf('=');
       if (at < 0) continue;
-      out[part.slice(0, at).trim()] = decodeURIComponent(part.slice(at + 1).trim());
+      // A malformed escape is an anonymous request, not a server error: anyone can craft a cookie header.
+      let value;
+      try {
+        value = decodeURIComponent(part.slice(at + 1).trim());
+      } catch {
+        continue;
+      }
+      out[part.slice(0, at).trim()] = value;
     }
     return out;
   };
@@ -301,6 +313,8 @@ function createServer(options = {}) {
   /** Which plugin token (if any) this request presents: `{entry, hash}`, `{invalid: true, expired}` or null. */
   const pluginTokenOf = req => {
     const bearer = /^Bearer\s+(.+)$/i.exec(String(req.headers.authorization || ''))?.[1] || '';
+    // An operator token that happens to start with the plugin prefix is still the operator token.
+    if (TOKEN && same(bearer, TOKEN)) return null;
     if (!bearer.startsWith(PLUGIN_TOKEN_PREFIX)) return null;
     const hash = sessionHash(bearer),
       found = PLUGIN_TOKENS.get(hash);
@@ -374,6 +388,18 @@ function createServer(options = {}) {
     }
   };
   const originOf = req => String(req.headers.origin || '').replace(/\/+$/, '').toLowerCase();
+  /**
+   * The address a sign-in is counted against. Only a server explicitly started with --trust-proxy reads the
+   * forwarded list, and then only its first entry: otherwise every client of a proxy would share one counter.
+   */
+  const authAddress = req => {
+    const direct = String(req.socket?.remoteAddress || 'unknown');
+    if (!TRUST_PROXY) return direct;
+    const forwarded = String(req.headers['x-forwarded-for'] || '')
+      .split(',')[0]
+      .trim();
+    return forwarded || direct;
+  };
   const hostName = req =>
     String(req.headers.host || '')
       .replace(/:\d+$/, '')
@@ -412,7 +438,7 @@ function createServer(options = {}) {
       'Access-Control-Allow-Origin': origin,
       'Access-Control-Allow-Credentials': 'true',
       'Access-Control-Allow-Methods': 'GET, POST, PUT, PATCH, DELETE, OPTIONS',
-      'Access-Control-Allow-Headers': 'Authorization, Content-Type, If-Match, X-AgentSys, X-Edit, X-Agentsys-Protocol',
+      'Access-Control-Allow-Headers': 'Authorization, Content-Type, If-Match, X-AgentSys, X-Edit, X-Agentsys-Client, X-Agentsys-Protocol',
       'Access-Control-Max-Age': '600',
       Vary: 'Origin',
     };
@@ -497,6 +523,10 @@ function createServer(options = {}) {
   const madeDirs = new Set(); // directories this process created or found: no mkdir per file written
   function atomicText(file, text, mode) {
     try {
+      const bytes = Buffer.byteLength(text);
+      const stat = fs.statSync(file);
+      // A size difference already proves a content difference; only an equal size needs the read to compare.
+      if (stat.size !== bytes) throw Object.assign(new Error('different'), {code: 'ENOENT'});
       if (fs.readFileSync(file, 'utf8') === text) return;
     } catch (error) {
       if (error.code !== 'ENOENT') throw error;
@@ -568,6 +598,7 @@ function createServer(options = {}) {
     }
     broadcastEvent({type: 'change', keys, by});
   };
+  const scriptRefsCache = new Map(); // key -> {stamp, names}: avoid reading a large unchanged graph on every save
   function writeKey(key, value) {
     const file = abs(key);
     if (key === 'resources' || key.startsWith('wf:')) {
@@ -575,10 +606,17 @@ function createServer(options = {}) {
         folder = file.replace(/\.json$/, '.files');
       let previous = [];
       try {
-        previous = scriptRefs(JSON.parse(fs.readFileSync(file, 'utf8')).value);
+        const stamp = stampOf(file),
+          cached = scriptRefsCache.get(key);
+        if (cached && stamp && cached.stamp === stamp) previous = cached.names;
+        else {
+          previous = scriptRefs(JSON.parse(fs.readFileSync(file, 'utf8')).value);
+          if (stamp) scriptRefsCache.set(key, {stamp, names: previous});
+        }
       } catch (error) {
         if (error.code !== 'ENOENT') throw error;
       }
+      const next = [];
       for (const [name, text] of Object.entries(packet.files))
         if (name !== 'graph.json') atomicText(path.join(folder, ...name.split('/')), text);
       atomicText(file, packet.files['graph.json']);
@@ -590,12 +628,15 @@ function createServer(options = {}) {
             if (error.code !== 'ENOENT') throw error;
           }
         }
+      for (const name of Object.keys(packet.files)) if (name !== 'graph.json') next.push(name);
+      scriptRefsCache.set(key, {stamp: stampOf(file), names: next});
       return;
     }
     atomicText(file, JSON.stringify(value, null, 2) + '\n', key.startsWith('secrets/') ? 0o600 : undefined);
   }
   function removeKey(key) {
     madeDirs.clear();
+    scriptRefsCache.delete(key);
     const file = abs(key),
       folder = file.replace(/\.json$/, '.files');
     if (!path.resolve(folder).startsWith(path.resolve(DATA) + path.sep)) throw new Error('Unsafe storage path');
@@ -653,7 +694,16 @@ function createServer(options = {}) {
       console.warn('[agentsys] ignored an unreadable .transaction.json: ' + error.message);
       return;
     }
-    applyTransaction(packet);
+    try {
+      applyTransaction(packet);
+    } catch (error) {
+      // A key the folder cannot accept (for example a directory where a file belongs) must not stop every later
+      // start: keep the record for inspection and boot on the data files that did reach the disk.
+      try {
+        fs.renameSync(transactionFile, transactionFile + '.invalid');
+      } catch {}
+      console.warn('[agentsys] a redo record could not be applied: ' + error.message);
+    }
   }
   function commitKeys({set = {}, remove = []}) {
     const keys = [...Object.keys(set), ...remove];
@@ -678,6 +728,7 @@ function createServer(options = {}) {
       root: ROOT,
       scripts: 'worker',
       allowedNetHosts: NET_ALLOW,
+      blockPrivateNet: NET_BLOCK_PRIVATE,
       store: {
         dir: DATA,
         get(key) {
@@ -849,6 +900,11 @@ function createServer(options = {}) {
       clients: eventClients.size,
       sessions: SESSIONS.size,
       plugin_sessions: PLUGIN_TOKENS.size,
+      memory: (() => {
+        const usage = process.memoryUsage();
+        const mb = value => Math.round((value / 1024 / 1024) * 10) / 10;
+        return {heap_mb: mb(usage.heapUsed), rss_mb: mb(usage.rss)};
+      })(),
       recent_errors: recentErrors.slice(),
     };
   }
@@ -885,6 +941,7 @@ function createServer(options = {}) {
       server_plugins: false,
       plugin_tokens: true,
       net_allowlist: NET_ALLOW.length > 0,
+      net_block_private: NET_BLOCK_PRIVATE,
       tls: !!TLS,
     },
   });  /** The API page is also a platform reference: add the HTTP-level endpoints to the generated contract. */
@@ -924,7 +981,7 @@ function createServer(options = {}) {
       if (hostRefused(req)) return sendJSON(res, 403, {error: {code: 'forbidden', message: 'Unexpected Host header'}});
       if (originOf(req) && !originAllowed(req))
         return sendJSON(res, 403, {error: {code: 'forbidden', message: 'This origin may not open a session'}});
-      const address = String(req.socket?.remoteAddress || 'unknown');
+      const address = authAddress(req);
       const wait = authWait(address);
       if (wait) {
         res.setHeader('Retry-After', String(wait));
@@ -1014,6 +1071,12 @@ function createServer(options = {}) {
         error: {code: 'permission_denied', message: 'A plugin token cannot read server events, diagnostics or the contract'},
       });
     if (req.method === 'GET' && rel === 'events') {
+      if (eventClients.size >= EVENT_LIMIT) {
+        res.setHeader('Retry-After', '30');
+        return sendJSON(res, 429, {
+          error: {code: 'too_many_streams', message: `This server already holds ${EVENT_LIMIT} event streams.`},
+        });
+      }
       res.writeHead(200, {
         'Content-Type': 'text/event-stream',
         'Cache-Control': 'no-store',
@@ -1070,21 +1133,28 @@ function createServer(options = {}) {
     const edit = req.headers['x-edit'];
     if (edit !== undefined && (typeof edit !== 'string' || edit.length > 100))
       throw Object.assign(new Error('Invalid edit token'), {status: 400, code: 'invalid_request'});
-    const result = await Backend.request(req.method, rel, {body, query, edit: edit ?? null});
-    // Results come out of the backend's own realm; JSON is the contract.
-    sendJSON(
-      res,
-      result === undefined ? 204 : 200,
-      result === undefined ? undefined : JSON.parse(JSON.stringify(result))
-    );
+    const result = await Backend.request(req.method, rel, {
+      body,
+      query,
+      edit: edit ?? null,
+      client: /^[A-Za-z0-9._:-]{1,100}$/.test(String(req.headers[Protocol.CLIENT_HEADER] || ''))
+        ? String(req.headers[Protocol.CLIENT_HEADER])
+        : null,
+    });
+    if (result === undefined) return send(res, 204, '');
+    // Serialize once: the backend's objects live in the vm realm and JSON is the contract, so an extra
+    // parse/stringify round trip costs a large graph read about a third of the response time.
+    return send(res, 200, JSON.stringify(result));
   }
   async function handleStatic(req, res, url, editor = false) {
     if (!SERVE_CLIENT) return send(res, 404, 'This server does not host the client. Use the AgentSys Client.', 'text/plain');
     let rel = decodeURIComponent(url.pathname);
     // A colon opens a Windows drive or an NTFS alternate data stream (`file.js::$DATA`), and a backslash or NUL is
     // never part of a served path. Refuse them before the file is looked up, so a stream suffix cannot slip past
-    // the server-only pattern below.
-    if (/[:\\\0]/.test(rel)) return send(res, 404, 'Not found', 'text/plain');
+    // the server-only pattern below. Windows 8.3 aliases (`BACKEN~1`) are refused for the same reason: they would
+    // spell a server-only directory without matching its name.
+    if (/[:\\\0]/.test(rel) || (process.platform === 'win32' && /(?:^|[\\/])[^\\/]*~[0-9][^\\/]*(?:[\\/]|$)/.test(rel)))
+      return send(res, 404, 'Not found', 'text/plain');
     const pageRoute = editor && (!path.extname(rel) || /^\/(?:p|library|ext)\//.test(rel));
     if (rel.endsWith('/')) rel += 'index.html';
     let file = path.join(ROOT, rel);
@@ -1119,9 +1189,16 @@ function createServer(options = {}) {
     }
     // Nested editor routes resolve their assets under /editor/ too.
     if (file === path.join(ROOT, 'index.html')) {
-      const state = JSON.stringify(
-        !hostRefused(req) && (!TOKEN || tokenGiven(req)) && (loopbackBound || TOKEN) ? readKey('ui-state') || {} : {}
-      ).replace(/</g, '\\u003c');
+      let stored = {};
+      if (!hostRefused(req) && (!TOKEN || tokenGiven(req)) && (loopbackBound || TOKEN)) {
+        try {
+          stored = readKey('ui-state') || {};
+        } catch {
+          // A damaged preference file must not make the editor unavailable; the browser-local store starts empty.
+          stored = {};
+        }
+      }
+      const state = JSON.stringify(stored).replace(/</g, '\\u003c');
       data = Buffer.from(
         String(data).replace('<head>', () => '<head><script>globalThis.AGENTSYS_UI_STORE=' + state + ';</script>')
       );

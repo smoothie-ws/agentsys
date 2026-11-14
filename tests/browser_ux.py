@@ -95,16 +95,13 @@ async def main():
             await page.screenshot(path=str(SHOTS / f'projects-empty{SHOT_SUFFIX}.jpg'), type='jpeg', quality=72)
             await page.goto(f'http://127.0.0.1:{client_port}/#/plugins')
             await page.wait_for_selector('h1:has-text("Plugins")')
-            assert await page.locator('.card').count() >= 2, 'the bundled catalog is listed'
-            await page.goto(f'http://127.0.0.1:{client_port}/#/collections')
-            await page.wait_for_selector('h1:has-text("Collections")')
-            assert await page.locator('.empty').count() >= 1 or 'No collection' in await page.locator('#view').inner_text()
-            print('PASS empty states name what is missing (projects, plugins, collections)', flush=True)
+            assert 'No client plugins' in await page.locator('#view').inner_text()
+            print('PASS empty states name what is missing (projects, plugins)', flush=True)
 
             # Every main page loads without a page error and without a horizontal scrollbar.
             for route, heading in [
                 ('library', 'Library'),
-                ('environments', 'Environments'),
+                ('environments', 'Server'),
                 ('settings', 'Settings'),
                 ('api', 'API'),
             ]:
@@ -117,8 +114,7 @@ async def main():
                 ('', 'Dashboard'),
                 ('projects', 'Projects'),
                 ('library', 'Library'),
-                ('collections', 'Collections'),
-                ('environments', 'Environments'),
+                ('environments', 'Server'),
                 ('plugins', 'Plugins'),
                 ('settings', 'Settings'),
                 ('api', 'API'),
@@ -151,10 +147,15 @@ async def main():
                 free_port(),
             )
             await page.goto(f'http://127.0.0.1:{client_port}/#/environments')
-            await page.wait_for_selector('h1:has-text("Environments")')
-            status = await page.locator('.environment-row', has_text='Closed port').locator('.environment-status').inner_text()
+            await page.wait_for_selector('h1:has-text("Server")')
+            status = await page.locator('[data-env-row]', has_text='Closed port').locator('.environment-status').inner_text()
             assert status in {'Disconnected', 'Connection error'}, status
-            assert await page.locator('[data-env-use]').count() >= 1
+            closed_card = page.locator('[data-env-row]', has_text='Closed port')
+            await closed_card.locator('[data-menu]').click()
+            labels = await page.locator('.popup [role=menuitem]').all_text_contents()
+            assert any(label.startswith('Reconnect') or label.startswith('Use this server') for label in labels), labels
+            assert any(label.startswith('Remove server') for label in labels), labels
+            await page.keyboard.press('Escape')
             await page.screenshot(path=str(SHOTS / f'environments-disconnected{SHOT_SUFFIX}.jpg'), type='jpeg', quality=72)
             # The rest of the interface still works on the saved (unreachable) environment.
             await page.goto(f'http://127.0.0.1:{client_port}/#/projects')
@@ -174,26 +175,27 @@ async def main():
             assert await page.locator('[data-retry]').count() == 0, 'the reachable page has no error state'
             print('PASS an unreachable server keeps the page title and offers a retry', flush=True)
 
-            # Environments: remove the saved unreachable server through its row, leaving the real one.
+            # Servers: remove the saved unreachable server through its row, leaving the real one.
             await page.goto(f'http://127.0.0.1:{client_port}/#/environments')
-            await page.wait_for_selector('h1:has-text("Environments")')
-            closed = page.locator('.environment-row', has_text='Closed port')
-            await closed.locator('[data-env-remove]').click()
+            await page.wait_for_selector('h1:has-text("Server")')
+            closed = page.locator('[data-env-row]', has_text='Closed port')
+            await closed.locator('[data-menu]').click()
+            await page.get_by_role('menuitem', name='Remove server…', exact=True).click()
             await page.wait_for_selector('#modal[open]')
             await page.click('#modal button[value=ok]')
             await page.wait_for_function(
-                "[...document.querySelectorAll('.environment-row')].every(row => !row.innerText.includes('Closed port'))"
+                "[...document.querySelectorAll('[data-env-row]')].every(row => !row.innerText.includes('Closed port'))"
             )
             names = await page.evaluate("Environment.list().map(env => env.name)")
-            assert names == ['Local server'], names
-            print('PASS an environment is removed through its row and only the real one remains', flush=True)
+            assert names == ['Local Server'], names
+            print('PASS a server is removed through its row and only the real one remains', flush=True)
 
             # Keyboard: Ctrl+K opens search, typing filters, Escape closes it, focus is not left behind.
             await page.goto(f'http://127.0.0.1:{client_port}/#/')
             await page.wait_for_selector('.page.dashboard')
             await page.keyboard.press('Control+k')
             await page.wait_for_selector('#modal[open] #search-input')
-            await page.keyboard.type('Environ')
+            await page.keyboard.type('Serv')
             await page.wait_for_selector('#search-results a, #search-results button')
             await page.keyboard.press('Escape')
             await page.wait_for_function("!document.querySelector('#modal').open")
@@ -216,6 +218,25 @@ async def main():
             await page.screenshot(path=str(SHOTS / f'dashboard-mobile{SHOT_SUFFIX}.jpg'), type='jpeg', quality=72)
             print('PASS the phone layout uses its own navigation and closes it with Escape', flush=True)
 
+            # A browser navigation with an unsaved autosave form asks before dropping the text. A clean page
+            # leaves without a dialog (tested by every other navigation above).
+            await page.goto(f'http://127.0.0.1:{client_port}/#/settings')
+            await page.wait_for_selector('#settings-form input[name=undo_steps]')
+            await page.fill('#settings-form input[name=undo_steps]', '41')
+            dialogs = []
+
+            async def on_dialog(dialog):
+                dialogs.append(dialog.type)
+                await dialog.accept()
+
+            page.on('dialog', on_dialog)
+            dirty = await page.evaluate("() => !!(app.pageSave && app.pageSave.element.isConnected && app.pageSave.isDirty())")
+            assert dirty, 'the edited form reports unsaved changes'
+            await page.reload()
+            await page.wait_for_selector('#settings-form input[name=undo_steps]')
+            assert 'beforeunload' in dialogs, dialogs
+            print('PASS an unsaved settings change asks before the page is closed', flush=True)
+
             # An API error is reported in words, not as a silent failure. Creating without a name makes
             # "Untitled1" on purpose; renaming to nothing is refused with a message about the name.
             await page.evaluate("Environment.setActive('local')")
@@ -227,38 +248,6 @@ async def main():
             )
             assert 'name' in error.lower(), error
             print('PASS a refused write returns a readable message', flush=True)
-
-            # Collections: create one, add a record, see a validation error, correct it, delete both.
-            await page.set_viewport_size({'width': 1280, 'height': 900})
-            await page.goto(f'http://127.0.0.1:{client_port}/#/collections')
-            await page.wait_for_selector('[data-collection-add]')
-            await page.click('[data-collection-add]')
-            await page.wait_for_selector('#modal[open] input[name=name]')
-            await page.fill('#modal input[name=name]', 'notes')
-            await page.fill('#modal input[name=title]', 'Notes')
-            await page.fill(
-                '#modal textarea[name=schema]',
-                '{"type":"object","properties":{"text":{"type":"string"}},"required":["text"]}',
-            )
-            await page.click('#modal button.primary')
-            await page.wait_for_selector('h1:has-text("Notes")')
-            await page.click('[data-record-add]')
-            await page.wait_for_selector('#modal[open] textarea[name=data]')
-            # A body that is not JSON is refused in place, with the dialog open.
-            await page.fill('#modal textarea[name=data]', '{bad')
-            await page.click('#modal button.primary')
-            await page.wait_for_selector('#modal[open] [data-form-error]:not([hidden])')
-            assert 'JSON' in await page.locator('#modal [data-form-error]').inner_text()
-            await page.fill('#modal textarea[name=data]', '{"text":"hello from the UI"}')
-            await page.click('#modal button.primary')
-            await page.wait_for_selector('#collection-records tr:has-text("hello from the UI")')
-            await page.click('[data-record-delete]')
-            await page.wait_for_selector('#collection-records td:has-text("No records yet.")')
-            await page.click('[data-collection-delete]')
-            await page.wait_for_selector('#modal[open]')
-            await page.click('#modal button[value=ok]')
-            await page.wait_for_selector('h1:has-text("Collections")')
-            print('PASS collections: create, validate a bad record, add, delete record and collection through the UI', flush=True)
 
             # WebKit reports a cross-origin fetch to an unreachable server as "due to access control
             # checks"; that is the expected state of the deliberately closed environment, not a page error.

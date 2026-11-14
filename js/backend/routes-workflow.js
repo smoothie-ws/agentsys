@@ -44,7 +44,7 @@ route(
   'Read the workflow graph',
   async (c, {project_id}) => {
     const {project, meta, doc} = await c.workflow(project_id),
-      h = historyOf(meta.id);
+      h = historyOf(meta.id, c.client);
     return {...buildSnapshot(project, meta, doc), history: {undo: h.undo.length, redo: h.redo.length}};
   },
   {
@@ -60,7 +60,7 @@ for (const redo of [false, true])
     redo ? 'Redo the last undone edit' : 'Undo the last edit',
     async (c, {project_id}) => {
       const {meta, doc} = await c.workflow(project_id),
-        h = historyOf(meta.id),
+        h = historyOf(meta.id, c.client),
         from = redo ? h.redo : h.undo,
         to = redo ? h.undo : h.redo,
         entry = from.pop();

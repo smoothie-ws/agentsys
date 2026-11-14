@@ -7,6 +7,7 @@ const test = require('node:test'),
   os = require('node:os'),
   path = require('node:path');
 const {createApiServer} = require('../server/api-server');
+const Protocol = require('../shared/protocol');
 
 const TOKEN = 'concurrency-token';
 const bearer = {Authorization: 'Bearer ' + TOKEN, 'Content-Type': 'application/json', 'X-AgentSys': '1'};
@@ -92,6 +93,52 @@ test('a conditional write is refused when the workflow changed since it was read
     assert.equal(fourth.status, 200);
     const final = await call(base, 'GET', `projects/${project.id}/workflow`);
     assert.equal(final.body.nodes.length, 3);
+  } finally {
+    await app.close();
+    fs.rmSync(dir, {recursive: true, force: true});
+  }
+});
+
+test('each client has its own undo stack, and another client edit clears the stale one', async () => {
+  const {app, base, dir} = await start();
+  const client = id => ({[Protocol.CLIENT_HEADER]: id});
+  try {
+    await call(base, 'PUT', 'settings', {body: {developer_mode: true}});
+    const project = (await call(base, 'POST', 'projects', {body: {name: 'Undo per client'}})).body;
+    const make = (title, id, x) =>
+      call(base, 'POST', `projects/${project.id}/typed-nodes`, {
+        body: {
+          node_type: 'custom',
+          config: {title, inputs: [], outputs: [{id: 'out', name: 'out', type: 'signal'}], op: 'on_run'},
+          position: {x, y: 0},
+        },
+        headers: client(id),
+      });
+    const snapshot = async id =>
+      (await call(base, 'GET', `projects/${project.id}/workflow`, {headers: client(id)})).body;
+
+    assert.equal((await make('A1', 'client-a', 0)).status, 200);
+    let a = await snapshot('client-a'),
+      b = await snapshot('client-b');
+    assert.equal(a.history.undo, 1, 'the editor sees its own undo');
+    assert.equal(b.history.undo, 0, 'the other editor has nothing to undo');
+
+    // B edits: A's stack would now revert work A never saw, so it is dropped rather than applied.
+    assert.equal((await make('B1', 'client-b', 100)).status, 200);
+    a = await snapshot('client-a');
+    b = await snapshot('client-b');
+    assert.equal(a.history.undo, 0, 'a foreign edit cleared the stale stack');
+    assert.equal(b.history.undo, 1);
+    const undoA = await call(base, 'POST', `projects/${project.id}/undo`, {body: {}, headers: client('client-a')});
+    assert.equal(undoA.body.undo, 0);
+    assert.equal((await snapshot('client-a')).nodes.length, 2, 'nothing was reverted');
+
+    // B's own undo is applied and removes only B's node.
+    const undoB = await call(base, 'POST', `projects/${project.id}/undo`, {body: {}, headers: client('client-b')});
+    assert.equal(undoB.body.undo, 0);
+    const final = await snapshot('client-b');
+    assert.deepEqual(final.nodes.map(node => node.config.title), ['A1']);
+    assert.equal(final.history.undo, 0);
   } finally {
     await app.close();
     fs.rmSync(dir, {recursive: true, force: true});

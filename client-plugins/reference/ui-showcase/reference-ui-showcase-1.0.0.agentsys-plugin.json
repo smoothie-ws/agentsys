@@ -1,0 +1,39 @@
+{
+  "format": 2,
+  "manifest": {
+    "id": "reference-ui-showcase",
+    "name": "Reference: UI Showcase",
+    "version": "1.0.0",
+    "description": "Every client interface extension point: a page, a toolbar action, a canvas context menu, a command, a notification, a dashboard card, settings and an inspector section.",
+    "icon": "plug",
+    "api": 2,
+    "engines": {
+      "agentsys": ">=0.3.0 <1.0.0"
+    },
+    "capabilities": [
+      "graph.read",
+      "library.read",
+      "notifications.write",
+      "settings.read"
+    ],
+    "dependencies": {},
+    "author": "AgentSys reference plugins",
+    "license": "MIT",
+    "homepage": ""
+  },
+  "main": "main.js",
+  "files": {
+    "lib/labels.json": "{\n  \"note\": \"This line comes from a JSON module inside the plugin package.\"\n}\n",
+    "lib/render.js": "// The page, cards and sections of the UI showcase. Modules are loaded with a tiny CommonJS loader; no bundler.\n'use strict';\n\nconst labels = require('./labels.json');\n\nconst escape = value =>\n  String(value ?? '').replace(/[&<>\"']/g, character => ({'&': '&amp;', '<': '&lt;', '>': '&gt;', '\"': '&quot;', \"'\": '&#39;'})[character]);\n\nconst shell = (title, body, hint = '') =>\n  `<div class=\"plugin-showcase\"><h2>${escape(title)}</h2>${hint ? `<p class=\"muted\">${escape(hint)}</p>` : ''}${body}</div>`;\n\nasync function page(api, context) {\n  const settings = await api.settings.get();\n  const environment = await api.env.info();\n  const stored = await api.storage.get('last', null);\n  const projects = await api.request('GET', 'projects');\n  return shell(\n    'A page drawn by a sandboxed plugin',\n    `<dl class=\"page-facts\">\n      <div><dt>Plugin</dt><dd>${escape(api.id)} ${escape(api.version)}</dd></div>\n      <div><dt>API</dt><dd>${escape(api.api || api.version)}</dd></div>\n      <div><dt>Server</dt><dd>${escape(environment.name || 'unknown')} · ${escape(environment.status || '')}</dd></div>\n      <div><dt>Projects</dt><dd>${projects.length}</dd></div>\n      <div><dt>Stored</dt><dd>${stored ? escape(stored.name) : 'nothing yet'}</dd></div>\n    </dl>\n    <p class=\"plugin-logo-line\"><img class=\"plugin-logo\" src=\"${escape(api.asset('logo'))}\" alt=\"Plugin logo\" width=\"16\" height=\"16\"> Bundled image from <code>assets/logo.png</code>.</p>\n    <p class=\"muted\">The page cannot touch the application DOM. It returns passive HTML, and the host draws it with\n    the application's own styles. A <code>data-command</code> button calls a command of this plugin.</p>\n    <p class=\"muted small\">${escape(labels.note)}</p>\n    <div class=\"button-row\"><button type=\"button\" class=\"primary\" data-command=\"hello\" data-args='[{\"name\":\"page\"}]'>Say hello</button>\n    <button type=\"button\" data-command=\"notify\">Send a notification</button></div>\n    <p class=\"muted small\">Settings saved here: ${escape(JSON.stringify(settings))}</p>`,\n    'Rendered as a plugin page at /ext/reference-ui-showcase/showcase.'\n  );\n}\n\nasync function card(api) {\n  const stored = await api.storage.get('last', null);\n  return `<p class=\"muted\">A dashboard card from <strong>${escape(api.title)}</strong>.</p>\n    <p>${stored ? `Last greeting: <strong>${escape(stored.name)}</strong>` : 'No greeting yet.'}</p>\n    <button type=\"button\" data-command=\"hello\" data-args='[{\"name\":\"dashboard\"}]'>Greet</button>`;\n}\n\nasync function settings(api) {\n  const value = await api.settings.get();\n  return `<dl class=\"page-facts\">\n    <div><dt>Greeting</dt><dd>${escape(value.greeting || 'Hello')}</dd></div>\n    <div><dt>Notifications</dt><dd>${escape(value.notifications === false ? 'off' : 'on')}</dd></div>\n  </dl>\n  <p class=\"muted small\">This section is drawn by the plugin into the application's Settings page.</p>\n  <button type=\"button\" data-command=\"rotate-settings\">Change the greeting</button>`;\n}\n\nasync function inspector(api, context) {\n  const node = context?.node || null;\n  return `<p class=\"muted\">Selection: <strong>${escape(node?.name || node?.label || node?.id || 'nothing')}</strong></p>\n    <p class=\"muted small\">An inspector section receives the selected node, project and workflow as plain data.</p>\n    <button type=\"button\" data-command=\"hello\" data-args='[{\"name\":\"inspector\"}]'>Greet</button>`;\n}\n\nmodule.exports = {page, card, settings, inspector};\n",
+    "main.js": "// Reference Plugin A: one plugin, every client extension point. Installed in this browser only.\n'use strict';\n\nconst render = require('./lib/render');\n\nlet greetings = 0;\n\nexports.onInstall = async api => {\n  await api.storage.set('installed', {version: api.version, at: Date.now()});\n};\n\nexports.onUpdate = async (api, context) => {\n  await api.storage.set('updated', {from: context.from, to: context.to, at: Date.now()});\n  return context.to;\n};\n\nexports.activate = async api => {\n  api.commands.register('hello', async (who = {}) => {\n    greetings++;\n    const settings = await api.settings.get();\n    const name = String(who?.name || 'there');\n    await api.storage.set('last', {name, count: greetings, at: Date.now()});\n    api.ui.toast(`${settings.greeting || 'Hello'}, ${name}!`);\n    return {name, count: greetings};\n  }, {title: 'Say hello', icon: 'sparkles'});\n\n  api.commands.register('notify', async () => {\n    const settings = await api.settings.get();\n    if (settings.notifications === false) return {skipped: true};\n    await api.ui.notify({title: 'UI Showcase', body: 'A notification posted through notifications.write.', level: 'info'});\n    return {posted: true};\n  }, {title: 'Send notification'});\n\n  api.commands.register('rotate-settings', async () => {\n    const settings = await api.settings.get();\n    const greetingsList = ['Hello', 'Hi', 'Welcome', 'Good to see you'];\n    const next = greetingsList[(greetingsList.indexOf(settings.greeting || 'Hello') + 1) % greetingsList.length];\n    await api.settings.set({...settings, greeting: next});\n    api.ui.toast(`Greeting is now “${next}”.`);\n    api.ui.refresh();\n    return next;\n  }, {title: 'Rotate greeting'});\n\n  api.ui.addToolbarButton({id: 'hello', command: 'hello', title: 'Say hello', icon: 'sparkles'});\n  api.ui.addContextMenu({label: 'Say hello to the selection', command: 'hello', args: [{name: 'selection'}], order: 40});\n  api.ui.addMenuItem('section:plugins', {label: 'Say hello', command: 'hello', icon: 'sparkles', order: 40});\n\n  api.ui.addPage({id: 'showcase', title: 'UI Showcase', description: 'Every interface extension point.', icon: 'palette', render: context => render.page(api, context)});\n  api.ui.addHomeCard({id: 'showcase', title: 'UI Showcase', icon: 'palette', render: () => render.card(api)});\n  api.ui.addSettingsSection({id: 'showcase', title: 'UI Showcase', description: 'Settings owned by a plugin.', render: () => render.settings(api)});\n  api.ui.addInspectorSection({id: 'showcase', title: 'UI Showcase', when: 'any', render: context => render.inspector(api, context)});\n};\n\nexports.deactivate = async api => {\n  api.log('UI Showcase deactivated; its interface and token are gone.');\n};\n"
+  },
+  "assets": {
+    "logo": "data:image/png;base64,iVBORw0KGgoAAAANSUhEUgAAAAEAAAABCAQAAAC1HAwCAAAAC0lEQVR42mP8/x8AAusB9Y9Zl1sAAAAASUVORK5CYII="
+  },
+  "contributes": {
+    "collections": [],
+    "library": [],
+    "workflows": []
+  },
+  "checksum": "fnv1a-99bb5bf7"
+}

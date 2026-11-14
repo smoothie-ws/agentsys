@@ -10,7 +10,7 @@ Uses only Node built-in modules. Each test builds an independent in-memory backe
 Coverage includes graph editing, types, wires, nested nodes, signals, reads, loops, execution controls,
 permissions, Data and Graph nodes, durable JSON, the HTTP server, collections, migration, the client transport,
 architectural boundaries, the plugin capability layer, concurrency and resource bounds. Recent result:
-**343 pass, 0 fail** (~13 s).
+**387 tests, 386 pass, 0 fail, 1 skipped (~20 s)**. The skip is the POSIX file-mode check on Windows.
 
 Useful focused runs:
 
@@ -27,11 +27,20 @@ node --test tests/storage-integrity.test.js tests/backup.test.js
 node --test tests/concurrency.test.js tests/api-contract.test.js
 node --test tests/engine-regression.test.js tests/resource.test.js
 node --test tests/graph-format.test.js
+node --test tests/network-policy.test.js tests/lifecycle.test.js
+node --test tests/format-property.test.js tests/runtime-robustness.test.js
+node --test tests/deployment.test.js tests/tls.test.js tests/soak.test.js
 ```
 
 `tests/platform.test.js` checks the platform split itself: no server plugin route, no client/server script
 cross-loading, `/api/meta`, sessions, CSRF/CORS, SSE, generic collections and a client plugin creating a
 runnable Library node. `tests/migration.test.js` checks the backup, preserved data and provider/secret move.
+
+Round 3 added: `network-policy.test.js` (local HTTP servers, allowlists, redirects, limits, abort, IPv6,
+private DNS pinning, project egress), `lifecycle.test.js` (streams, sessions, port release), `format-property`
+(random graph round-trips), `runtime-robustness` (parallel signals, paused Stop, eviction), `deployment`
+(CLI validation and start/stop), `tls` (self-signed HTTPS and trusted proxy) and `backup`/`storage-integrity`
+fault cases.
 
 ## Browser suite
 
@@ -57,20 +66,21 @@ Selected scenarios:
   scenarios use Chromium.
 
 - `platform` - **the split end-to-end test**: starts an API-only server and a static client as separate
-  processes; checks no local Backend/DB, the Environments page, a workflow run, continuation after the client
-  page closes, reconnect, a second server with isolated data, a sandboxed plugin creating a Library node, and a
+  processes; checks no local Backend/DB, the Server page, a workflow run, continuation after the client
+  page closes, reconnect, a second server with isolated data, an installed plugin creating a Library node, and a
   server restart that restores JSON without rerunning the graph.
-- `plugin_security` - installs a read-only plugin that tries to write, fetch, read a secret, run another
-  plugin's command and add a `javascript:` link: every attempt is refused, the victim command never runs; then a
-  plugin with `graph.write` performs exactly that write, and plugin page HTML is sanitized.
+- `plugin_security` - installs a read-only plugin that tries to write, fetch directly from its iframe, read a secret,
+  run another plugin's command, post a notification and add a `javascript:` link: every attempt is refused, the
+  victim command never runs and no request reaches a local recorder; then a plugin with `graph.write` performs
+  exactly that write, a `notifications.write` plugin posts one, disabling it revokes its token, a failing plugin is
+  isolated, and plugin page HTML is sanitized (including a newline-obfuscated `javascript:` link and `<style>`).
 - `editor` - the workflow editor through its own controls on the split client: add a node from the Add menu,
   undo and redo from the toolbar, delete a selected node with the keyboard and restore it, reload and find the
   stored graph, then Run from the toolbar and read the display.
 - `ux` - desktop, tablet and phone layouts; empty states; one heading and named controls on every page; an
-  unreachable server that keeps its title and offers a retry; removing an environment from its row; keyboard
-  search; a readable API error; creating a collection and a record through the interface (including a refused
-  invalid body). Runs on Chromium, Firefox and WebKit. Saves screenshots to
-  `docs/audits/platform-marathon/screenshots/`.
+  unreachable server that keeps its title and offers a retry; removing a server from its row; keyboard
+  search; a readable API error; an unsaved settings change warning. Runs on Chromium, Firefox and WebKit. Saves
+  screenshots to `docs/audits/platform-marathon/screenshots/`.
 - `execution_ui` - Run/Pause/Resume/Stop and previews across tabs and reloads on the combined local server.
 - `shell` - navigation, tabs, toolbar and responsive shell.
 - `design` - page geometry at desktop, tablet and phone widths; node/signal appearance.
@@ -107,8 +117,10 @@ method are in [baseline](baseline.md).
 
 ## What the tests do not cover
 
-- TLS termination and a real reverse proxy.
+- TLS termination and a real reverse proxy. `tests/tls.test.js` covers direct HTTPS with a generated self-signed
+  certificate and the trusted-proxy cookie rule, but not a public CA, OCSP or a deployed nginx/Caddy.
 - Every mobile browser and every private-network permission prompt.
-- A malicious user-installed client plugin (the sandbox is tested as a boundary for code, not as an
-  authorization system).
+- A malicious user-installed client plugin is covered as a sandbox boundary and a capability system in
+  [plugin-testing.md](plugin-testing.md) and [plugin-security.md](plugin-security.md); it is still not an
+  authorization system against a modified client or the owner's own token.
 - Durable resumption of JavaScript (not implemented).

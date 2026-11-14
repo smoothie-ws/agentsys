@@ -37,7 +37,7 @@ No npm install or build step is required: Node.js 20+ built-in modules and brows
 
 ## Use another server
 
-Open **Environments**, add the server's HTTPS address and its token if it has one, and choose *Use*. A client
+Open the **Server** row in the left sidebar, just above **Settings**, add the server's HTTPS address and its token if it has one, and choose *Use this server*. A client
 can switch between a local server, a LAN machine and a VPS. Projects, Library and runtime belong to each
 server and are never merged. See [Environments](docs/environments.md).
 
@@ -56,11 +56,18 @@ server and are never merged. See [Environments](docs/environments.md).
 
 ## Client plugins
 
-Install a JSON package from **Plugins**. It runs in a sandboxed iframe with a narrow host API; its pages and
-cards are sanitized. It reaches the server only through the normal API and cannot read the server token. A
-package declares what it may do there: without `capabilities` it is read-only, and writes, runs, secrets and
-network hosts are named explicitly. The check runs in the host page, so it holds against the plugin, not against
-an operator who edits the client. See [Plugins](docs/plugins.md).
+Install a JSON package from the **Plugins** page's **⋯** menu. It runs in a sandboxed iframe with a narrow public SDK; its pages and cards
+are sanitized. It reaches the server only through checked calls and never receives the server token or a secret
+value. A package declares what it may do there: without `capabilities` it is read-only, and writes, runs, secrets and
+network hosts are named explicitly. Installation is per browser; **Deploy resources** on the plugin page is a
+separate, per-environment action that creates ordinary collections, Library nodes and workflow templates. Those
+resources keep running without the plugin or the client.
+
+The public contract is documented in [Plugin SDK](docs/plugin-sdk.md) and the platform in
+[Plugins](docs/plugins.md). TypeScript declarations are in [`sdk/`](sdk/), five reference packages are in
+[`client-plugins/reference/`](client-plugins/reference/), and a minimal project is in
+[`examples/hello-plugin/`](examples/hello-plugin/). Build a package with `node tools/plugin-pack.js <directory>`.
+The certification matrix is in [PLUGIN-CERTIFICATION.md](PLUGIN-CERTIFICATION.md).
 
 ## Tests
 
@@ -69,10 +76,11 @@ npm test
 python tests/browser_suite.py
 ```
 
-The Node suite covers the engine, editing, permissions, storage, API and migration. The browser suite starts
-real server and client processes and covers connection, environment switching, plugin-created nodes, execution
-after the client closes, and server restart. Requires Python Playwright and Chromium; set
-`PLAYWRIGHT_CHROMIUM_EXECUTABLE` when the browser is not in Playwright's default cache. See [Testing](docs/testing.md).
+The Node suite covers the engine, editing, permissions, storage, API, migration and the plugin manifest, lifecycle,
+deployment, reference packages and token enforcement. The browser suite starts real server and client processes and
+covers connection, environment switching, plugin-created nodes, execution after the client closes and server
+restart. `tests/browser_plugin_platform.py` exercises five reference plugins, lifecycle, resource deployment, two
+servers and server-only execution in Chromium, Firefox and WebKit. See [Testing](docs/testing.md).
 
 ## Documentation
 

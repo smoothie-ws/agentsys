@@ -28,6 +28,8 @@
   <script defer src="js/model/editor.js"></script>
   <script defer src="js/model/evaluate.js"></script>
   <script defer src="js/app/plugin-capabilities.js"></script>
+  <script defer src="js/app/plugin-manifest.js"></script>
+  <script defer src="js/app/plugin-deploy.js"></script>
   <script defer src="js/app/plugin-store.js"></script>
   <script defer src="js/app/environments.js"></script>
   <script defer src="js/app/helpers.js"></script>
@@ -54,7 +56,6 @@
   <script defer src="js/pages/api.js"></script>
   <script defer src="js/pages/home.js"></script>
   <script defer src="js/pages/environments.js"></script>
-  <script defer src="js/pages/collections.js"></script>
   <script defer src="js/canvas/page.js"></script>
   <script defer src="js/canvas/data.js"></script>
   <script defer src="js/canvas/render.js"></script>
@@ -155,7 +156,6 @@
   </svg>
   <header id="topstrip">
     <button class="icon" type="button" id="toggle-subnav" title="Collapse navigation" aria-label="Collapse navigation" aria-controls="sidebar" aria-expanded="true"><svg><use href="#i-menu"/></svg></button>
-    <button type="button" id="environment-indicator" class="environment-indicator" title="AgentSys server" aria-haspopup="menu" aria-expanded="false"><span class="env-dot" data-status="disconnected" aria-hidden="true"></span><span class="env-name">Local server</span></button>
     <div id="tabs" class="tabs-bar" role="tablist" aria-label="Open graph editors"></div>
     <div id="toolbar-slot" class="toolbar-slot" role="group" aria-label="Plugin actions" hidden></div>
     <button type="button" class="search-button compact-label" id="open-search" title="Search (Ctrl K)"><svg><use href="#i-search"/></svg><span>Search</span></button>
@@ -175,8 +175,10 @@
     </nav>
     <nav class="sidebar-footer" aria-label="Application">
       <div class="sidebar-item"><a href="#/plugins" data-link data-section="plugins" title="Plugins"><svg><use href="#i-plug"/></svg><span>Plugins</span></a><button class="icon" type="button" data-menu="section:plugins" aria-label="Plugins actions" title="Plugins actions"><svg><use href="#i-dots"/></svg></button></div>
-      <div class="sidebar-item"><a href="#/collections" data-link data-section="collections" title="Collections"><svg><use href="#i-database"/></svg><span>Collections</span></a></div>
-      <div class="sidebar-item"><a href="#/environments" data-link data-section="environments" title="Environments"><svg><use href="#i-server"/></svg><span>Environments</span></a></div>
+      <div class="sidebar-item sidebar-environment">
+        <a href="#/environments" data-link data-section="environments" id="environment-indicator" class="sidebar-link environment-indicator" title="Server"><svg class="server-icon" aria-hidden="true"><use href="#i-server"/></svg><span class="env-name">Local Server</span><span class="env-dot" data-status="disconnected" aria-hidden="true"></span></a>
+        <button class="icon" type="button" data-menu="section:environments" aria-label="Server actions" title="Server actions"><svg><use href="#i-dots"/></svg></button>
+      </div>
       <div class="sidebar-item"><a href="#/settings" data-link data-section="settings" title="Settings"><svg><use href="#i-settings"/></svg><span>Settings</span></a><button class="icon" type="button" data-menu="section:settings" aria-label="Settings actions" title="Settings actions"><svg><use href="#i-dots"/></svg></button></div>
     </nav>
   </aside>

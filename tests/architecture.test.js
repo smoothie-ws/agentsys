@@ -167,6 +167,49 @@ test('shared modules stay environment-neutral', () => {
   assert.doesNotMatch(read('shared/core.js'), /^module\.exports/m, 'the export is guarded, not unconditional');
 });
 
+test('the server never loads plugin code, and a client plugin reaches the platform only through the API', () => {
+  const serverFiles = [
+    'server.js',
+    'headless.js',
+    ...list('server'),
+    ...list('bin'),
+  ].filter(file => !file.startsWith('legacy/'));
+  for (const file of serverFiles) {
+    const source = read(file);
+    assert.doesNotMatch(source, /require\s*\(\s*[^)]*plugins/i, `${file} must not require a plugin`);
+  }
+  // The client plugin store and host talk to the server only through Environment.request / api().
+  for (const file of ['js/app/plugin-store.js', 'js/app/plugin-capabilities.js', 'js/app/extensions.js']) {
+    const source = read(file);
+    assert.doesNotMatch(source, /\bBackend\.request\b/, `${file} is client code`);
+    assert.doesNotMatch(source, /['"`]\/__data/, `${file} must not reach raw storage`);
+  }
+});
+
+test('the client CLI imports only protocol and manifest data from the server half', () => {
+  const source = read('bin/agentsys-client.js');
+  const imports = requires(source).filter(request => request.startsWith('.')).sort();
+  assert.deepEqual(imports.sort(), ['../server/manifest', '../shared/protocol']);
+  for (const file of ['js/app/environments.js', 'js/app/helpers.js']) {
+    const client = read(file);
+    assert.doesNotMatch(client, /graphRuntime|GRAPH_RUNTIMES|signalGraph|shutdownExecutions/, `${file} has no server runtime`);
+  }
+});
+
+test('every API endpoint is declared by the server half, never by the interface half', () => {
+  const routes = [];
+  for (const file of list('js/backend')) {
+    for (const match of read(file).matchAll(/\broute\(\s*'([^']+)'\s*,\s*'([^']+)'/g)) routes.push([file, match[1], match[2]]);
+  }
+  assert.ok(routes.length >= 30, 'the route table is the API surface');
+  for (const [file, methods, pattern] of routes) {
+    assert.match(pattern, /^[a-z0-9-{}:/_]+$/, `${file}: ${pattern}`);
+    for (const method of methods.split(' ')) assert.match(method, /^(GET|POST|PUT|PATCH|DELETE)$/);
+  }
+  for (const file of [...list('js/app'), ...list('js/pages'), ...list('js/canvas'), ...list('js/inspector')])
+    assert.doesNotMatch(read(file), /\broute\(\s*'GET/, `${file} must not add a server route`);
+});
+
 test('no server address is compiled into the client beyond the documented default', () => {
   const offenders = [];
   for (const file of [...list('js/app'), ...list('js/pages'), ...list('js/canvas'), ...list('js/inspector')]) {

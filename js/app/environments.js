@@ -32,13 +32,32 @@ const Environment = (() => {
   // Scoped tokens handed to client plugins, per environment and capability set. They die with the generation.
   const pluginTokens = new Map();
 
+  /** Revokes one scoped token at the server that issued it, without touching the active status. */
+  function revokeRemotely(token, environmentId) {
+    if (!token || typeof fetch !== 'function') return;
+    const env = environments.find(item => item.id === environmentId) || active;
+    if (!env) return;
+    try {
+      fetch(apiURL(env, 'auth/plugin-session'), {
+        method: 'DELETE',
+        headers: {Authorization: 'Bearer ' + token, 'X-AgentSys': '1'},
+        credentials: 'include',
+        cache: 'no-store',
+        signal: AbortSignal.timeout(5000),
+      }).catch(() => {});
+    } catch {}
+  }
+
   /** Starts a new environment generation: older answers are rejected, their requests and the event stream are aborted. */
   function beginGeneration() {
     generation++;
     controller?.abort();
     controller = new AbortController();
     closeStream();
-    pluginTokens.clear(); // a scoped token of the previous server is useless and must not be sent again
+    // Scoped tokens belong to the server that issued them: end them there, then forget them. Never send one to the
+    // next environment (a browser session cookie or a token must not cross this boundary).
+    for (const entry of pluginTokens.values()) revokeRemotely(entry.token, entry.environment);
+    pluginTokens.clear();
     return controller.signal;
   }
 
@@ -71,7 +90,11 @@ const Environment = (() => {
       if (!Array.isArray(value)) return [];
       return value
         .filter(item => item && typeof item.id === 'string' && typeof item.name === 'string' && typeof item.url === 'string')
-        .map(item => ({id: item.id, name: item.name, url: item.url}));
+        .map(item => ({
+          id: item.id,
+          name: item.id === 'local' && item.name === 'Local server' ? 'Local Server' : item.name,
+          url: item.url,
+        }));
     } catch {
       return [];
     }
@@ -85,7 +108,7 @@ const Environment = (() => {
   }
   const ensureDefaults = () => {
     if (!environments.length) {
-      environments.push({id: 'local', name: 'Local server', url: defaultURL()});
+      environments.push({id: 'local', name: 'Local Server', url: defaultURL()});
       persistList();
       if (!activeId) activeId = 'local';
     }
@@ -104,6 +127,18 @@ const Environment = (() => {
     } catch {}
   };
   const tokenKey = id => TOKEN_PREFIX + id;
+  // One stable id per tab: the server keys undo history to it, so two tabs never share a stack.
+  const clientId = (() => {
+    try {
+      const saved = sessionStorage.getItem('agentsys-client-id');
+      if (saved) return saved;
+      const made = uid();
+      sessionStorage.setItem('agentsys-client-id', made);
+      return made;
+    } catch {
+      return 'tab-' + uid();
+    }
+  })();
   /** A token lives only for this browser tab: it is never written to localStorage. */
   const tokenOf = id => {
     try {
@@ -179,7 +214,11 @@ const Environment = (() => {
     const gen = generation;
     const gate = controller?.signal;
     const timeout = method === 'GET' ? 30000 : 120000;
-    const headers = {'X-AgentSys': '1', ...(auth ? {Authorization: 'Bearer ' + auth} : authHeaders(env))};
+    const headers = {
+      'X-AgentSys': '1',
+      [PROTOCOL.CLIENT_HEADER]: clientId,
+      ...(auth ? {Authorization: 'Bearer ' + auth} : authHeaders(env)),
+    };
     if (body !== undefined) headers['Content-Type'] = 'application/json';
     if (edit) headers['X-Edit'] = edit;
     let response;
@@ -208,10 +247,12 @@ const Environment = (() => {
         } catch {}
       }
       setStatus('unauthorized', 'The server asked for a token.');
-      throw new ApiError('unauthorized', 'The server rejected this client. Add its token in Environments.', 401);
+      throw new ApiError('unauthorized', 'The server rejected this client. Add its token on the Server page.', 401);
     }
     if (response.status === 204) return undefined;
     const text = await response.text();
+    // A switch may have happened while the body was being read: the answer belongs to the old server.
+    if (gen !== generation) throw new ApiError('stale_environment', 'The environment changed', 409);
     let result;
     try {
       result = text ? JSON.parse(text) : undefined;
@@ -310,6 +351,7 @@ const Environment = (() => {
       token: answer.token,
       expires: Date.now() + Math.max(30, Number(answer.expires_in || 3600) - 30) * 1000,
       generation,
+      environment: env.id,
     });
     return answer.token;
   }
@@ -317,8 +359,11 @@ const Environment = (() => {
   /** Ends a scoped token now (a plugin was disabled or removed), instead of waiting for it to expire. */
   function revokePluginToken(token) {
     if (!token) return;
-    for (const [key, cached] of pluginTokens) if (cached.token === token) pluginTokens.delete(key);
-    request('DELETE', 'auth/plugin-session', {auth: token}).catch(() => {});
+    for (const [key, cached] of pluginTokens) {
+      if (cached.token !== token) continue;
+      pluginTokens.delete(key);
+      revokeRemotely(token, cached.environment);
+    }
   }
 
   /** Reads the server's Server-Sent Events through fetch so the same auth headers apply. Reconnects with backoff. */
@@ -332,7 +377,7 @@ const Environment = (() => {
       let response;
       try {
         response = await fetch(new URL(env.url + PROTOCOL.EVENTS_PATH), {
-          headers: {...authHeaders(env), Accept: 'text/event-stream'},
+          headers: {...authHeaders(env), [PROTOCOL.CLIENT_HEADER]: clientId, Accept: 'text/event-stream'},
           credentials: 'include',
           cache: 'no-store',
           signal: ctrl.signal,
@@ -518,11 +563,12 @@ const Environment = (() => {
     /** Drops the token for this tab and tells the server to end the session cookie when it can. */
     async signOut(id = active?.id) {
       if (!id) return;
-      const scoped = [...pluginTokens.values()].map(entry => entry.token);
+      const scoped = [...pluginTokens.entries()].map(([, entry]) => entry);
       setToken(id, '');
       const url = environments.find(env => env.id === id)?.url || active?.url || '';
-      // Scoped plugin tokens are independent credentials: end them explicitly rather than leaving them valid.
-      for (const token of scoped) request('DELETE', 'auth/plugin-session', {auth: token}).catch(() => {});
+      // Scoped plugin tokens are independent credentials: end them at the server that issued them.
+      for (const entry of scoped) revokeRemotely(entry.token, entry.environment);
+      pluginTokens.clear();
       try {
         await fetch(new URL(url, PROTOCOL.LOGOUT_PATH), {
           method: 'POST',

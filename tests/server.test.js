@@ -467,11 +467,15 @@ test('UI state bootstraps from data safely and respects storage authentication',
   });
 });
 
-test('corrupt UI state returns an HTTP error without terminating static hosting', async () => {
-  await withServer({}, async ({url, dataDir}) => {
+test('a corrupt UI state file is ignored by static hosting but still fails its own API read', async () => {
+  await withServer({token: 'ui-test-token'}, async ({url, dataDir}) => {
     fs.mkdirSync(path.join(dataDir, 'other'), {recursive: true});
     fs.writeFileSync(path.join(dataDir, 'other', 'ui-state.json'), '{broken');
-    assert.equal((await fetch(url + '/editor/')).status, 500);
+    const page = await fetch(url + '/editor/');
+    assert.equal(page.status, 200, 'the editor still opens');
+    assert.match(await page.text(), /AGENTSYS_UI_STORE=\{\};/);
+    const stored = await fetch(url + '/__data/ui-state', {headers: {Authorization: 'Bearer ui-test-token'}});
+    assert.equal(stored.status, 500, 'the damaged record is reported where it is read');
     assert.equal((await fetch(url + '/editor/js/app/helpers.js')).status, 200);
     assert.equal((await fetch(url + '/editor/js/missing.js')).status, 404);
   });

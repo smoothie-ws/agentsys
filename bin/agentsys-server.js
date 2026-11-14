@@ -31,6 +31,7 @@ Start options:
       --allowed-origin <url> Exact browser origin allowed by CORS (repeatable)
       --allowed-host <name>  Extra Host header accepted on loopback (repeatable)
       --allow-net <host>     Restrict POST /api/net and Script net.fetch to these hosts (repeatable, * allowed)
+      --deny-private-net     Refuse private, loopback and link-local destinations (DNS pinned)
       --tls-cert <file>      TLS certificate (PEM) — enables HTTPS
       --tls-key <file>       TLS private key (PEM)
       --session-hours <n>    Session lifetime in hours (default 12)
@@ -42,7 +43,8 @@ Status options:
       --json                 Print the answer as JSON
 
 Environment:
-  AGENTSYS_TOKEN, AGENTSYS_ALLOWED_ORIGINS, ALLOWED_HOSTS, DATA_DIR, HOST, PORT
+  AGENTSYS_TOKEN, AGENTSYS_ALLOWED_ORIGINS, ALLOWED_HOSTS, DATA_DIR, HOST, PORT,
+  AGENTSYS_ALLOW_NET, AGENTSYS_NET_DENY_PRIVATE=1, AGENTSYS_AUTH_ATTEMPTS
 
 The server is safe to expose only behind HTTPS (directly with --tls-cert/--tls-key, or a reverse
 proxy) and with a token. It has no server plugin mechanism; user programs run in the graph runtime.
@@ -82,6 +84,7 @@ function parse(argv) {
     tlsKey: '',
     sessionHours: 12,
     trustProxy: process.env.AGENTSYS_TRUST_PROXY === '1',
+    denyPrivateNet: process.env.AGENTSYS_NET_DENY_PRIVATE === '1',
   };
   const args = [...argv];
   if (args[0] && !args[0].startsWith('-')) {
@@ -114,6 +117,7 @@ function parse(argv) {
     else if (flag === '--json') result.json = true;
     else if (flag === '--dry-run') result.dryRun = true;
     else if (flag === '--trust-proxy') result.trustProxy = true;
+    else if (flag === '--deny-private-net') result.denyPrivateNet = true;
     else if (flag === '--quiet' || flag === '-q') result.quiet = true;
     else if (flag === '--help' || flag === '-h') result.command = 'help';
     else if (flag === '--version') result.command = 'version';
@@ -125,6 +129,38 @@ function parse(argv) {
 function baseURL(options) {
   const shown = options.host === '0.0.0.0' || options.host === '::' ? '127.0.0.1' : options.host;
   return `${options.tlsCert ? 'https' : 'http'}://${shown}:${options.port}`;
+}
+
+/** Startup checks that would otherwise fail later with a confusing error. */
+function validateOptions(options) {
+  if (!/^[A-Za-z0-9.:\[\]_-]+$/.test(String(options.host || '')))
+    usageError(`--host must be an IP address or hostname, not ${JSON.stringify(options.host)}`);
+  if (options.host.includes('/') || options.host.includes('://'))
+    usageError('--host is an address such as 127.0.0.1 or 0.0.0.0, not a URL');
+  for (const origin of options.allowedOrigins) {
+    let parsed;
+    try {
+      parsed = new URL(origin);
+    } catch {
+      usageError(`--allowed-origin is not a URL: ${origin}`);
+    }
+    if (!['http:', 'https:'].includes(parsed.protocol) || parsed.username || parsed.password)
+      usageError(`--allowed-origin must be an http(s) origin without credentials: ${origin}`);
+    if (parsed.pathname !== '/' || parsed.search || parsed.hash)
+      usageError(`--allowed-origin is an origin, without a path, query or fragment: ${origin}`);
+  }
+  for (const host of options.allowedHosts) {
+    if (!/^[A-Za-z0-9.-]+$/.test(host))
+      usageError(`--allowed-host is a hostname without a scheme or port: ${host}`);
+  }
+  for (const host of options.allowedNet) {
+    if (!/^[A-Za-z0-9.*:_\[\]-]+$/.test(host) || host.length > 200)
+      usageError(`--allow-net is a host or host:port pattern, optionally with *: ${host}`);
+  }
+  if (!Number.isInteger(options.port) || options.port < 0 || options.port > 65535)
+    usageError(`Invalid port: ${options.port}`);
+  if (!Number.isFinite(options.sessionHours) || options.sessionHours <= 0 || options.sessionHours > 24 * 30)
+    usageError('--session-hours must be between 0 and 720');
 }
 
 async function status(options) {
@@ -150,31 +186,48 @@ async function status(options) {
 }
 
 async function start(options) {
-  if (!Number.isInteger(options.port) || options.port < 0 || options.port > 65535)
-    usageError(`Invalid port: ${options.port}`);
-  if (!Number.isFinite(options.sessionHours) || options.sessionHours <= 0 || options.sessionHours > 24 * 30)
-    usageError('--session-hours must be between 0 and 720');
+  validateOptions(options);
   const loopback = LOOPBACK.has(options.host) || /^127\./.test(options.host);
   if (!loopback && !options.token)
     usageError('Refusing to expose the API without a token. Set AGENTSYS_TOKEN or --token.');
-  if (!!options.tlsCert !== !!options.tlsKey || (options.tlsCert && !fs.existsSync(options.tlsCert)))
+  if (!loopback && options.token && options.token.length < 16)
+    console.warn('Warning: the token is short. Use at least 16 random characters, for example `openssl rand -hex 32`.');
+  if (!!options.tlsCert !== !!options.tlsKey)
     usageError('TLS needs both --tls-cert and --tls-key pointing to readable files.');
+  if (options.tlsCert && !fs.existsSync(options.tlsCert)) usageError(`TLS certificate not found: ${options.tlsCert}`);
   if (options.tlsKey && !fs.existsSync(options.tlsKey)) usageError(`TLS key not found: ${options.tlsKey}`);
-  fs.mkdirSync(path.resolve(options.data), {recursive: true});
+  const dataDir = path.resolve(options.data);
+  try {
+    fs.mkdirSync(dataDir, {recursive: true});
+    const probe = path.join(dataDir, '.startup-probe-' + process.pid);
+    fs.writeFileSync(probe, 'ok');
+    fs.rmSync(probe, {force: true});
+  } catch (error) {
+    usageError(`The data folder ${dataDir} is not writable: ${error.message}`);
+  }
   const app = createApiServer({
-    dataDir: options.data,
+    dataDir,
     host: options.host,
     token: options.token,
     allowedOrigins: options.allowedOrigins,
     allowedHosts: options.allowedHosts,
     allowedNetHosts: options.allowedNet,
+    blockPrivateNet: options.denyPrivateNet,
     name: options.name,
     serverVersion: Protocol.VERSION,
     sessionTtlMs: Math.round(options.sessionHours * 60 * 60 * 1000),
     trustProxy: options.trustProxy,
     ...(options.tlsCert ? {tls: {cert: fs.readFileSync(options.tlsCert), key: fs.readFileSync(options.tlsKey)}} : {}),
   });
-  const url = await app.listen(options.port);
+  let url;
+  try {
+    url = await app.listen(options.port);
+  } catch (error) {
+    if (error.code === 'EADDRINUSE')
+      usageError(`Port ${options.port} is already in use. Stop the other server or choose --port.`);
+    if (error.code === 'EACCES') usageError(`Not allowed to listen on port ${options.port}.`);
+    throw error;
+  }
   if (!options.quiet) {
     console.log(`AgentSys Server ${Protocol.VERSION} (protocol ${Protocol.PROTOCOL})`);
     console.log(`Listening on ${url}`);
@@ -199,6 +252,8 @@ async function start(options) {
   };
   process.on('SIGINT', () => shutdown('SIGINT'));
   process.on('SIGTERM', () => shutdown('SIGTERM'));
+  process.on('SIGBREAK', () => shutdown('SIGBREAK')); // Ctrl+Break on Windows
+  process.on('SIGHUP', () => shutdown('SIGHUP'));
   // Keep the process alive while the server listens.
   await new Promise(() => {});
 }

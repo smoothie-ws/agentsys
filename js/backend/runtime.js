@@ -41,12 +41,31 @@ const EDITS = new Set([
   'delete-nodes',
 ]);
 const histories = new Map();
-const historyOf = id => {
-  if (!histories.has(id)) histories.set(id, {undo: [], redo: []});
-  return histories.get(id);
+const HISTORY_LIMIT = 2000; // client+workflow stacks are in memory; a scripted client cannot grow them without bound
+// Undo belongs to the client that made the edit: two tabs sharing one stack would undo each other's work.
+const historyOwner = client => client || 'default';
+const historyKey = (id, client) => historyOwner(client) + '\u0000' + id;
+const historyOf = (id, client) => {
+  const key = historyKey(id, client);
+  if (!histories.has(key)) {
+    while (histories.size >= HISTORY_LIMIT) histories.delete(histories.keys().next().value);
+    histories.set(key, {undo: [], redo: []});
+  }
+  return histories.get(key);
+};
+/** Drops every other client's undo stack for one workflow: their next undo would revert work they never saw. */
+const clearOtherHistories = (id, keep) => {
+  const owner = historyOwner(keep);
+  for (const key of [...histories.keys()]) {
+    const cut = key.indexOf('\u0000');
+    if (key.slice(cut + 1) === id && key.slice(0, cut) !== owner) histories.delete(key);
+  }
+};
+const clearHistories = id => {
+  for (const key of [...histories.keys()]) if (key.slice(key.indexOf('\u0000') + 1) === id) histories.delete(key);
 };
 DB.subscribe(keys => {
-  for (const key of keys) if (key.startsWith('wf:')) histories.delete(key.slice(3));
+  for (const key of keys) if (key.startsWith('wf:')) clearHistories(key.slice(3));
 });
 
 let queue = Promise.resolve();
@@ -104,12 +123,13 @@ function runHooks(events) {
 }
 
 class Call {
-  constructor(method, body, query, edit) {
+  constructor(method, body, query, edit, client = null) {
     Object.assign(this, {
       method,
       body,
       query,
       edit,
+      client,
       ctx: new Context(),
       docs: new Map(),
       hookEvents: [],
@@ -431,10 +451,11 @@ class Call {
       doc.cursor = (doc.cursor || 0) + 1;
       if (id.startsWith('lib-')) await this.syncLibraryNode(id, doc);
       if (!EDITS.has(action)) continue;
-      const history = historyOf(id),
+      const history = historyOf(id, this.client),
         limit = (await this.prefs()).undo_steps ?? 50,
         branched = history.redo.length > 0;
       history.redo = [];
+      clearOtherHistories(id, this.client);
       if (!limit) continue;
       const last = history.undo.at(-1);
       if (!branched && last && this.edit && this.edit === last.token) continue;
@@ -449,7 +470,7 @@ class Call {
 
 const Backend = {
   /** Resolves with the parsed result or throws an ApiError. */
-  async request(method, path, {body = {}, query = {}, edit = null, scriptContext = null} = {}) {
+  async request(method, path, {body = {}, query = {}, edit = null, scriptContext = null, client = null} = {}) {
     path = path.replace(/^\/+|\/+$/g, '');
     const found = ROUTES.find(r => r.methods.has(method) && r.regex.test(path));
     if (!found) {
@@ -474,7 +495,7 @@ const Backend = {
         return [k, value];
       })
     );
-    const call = new Call(method, body ?? {}, query ?? {}, edit);
+    const call = new Call(method, body ?? {}, query ?? {}, edit, client);
     call.scriptContext = scriptContext;
     // Stop aborts the signal of a Script: its API calls neither start nor save after that.
     const running = () => {

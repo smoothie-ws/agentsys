@@ -158,6 +158,7 @@ body.nav-joined #mobile-secondary > .nav-pill {
 .nav-joined .sidebar-item.active,
 .nav-joined .sidebar-item.active:hover,
 .nav-joined .sidebar-item > a.active,
+.nav-joined .sidebar-item > .sidebar-link.active,
 .nav-joined .subnav-row.active,
 .nav-joined .subnav-row.active:hover { background: transparent; }
 .nav-joined .subnav-row.active { padding-right: 0; }
@@ -307,8 +308,10 @@ body.nav-joined #mobile-secondary > .nav-pill {
   body.nav-joined { --nav-radius: var(--join-r); }
   /* The toggle sits on the rail's icon column, like in the flat rail. */
   body.nav-joined #topstrip > #toggle-subnav { margin-left: 8px; }
-  .nav-joined .sidebar-item > a > :is(svg, .brand-mark) { left: 20px; }
-  .nav-joined .sidebar-item > a { padding-left: calc(56px - 0.2rem - 8px); }
+  .nav-joined .sidebar-item > a > :is(svg, .brand-mark),
+  .nav-joined .sidebar-item > .sidebar-link > :is(svg, .brand-mark) { left: 20px; }
+  .nav-joined .sidebar-item > a,
+  .nav-joined .sidebar-item > .sidebar-link { padding-left: calc(56px - 0.2rem - 8px); }
   .nav-joined #sidebar,
   .nav-joined.sidebar-hidden #sidebar { padding-right: 0; }
   .nav-joined .side-tabs {
@@ -333,7 +336,8 @@ body.nav-joined #mobile-secondary > .nav-pill {
     padding-bottom: 0;
   }
   .nav-joined #subnav-body { margin-top: 0; padding: 0; }
-  .nav-joined .sidebar-item > a { height: calc(2 * var(--join-r)); }
+  .nav-joined .sidebar-item > a,
+  .nav-joined .sidebar-item > .sidebar-link { height: calc(2 * var(--join-r)); }
   .nav-joined .subnav-row { height: calc(2 * var(--join-r)); }
   .nav-joined #sidebar .sidebar-item:hover:not(.active),
   .nav-joined #subnav .subnav-row:hover:not(.active),

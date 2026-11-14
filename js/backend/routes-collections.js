@@ -64,10 +64,10 @@ function validateAgainst(schema, value, path = 'data') {
 }
 
 async function collectionDefinition(c, name) {
+  if (!COLLECTION_NAME.test(name)) throw bad('A collection name is lower-case letters, digits and "-"');
   const definitions = await c.ctx.get(definitionsKey, {});
-  const definition = definitions[name];
-  if (!definition) throw missing('Collection not found: ' + name);
-  return {definitions, definition};
+  if (!Object.hasOwn(definitions, name)) throw missing('Collection not found: ' + name);
+  return {definitions, definition: definitions[name]};
 }
 
 const recordsKey = name => `collection:${name}`;

@@ -182,43 +182,47 @@ async function migrateData({dataDir, dryRun = false, log = () => {}} = {}) {
       const result = await app.api.request(method, path, {body: body ?? {}, query});
       return result === undefined ? undefined : JSON.parse(JSON.stringify(result));
     };
-    if (ai) {
-      await request('PUT', 'collections/providers', {
-        title: 'Providers',
-        description: 'Migrated from the AI server plugin. Keys are references to server secrets.',
-        schema: providerSchema,
-      });
-      for (const provider of ai.data.providers) {
-        if (!provider || typeof provider !== 'object') continue;
-        const sourceId = /^[A-Za-z0-9_-]{1,80}$/.test(provider.id || '') ? provider.id : 'provider-' + report.migrated.records;
-        const secretName = 'provider-' + sourceId.replace(/[^A-Za-z0-9_-]/g, '-') + '-api-key';
-        const data = {
-          providerId: String(provider.providerId || provider.id || sourceId),
-          name: String(provider.name || provider.providerId || ''),
-          baseURL: String(provider.baseURL || ''),
-          model: String(provider.model || ''),
-        };
-        if (provider.apiKey) {
-          await request('PUT', 'secrets/' + secretName, {value: String(provider.apiKey)});
-          data.apiKey = `{{secret:${secretName}}}`;
-          report.migrated.secrets.push(secretName);
+    try {
+      if (ai) {
+        await request('PUT', 'collections/providers', {
+          title: 'Providers',
+          description: 'Migrated from the AI server plugin. Keys are references to server secrets.',
+          schema: providerSchema,
+        });
+        for (const provider of ai.data.providers) {
+          if (!provider || typeof provider !== 'object') continue;
+          const sourceId = /^[A-Za-z0-9_-]{1,80}$/.test(provider.id || '') ? provider.id : 'provider-' + report.migrated.records;
+          const secretName = 'provider-' + sourceId.replace(/[^A-Za-z0-9_-]/g, '-') + '-api-key';
+          const data = {
+            providerId: String(provider.providerId || provider.id || sourceId),
+            name: String(provider.name || provider.providerId || ''),
+            baseURL: String(provider.baseURL || ''),
+            model: String(provider.model || ''),
+          };
+          if (provider.apiKey) {
+            await request('PUT', 'secrets/' + secretName, {value: String(provider.apiKey)});
+            data.apiKey = `{{secret:${secretName}}}`;
+            report.migrated.secrets.push(secretName);
+          }
+          try {
+            const existing = await request('GET', 'collections/providers/records', undefined, {limit: 500});
+            const duplicate = existing.records.find(record => record.data.providerId === data.providerId);
+            if (duplicate) {
+              // A later record without a key must not erase the reference migrated from the earlier one.
+              if (!data.apiKey && duplicate.data.apiKey) data.apiKey = duplicate.data.apiKey;
+              await request('PUT', 'collections/providers/records/' + duplicate.id, {data});
+            } else await request('POST', 'collections/providers/records', {data});
+            report.migrated.records++;
+          } catch (error) {
+            report.warnings.push(`Provider ${data.providerId} was not migrated: ${error.message}`);
+          }
         }
-        try {
-          const existing = await request('GET', 'collections/providers/records', undefined, {limit: 500});
-          const duplicate = existing.records.find(record => record.data.providerId === data.providerId);
-          if (duplicate) {
-            // A later record without a key must not erase the reference migrated from the earlier one.
-            if (!data.apiKey && duplicate.data.apiKey) data.apiKey = duplicate.data.apiKey;
-            await request('PUT', 'collections/providers/records/' + duplicate.id, {data});
-          } else await request('POST', 'collections/providers/records', {data});
-          report.migrated.records++;
-        } catch (error) {
-          report.warnings.push(`Provider ${data.providerId} was not migrated: ${error.message}`);
-        }
+        log(`Migrated ${report.migrated.records} provider(s); ${report.migrated.secrets.length} key(s) moved to secrets.`);
       }
-      log(`Migrated ${report.migrated.records} provider(s); ${report.migrated.secrets.length} key(s) moved to secrets.`);
+    } finally {
+      // Even a migration that failed halfway must release the folder lock before the process reports the error.
+      await app.close().catch(() => {});
     }
-    await app.close().catch(() => {});
   }
 
   const exportDir = path.join(DATA, 'client-migration');

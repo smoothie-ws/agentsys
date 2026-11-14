@@ -1,0 +1,34 @@
+{
+  "id": "reference-structured-data",
+  "name": "Reference: Structured Data",
+  "version": "1.0.0",
+  "description": "A custom collection with CRUD, validation, a schema migration and a conflict-aware update path, plus a resource view drawn by the plugin.",
+  "icon": "database",
+  "api": 2,
+  "engines": {"agentsys": ">=0.3.0 <1.0.0"},
+  "capabilities": ["collections.read", "collections.write", "graph.read", "settings.read", "settings.write"],
+  "author": "AgentSys reference plugins",
+  "license": "MIT",
+  "main": "main.js",
+  "contributes": {
+    "collections": [
+      {
+        "name": "structured-notes",
+        "title": "Structured notes",
+        "description": "Notes with a title, a body and a done flag.",
+        "strategy": "update",
+        "schema": {
+          "type": "object",
+          "properties": {
+            "title": {"type": "string", "maxLength": 200},
+            "body": {"type": "string", "maxLength": 4000},
+            "done": {"type": "boolean"},
+            "priority": {"type": "integer", "enum": [0, 1, 2, 3]}
+          },
+          "required": ["title"],
+          "additionalProperties": false
+        }
+      }
+    ]
+  }
+}

@@ -1,0 +1,40 @@
+{
+  "id": "reference-external",
+  "name": "Reference: External Integration",
+  "version": "1.0.0",
+  "description": "Calls a local HTTP endpoint through the net capability with a server-side secret, and deploys a Library node that keeps calling it without this plugin.",
+  "icon": "globe",
+  "api": 2,
+  "engines": {"agentsys": ">=0.3.0 <1.0.0"},
+  "capabilities": ["graph.read", "library.read", "library.write", "collections.read", "collections.write", "net.fetch:127.0.0.1:*", "secrets.use:reference-demo", "run.start"],
+  "author": "AgentSys reference plugins",
+  "license": "MIT",
+  "main": "main.js",
+  "contributes": {
+    "collections": [
+      {
+        "name": "external-demo",
+        "title": "External demo endpoint",
+        "description": "The URL the reference Library node calls.",
+        "strategy": "update",
+        "schema": {
+          "type": "object",
+          "properties": {"url": {"type": "string", "maxLength": 500}},
+          "required": ["url"],
+          "additionalProperties": false
+        }
+      }
+    ],
+    "library": [
+      {
+        "name": "External: Local status",
+        "description": "Fetches /status from the URL in the external-demo collection with the server-held reference-demo secret.",
+        "folder": "Reference external",
+        "icon": "globe",
+        "outputs": ["status", "body"],
+        "grants": ["collections.read", "net.fetch:127.0.0.1:*", "secrets.use:reference-demo"],
+        "code": "const config = await agentsys('GET', 'collections/external-demo/records');\nconst base = String(config.records[0]?.data?.url || '').replace(/\\/+$/, '');\nif (!base) throw new Error('Set the endpoint in the external-demo collection first');\nconst answer = await agentsys('POST', 'net', {url: base + '/status', headers: {Authorization: '{{secret:reference-demo}}'}, timeout: 5000});\nnode.output.status = answer.status;\nnode.output.body = answer.text;\nnode.display('external status ' + answer.status + ': ' + answer.text);"
+      }
+    ]
+  }
+}

@@ -40,11 +40,10 @@ function parseRoute(path = routePath(), query = routeQuery()) {
     return {page: 'not-found'};
   }
   const page =
-    {projects: 'projects', settings: 'settings', environments: 'environments', collections: 'collections', library: 'resources', api: 'api', plugins: 'plugins'}[
+    {projects: 'projects', settings: 'settings', environments: 'environments', library: 'resources', api: 'api', plugins: 'plugins'}[
       parts[0]
     ] || 'not-found';
   if (page === 'plugins') return parts.length <= 2 ? {page, id: parts[1]} : {page: 'not-found'};
-  if (page === 'collections') return parts.length <= 2 ? {page, name: parts[1]} : {page: 'not-found'};
   if (page !== 'resources') return parts.length === 1 ? {page} : {page: 'not-found'};
   if (parts.length > 3 || (parts[1] && parts[1] !== 'nodes' && !/^[a-z][a-z0-9-]*$/.test(parts[1])))
     return {page: 'not-found'};
@@ -132,7 +131,7 @@ async function render() {
     // Keep the page the reader asked for: its title, what failed, and a way forward. Replacing the whole view
     // with a bare error loses the place the reader is in, which matters most while the server is away.
     const title =
-      {projects: 'Projects', resources: 'Library', settings: 'Settings', plugins: 'Plugins', api: 'API', environments: 'Environments', collections: 'Collections'}[
+      {projects: 'Projects', resources: 'Library', settings: 'Settings', plugins: 'Plugins', api: 'API', environments: 'Server'}[
         route.page
       ] || 'This page';
     const offline = error.code === 'network_error' || (typeof Environment !== 'undefined' && Environment.status?.().status === 'disconnected');

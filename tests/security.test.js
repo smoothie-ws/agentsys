@@ -399,6 +399,39 @@ test('on POSIX a secret file and the commit record are readable by their owner o
   });
 });
 
+test('a malformed cookie is an anonymous request, not a server error', async () => {
+  await withServer({}, async ({base}) => {
+    const response = await request(base, 'projects', {headers: {Cookie: 'agentsys_session=%E0%A4%A'}});
+    assert.equal(response.status, 401);
+    const body = await response.json();
+    assert.equal(body.error.code, 'unauthorized');
+  });
+});
+
+test('an operator token that starts with the plugin prefix still authenticates', async () => {
+  const operator = 'pst_operator_token_0123456789';
+  await withServer({token: operator}, async ({base}) => {
+    const response = await request(base, 'projects', {headers: {Authorization: 'Bearer ' + operator}});
+    assert.equal(response.status, 200);
+    // A real plugin token is still a plugin token: it cannot become an operator credential by its prefix.
+    const issued = await request(base, 'auth/plugin-session', {
+      method: 'POST',
+      headers: {Authorization: 'Bearer ' + operator, 'Content-Type': 'application/json', 'X-AgentSys': '1'},
+      body: {capabilities: ['graph.read']},
+    });
+    assert.equal(issued.status, 200);
+    const token = (await issued.json()).token;
+    assert.notEqual(token, operator);
+    const pluginRead = await request(base, 'projects', {headers: {Authorization: 'Bearer ' + token}});
+    assert.equal(pluginRead.status, 200);
+    const pluginWrite = await request(base, 'projects', {
+      method: 'POST',
+      headers: {Authorization: 'Bearer ' + token, 'Content-Type': 'application/json'},
+      body: {name: 'not allowed'},
+    });
+    assert.equal(pluginWrite.status, 403);
+  });
+});
 test('an expired session is refused and removed from the server', async () => {
   const sleep = ms => new Promise(resolve => setTimeout(resolve, ms));
   await withServer({sessionTtlMs: 1000}, async ({base}) => {

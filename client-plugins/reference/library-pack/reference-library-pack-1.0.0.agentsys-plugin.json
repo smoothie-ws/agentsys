@@ -1,0 +1,111 @@
+{
+  "format": 2,
+  "manifest": {
+    "id": "reference-library-pack",
+    "name": "Reference: Library Pack",
+    "version": "1.0.0",
+    "description": "Adds a Library section, three reusable Script nodes, a Generic Collection and a runnable workflow template. The deployed nodes keep working when the plugin is off.",
+    "icon": "plug",
+    "api": 2,
+    "engines": {
+      "agentsys": ">=0.3.0 <1.0.0"
+    },
+    "capabilities": [
+      "graph.read",
+      "graph.write",
+      "library.read",
+      "library.write",
+      "collections.read",
+      "collections.write",
+      "run.start"
+    ],
+    "dependencies": {},
+    "author": "AgentSys reference plugins",
+    "license": "MIT",
+    "homepage": ""
+  },
+  "main": "main.js",
+  "files": {
+    "main.js": "// Reference Plugin B: a Library section backed by ordinary server data. The nodes it deploys are saved Script\n// graphs and run on the server without this plugin.\n'use strict';\n\nconst escape = value =>\n  String(value ?? '').replace(/[&<>\"']/g, character => ({'&': '&amp;', '<': '&lt;', '>': '&gt;', '\"': '&quot;', \"'\": '&#39;'})[character]);\n\nasync function section(api) {\n  const resources = await api.library.list();\n  const ours = resources.filter(item => item.payload?.plugin?.id === api.id);\n  const notes = await api.collections.records('pack-notes', {limit: 5}).catch(() => ({total: 0, records: []}));\n  return `<h2>Library Pack</h2>\n    <p class=\"muted\">A Library section is a plugin page that reads normal server data. Deploy the package from the\n    Plugins page once; after that the nodes belong to the server.</p>\n    <dl class=\"page-facts\">\n      <div><dt>Nodes</dt><dd>${ours.length}</dd></div>\n      <div><dt>Notes</dt><dd>${notes.total}</dd></div>\n    </dl>\n    <h3>Nodes</h3>\n    ${ours.length ? `<ul class=\"plugin-contributions\">${ours.map(item => `<li><a href=\"/library/nodes/${encodeURIComponent(item.id)}\" data-link>${escape(item.name)}</a> <span class=\"muted\">${escape(item.payload.description || '')}</span></li>`).join('')}</ul>` : '<p class=\"muted\">Nothing deployed on this server yet.</p>'}\n    <h3>Recent notes</h3>\n    ${notes.records.length ? `<ul class=\"plugin-contributions\">${notes.records.map(item => `<li>${escape(item.data.text)} <span class=\"muted\">#${escape(item.id.slice(0, 8))}</span></li>`).join('')}</ul>` : '<p class=\"muted\">No notes yet.</p>'}\n    <p class=\"muted small\">Switching servers shows that server's resources, never the previous one's.</p>`;\n}\n\nexports.activate = async api => {\n  api.ui.addLibrarySection({\n    id: 'pack',\n    title: 'Library Pack',\n    description: 'Nodes, a collection and a workflow template that live on the server.',\n    icon: 'library',\n    nav: false,\n    render: () => section(api),\n  });\n  api.ui.addSettingsSection({\n    id: 'pack',\n    title: 'Library Pack',\n    description: 'Read-only status of the deployed resources.',\n    render: async () => {\n      const resources = await api.library.list();\n      const ours = resources.filter(item => item.payload?.plugin?.id === api.id);\n      return `<p class=\"muted\">This server has <strong>${ours.length}</strong> Library Pack node(s).</p>\n        <button type=\"button\" data-command=\"open-pack\">Open the Library Pack section</button>`;\n    },\n  });\n  api.commands.register('open-pack', () => api.ui.navigate('/ext/reference-library-pack/pack'), {title: 'Open Library Pack'});\n};\n"
+  },
+  "assets": {},
+  "contributes": {
+    "collections": [
+      {
+        "name": "pack-notes",
+        "title": "Library pack notes",
+        "description": "Notes written by the reference Library Pack nodes.",
+        "schema": {
+          "type": "object",
+          "properties": {
+            "text": {
+              "type": "string",
+              "maxLength": 2000
+            },
+            "created": {
+              "type": "number"
+            }
+          },
+          "required": [
+            "text"
+          ],
+          "additionalProperties": false
+        }
+      }
+    ],
+    "library": [
+      {
+        "name": "Pack: Slug",
+        "description": "Turns text into a URL slug. No client or plugin is needed after deployment.",
+        "folder": "Reference pack",
+        "icon": "text",
+        "outputs": [
+          "slug"
+        ],
+        "grants": [
+          "graph.read"
+        ],
+        "code": "const text = String(node.input.text ?? node.input.value ?? '');\nnode.output.slug = text.toLowerCase().replace(/[^a-z0-9]+/g, '-').replace(/^-+|-+$/g, '');"
+      },
+      {
+        "name": "Pack: Greeting",
+        "description": "Displays a greeting and returns it.",
+        "folder": "Reference pack",
+        "icon": "sparkles",
+        "outputs": [
+          "message"
+        ],
+        "grants": [
+          "graph.read"
+        ],
+        "code": "const who = String(node.input.who ?? node.input.value ?? 'world');\nnode.output.message = 'Hello, ' + who + '!';\nnode.display(node.output.message);"
+      },
+      {
+        "name": "Pack: Record note",
+        "description": "Stores a note in the pack-notes Generic Collection through the ordinary API.",
+        "folder": "Reference pack",
+        "icon": "database",
+        "outputs": [
+          "id"
+        ],
+        "grants": [
+          "collections.write",
+          "graph.read"
+        ],
+        "code": "const text = String(node.input.text ?? node.input.value ?? 'note from a workflow');\nconst made = await agentsys('POST', 'collections/pack-notes/records', {data: {text, created: Date.now() / 1000}});\nnode.output.id = made.id;\nnode.display('stored note ' + made.id);"
+      }
+    ],
+    "workflows": [
+      {
+        "name": "Library Pack demo",
+        "project": "Reference pack",
+        "nodes": [
+          {
+            "library": "Pack: Greeting"
+          }
+        ]
+      }
+    ]
+  },
+  "checksum": "fnv1a-d6883f97"
+}

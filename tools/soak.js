@@ -28,6 +28,24 @@ const heap = () => {
   if (typeof global.gc === 'function') global.gc();
   return Math.round(process.memoryUsage().heapUsed / 1024 / 1024);
 };
+const rss = () => Math.round(process.memoryUsage().rss / 1024 / 1024);
+const resources = () => {
+  const names = typeof process.getActiveResourcesInfo === 'function' ? process.getActiveResourcesInfo() : [];
+  return {
+    handles: (typeof process._getActiveHandles === 'function' ? process._getActiveHandles() : []).length,
+    requests: (typeof process._getActiveRequests === 'function' ? process._getActiveRequests() : []).length,
+    resources: names.length,
+    listeners: typeof process.eventNames === 'function' ? process.eventNames().length : 0,
+  };
+};
+const descriptors = () => {
+  if (process.platform !== 'linux') return null;
+  try {
+    return require('node:fs').readdirSync('/proc/self/fd').length;
+  } catch {
+    return null;
+  }
+};
 
 /**
  * Runs the loop and returns a report. The caller owns `dataDir` when it passes one; otherwise a temporary folder
@@ -39,12 +57,14 @@ async function runSoak({seconds = 60, dataDir = null, onSample = null} = {}) {
   const base = await app.listen(0);
   const headers = {Authorization: 'Bearer soak-token', 'Content-Type': 'application/json', 'X-AgentSys': '1'};
   const call = async (method, route, body) => {
+    const startedAt = performance.now();
     const response = await fetch(base + '/api/' + route, {
       method,
       headers,
       body: body === undefined ? undefined : JSON.stringify(body),
     });
     const text = await response.text();
+    report.request_ms.push(performance.now() - startedAt);
     if (!response.ok) throw new Error(`${method} ${route}: ${response.status} ${text.slice(0, 200)}`);
     return text ? JSON.parse(text) : undefined;
   };
@@ -54,12 +74,32 @@ async function runSoak({seconds = 60, dataDir = null, onSample = null} = {}) {
     errors: 0,
     error_messages: [],
     run_ms: [],
+    request_ms: [],
     heap_start_mb: heap(),
     heap_end_mb: 0,
     heap_max_mb: 0,
+    rss_start_mb: rss(),
+    rss_end_mb: 0,
+    rss_max_mb: 0,
+    handles_start: resources(),
+    handles_end: null,
+    handles_max: {handles: 0, requests: 0, resources: 0, listeners: 0},
+    fds_start: descriptors(),
+    fds_end: null,
+    fds_max: 0,
+    sessions: null,
+    plugin_sessions: null,
+    runtimes: null,
+    client_streams: null,
     worker_start: null,
     running_runtimes: null,
     data_dir: dir,
+  };
+  const sampleHandles = () => {
+    const now = resources();
+    for (const key of Object.keys(report.handles_max)) report.handles_max[key] = Math.max(report.handles_max[key], now[key]);
+    const fds = descriptors();
+    if (fds !== null) report.fds_max = Math.max(report.fds_max, fds);
   };
   const deadline = Date.now() + seconds * 1000;
   try {
@@ -100,19 +140,33 @@ async function runSoak({seconds = 60, dataDir = null, onSample = null} = {}) {
       if (report.cycles % 10 === 0) heap(); // let the runtime collect between samples when --expose-gc is used
       const sample = heap();
       report.heap_max_mb = Math.max(report.heap_max_mb, sample);
-      if (onSample) onSample({cycle: report.cycles, heap_mb: sample, report});
+      report.rss_max_mb = Math.max(report.rss_max_mb, rss());
+      sampleHandles();
+      if (onSample)
+        onSample({cycle: report.cycles, heap_mb: sample, rss_mb: rss(), handles: resources(), report});
       await sleep(1);
     }
     const diagnostics = await call('GET', 'diagnostics');
     report.worker_start = diagnostics.workers;
     report.running_runtimes = diagnostics.runtime.running;
     report.plugin_sessions = diagnostics.plugin_sessions;
+    report.sessions = diagnostics.sessions;
+    report.client_streams = diagnostics.clients;
+    report.runtimes = diagnostics.runtime.runtimes?.length ?? null;
   } finally {
     report.heap_end_mb = heap();
     report.heap_growth_mb = report.heap_end_mb - report.heap_start_mb;
+    report.rss_end_mb = rss();
+    report.rss_growth_mb = report.rss_end_mb - report.rss_start_mb;
     report.run_median_ms = percentile(report.run_ms, 0.5);
     report.run_p95_ms = percentile(report.run_ms, 0.95);
+    report.request_median_ms = percentile(report.request_ms, 0.5);
+    report.request_p95_ms = percentile(report.request_ms, 0.95);
     await app.close();
+    // Give the HTTP client its idle sockets a moment to close before counting; a real leak stays above this.
+    await sleep(250);
+    report.handles_end = resources();
+    report.fds_end = descriptors();
     if (!dataDir) fs.rmSync(dir, {recursive: true, force: true});
   }
   return report;
@@ -125,12 +179,26 @@ async function main() {
     console.log(`Soak: ${report.cycles} cycles in ${report.seconds}s, ${report.errors} error(s)`);
     console.log(`  Runs: median ${report.run_median_ms} ms, p95 ${report.run_p95_ms} ms`);
     console.log(`  Heap: ${report.heap_start_mb} -> ${report.heap_end_mb} MB (max ${report.heap_max_mb} MB)`);
+    console.log(`  RSS: ${report.rss_start_mb} -> ${report.rss_end_mb} MB (max ${report.rss_max_mb} MB)`);
+    console.log(
+      `  Requests: median ${report.request_median_ms} ms, p95 ${report.request_p95_ms} ms; ` +
+        `handles max ${JSON.stringify(report.handles_max)}`
+    );
+    if (report.fds_start !== null) console.log(`  File descriptors: ${report.fds_start} -> ${report.fds_end} (max ${report.fds_max})`);
     console.log(`  Workers: ${JSON.stringify(report.worker_start)}`);
-    console.log(`  Running runtimes after the loop: ${report.running_runtimes}`);
+    console.log(
+      `  After the loop: ${report.running_runtimes} running runtime(s), ${report.runtimes} live runtime(s), ` +
+        `${report.sessions} session(s), ${report.client_streams} stream(s)`
+    );
     if (report.error_messages.length) console.log('  Errors: ' + report.error_messages.join(' | '));
   }
   // Bounded thresholds: a leak or a stuck runtime fails the run rather than being printed and ignored.
-  const failed = report.errors > 0 || report.heap_growth_mb > 100 || report.running_runtimes !== 0;
+  const failed =
+    report.errors > 0 ||
+    report.heap_growth_mb > 100 ||
+    report.rss_growth_mb > 200 ||
+    report.running_runtimes !== 0 ||
+    (report.fds_start !== null && report.fds_end > report.fds_start + 5);
   process.exitCode = failed ? 1 : 0;
 }
 

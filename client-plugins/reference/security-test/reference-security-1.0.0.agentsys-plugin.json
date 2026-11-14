@@ -1,0 +1,32 @@
+{
+  "format": 2,
+  "manifest": {
+    "id": "reference-security",
+    "name": "Reference: Security Test",
+    "version": "1.0.0",
+    "description": "Deliberately tries the operations a plugin must not be able to do: forge a message, read another plugin's data or token, escape the sandbox, bypass a capability and act after being disabled. Every attempt must be refused.",
+    "icon": "plug",
+    "api": 2,
+    "engines": {
+      "agentsys": ">=0.3.0 <1.0.0"
+    },
+    "capabilities": [
+      "graph.read"
+    ],
+    "dependencies": {},
+    "author": "AgentSys reference plugins",
+    "license": "MIT",
+    "homepage": ""
+  },
+  "main": "main.js",
+  "files": {
+    "main.js": "// Reference Plugin E: a hostile plugin that must stay harmless. It only declares graph.read; every write, secret,\n// token, authentication, cross-plugin and sandbox-escape attempt below has to be refused.\n'use strict';\n\nconst results = {};\nconst attempt = async (name, work) => {\n  try {\n    const value = await work();\n    results[name] = {ok: true, value: value === undefined ? null : String(value).slice(0, 300)};\n  } catch (error) {\n    results[name] = {ok: false, error: String(error?.message || error).slice(0, 300)};\n  }\n};\n\nconst escape = value =>\n  String(value ?? '').replace(/[&<>\"']/g, character => ({'&': '&amp;', '<': '&lt;', '>': '&gt;', '\"': '&quot;', \"'\": '&#39;'})[character]);\n\nasync function runAttacks() {\n  await attempt('write-project', () => api.request('POST', 'projects', {name: 'injected by the security test'}));\n  await attempt('write-collection', () => api.request('PUT', 'collections/security-injected', {title: 'x'}));\n  await attempt('read-foreign-secret', () => api.request('GET', 'secrets/reference-demo'));\n  await attempt('use-foreign-secret', () => api.request('POST', 'net', {url: 'http://127.0.0.1:1/', headers: {Authorization: '{{secret:reference-demo}}'}}));\n  await attempt('auth-endpoint', () => api.request('GET', 'auth/session'));\n  await attempt('path-traversal', () => api.request('GET', 'projects/../auth/session'));\n  await attempt('foreign-command', () => api.commands.execute('reference-ui-showcase:hello'));\n  await attempt('notify-without-capability', () => api.ui.notify({title: 'injected'}));\n  await attempt('direct-fetch', () => fetch('http://127.0.0.1:1/leak'));\n  await attempt('top-document', () => parent.document.title);\n  await attempt('top-storage', () => localStorage.getItem('agentsys-client-plugins'));\n  await attempt('session-storage', () => sessionStorage.getItem('agentsys-token:local'));\n  await attempt('forge-result', () => {\n    parent.postMessage({__agentsys: 'plugin', kind: 'invoke-result', id: 999999, value: 'forged'}, '*');\n    return 'posted';\n  });\n  await attempt('style-import', () => api.ui.addStyles('@import url(\"http://127.0.0.1:1/x.css\");'));\n  await attempt('open-window', () => {\n    const opened = open('http://127.0.0.1:1/');\n    if (opened) throw new Error('a popup was opened');\n    return 'blocked by the sandbox';\n  });\n  await attempt('read-projects', () => api.request('GET', 'projects').then(list => list.length));\n  results.at = Date.now();\n  await api.storage.set('results', results);\n  return results;\n}\n\nexports.activate = async pluginApi => {\n  const api = pluginApi;\n  await api.storage.set('installed', {version: api.version});\n  api.ui.addPage({\n    id: 'report',\n    title: 'Security report',\n    description: 'Every forbidden operation this plugin attempted and why it was refused.',\n    icon: 'lock',\n    render: () => renderReport(),\n  });\n  api.ui.addSettingsSection({\n    id: 'security',\n    title: 'Security Test',\n    description: 'Deliberately hostile reference plugin.',\n    render: () => renderReport(),\n  });\n  api.commands.register('run', async () => {\n    await runAttacks();\n    api.ui.refresh();\n    return results;\n  }, {title: 'Run security attempts'});\n  await runAttacks();\n  // The host must also refuse work queued for after the plugin is switched off. The sandbox is gone by then.\n  setTimeout(() => api.request('POST', 'projects', {name: 'after disable'}).catch(() => {}), 700);\n};\n\nasync function renderReport() {\n  const stored = await api.storage.get('results', results);\n  const rows = Object.entries(stored)\n    .filter(([, value]) => value && typeof value === 'object')\n    .map(([name, value]) => `<tr><td>${escape(name)}</td><td>${value.ok ? '<strong class=\"oc-badge\" data-tone=\"error\">ALLOWED</strong>' : '<strong class=\"oc-badge\" data-tone=\"success\">refused</strong>'}</td><td>${escape(value.error || value.value || '')}</td></tr>`)\n    .join('');\n  return `<h2>Security report</h2>\n    <p class=\"muted\">This plugin declares only <code>graph.read</code>. An “ALLOWED” row in a write, secret, auth,\n    cross-plugin or sandbox row is a defect in AgentSys, not in this plugin.</p>\n    <div class=\"oc-table\"><table><thead><tr><th>Attempt</th><th>Result</th><th>Reason</th></tr></thead><tbody>${rows}</tbody></table></div>\n    <button type=\"button\" data-command=\"run\">Run again</button>`;\n}\n"
+  },
+  "assets": {},
+  "contributes": {
+    "collections": [],
+    "library": [],
+    "workflows": []
+  },
+  "checksum": "fnv1a-ee71f361"
+}
