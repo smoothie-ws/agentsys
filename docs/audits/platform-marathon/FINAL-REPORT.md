@@ -10,8 +10,9 @@ link could run script in the client origin, two servers on one data folder lost 
 were promised but not implemented. Twenty defects were reproduced and fixed, each with a test. Two new browser
 scenarios and eleven new Node test files lock the behaviour in.
 
-**The 12-hour cycle was not completed.** This session ran **59 minutes 8 seconds** of measured wall time
-(2026-11-14T14:56:29 → 15:55:37, UTC+10), then returned control to the harness. The objective's condition for a
+**The 12-hour cycle was not completed.** This session ran **62 minutes 49 seconds** of wall time
+(2026-11-14T14:56:29 → 15:59:18, UTC+10, including the last verification), then returned control to the
+harness. The objective's condition for a
 12-hour cycle (a full 43 200-second interval, or an external controller resuming from the journal) was not met.
 Nothing in this report pretends otherwise. Because the work is resumable, the remaining backlog is written down
 in section 12 and the journal is current.
@@ -21,8 +22,8 @@ in section 12 and the journal is current.
 | Item | Value |
 |---|---|
 | Start | 2026-11-14T14:56:29+10:00 (Unix 1794632189) |
-| End of measured work | 2026-11-14T15:55:37+10:00 (Unix 1794635737) |
-| Actual duration | **59 min 8 s** (3 548 s) |
+| End of measured work | 2026-11-14T15:59:18+10:00 (Unix 1794635958), after the final verification |
+| Actual duration | **62 min 49 s** (3 769 s) |
 | Planned deadline | 2026-11-15T02:56:29+10:00 (not reached) |
 | Source branch / commit | `platform/server-client` / `5123643be41a0227f6cb5e9ea586cfee816e1946` |
 | Audit branch | `audit/12h-platform-hardening` |
@@ -37,7 +38,7 @@ or externally driven session should pick up, in order.
 
 | Metric | Requirement | Result |
 |---|---|---|
-| Actual duration | measured | 59 min 8 s, stated above; not 12 h |
+| Actual duration | measured | 62 min 49 s, stated above; not 12 h |
 | Initial tests | exact | `node --test`: **245** on `main`, **242** on the source branch, 0 failures |
 | Final tests | exact | **326** pass, 0 fail, ~12.1 s (Linux CI configured for Node 20; measured on Node 20.11/Windows) |
 | New tests | count and purpose | **84 Node tests** in 11 files + **2 browser scenarios** (12 checks); listed in section 5 |

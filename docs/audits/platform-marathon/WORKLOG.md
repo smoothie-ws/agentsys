@@ -96,12 +96,12 @@ Additional defect found while testing migration: a duplicate provider record wit
 Still open: engine regression scenarios, resource/bench measurements, UI checks and screenshots, API/perf
 matrix, deployment artefacts, final audit.
 
-## 2026-11-14T15:55 — Final audit and report; session ends at 59 min 8 s
+## 2026-11-14T15:59 — Final audit and report; session ends at 62 min 49 s
 
 - Final `node --test`: **326 pass, 0 fail** (12.1 s). Browser suite: **6/6** (platform, plugin_security, ux,
   execution_ui, shell, design). Stress: 0 run failures, 0 running runtimes after Stop.
 - Final code commit `7944c07`; the report and this entry follow it.
-- Measured duration: 14:56:29 → 15:55:37 = **59 min 8 s**. The 12-hour interval was not reached; the session
+- Measured duration: 14:56:29 → 15:59:18 = **62 min 49 s** (including the last full verification). The 12-hour interval was not reached; the session
   returned control to the harness. `FINAL-REPORT.md` states this in its first paragraphs and in the metrics
   table, and section 12 lists the ordered backlog for a resumed or externally driven cycle.
 - Defects: 20 found, 20 fixed with tests. Security findings: 9 (6 fixed, 3 accepted and documented).
