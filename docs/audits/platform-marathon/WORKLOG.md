@@ -147,8 +147,9 @@ still open. Work of 16:00–16:16:
   p95 79.1 ms, heap 5 → 11 MB (peak 11), 450 workers started/terminated/exited, 0 running runtimes.
 - **WebKit**: `python tests/browser_ux.py webkit` passes 8/8 (after recognising WebKit's wording for a
   cross-origin fetch to the deliberately unreachable server). CI runs Firefox and WebKit.
-- Node total: **343**. Docs updated: `docs/testing.md`, `docs/runtime.md`, `BENCHMARKS.md`, this journal and
-  `CHECKPOINT-11.md`.
+- Node total: **343**. All three browser engines pass. Docs updated: `docs/testing.md`, `docs/runtime.md`,
+  `BENCHMARKS.md`, this journal and `CHECKPOINT-11.md`. Final commit `fe0639f`; total wall time at the last
+  verification 14:56:29 → 16:30:42 = **94 min 13 s** (5 653 s).
 
 
 

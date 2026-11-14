@@ -8,12 +8,12 @@ generic collections, migration, and no server plugin loading. The previous repor
 defects at the new seams — the client transport never aborted anything, one plugin could drive another, a plugin
 link could run script in the client origin, two servers on one data folder lost writes, and several failure paths
 were promised but not implemented. Twenty defects were reproduced and fixed, each with a test. Two new browser
-scenarios and twelve new Node test files lock the behaviour in. A second phase closed the largest remaining
+scenarios and fourteen new Node test files lock the behaviour in. A second phase closed the largest remaining
 security gap: plugin capabilities are now enforced by the server through scoped tokens, not only by the host
 page that issues them.
 
-**The 12-hour cycle was not completed.** This session ran **82 minutes 56 seconds** of wall time
-(2026-11-14T14:56:29 → 16:19:25, UTC+10, including both phases), then returned control to the
+**The 12-hour cycle was not completed.** This session ran **94 minutes 13 seconds** of wall time
+(2026-11-14T14:56:29 → 16:30:42, UTC+10, including all three phases), then returned control to the
 harness. The objective's condition for a
 12-hour cycle (a full 43 200-second interval, or an external controller resuming from the journal) was not met.
 Nothing in this report pretends otherwise. Because the work is resumable, the remaining backlog is written down
@@ -24,13 +24,13 @@ in section 12 and the journal is current.
 | Item | Value |
 |---|---|
 | Start | 2026-11-14T14:56:29+10:00 (Unix 1794632189) |
-| End of measured work | 2026-11-14T16:19:25+10:00 (Unix 1794637165), after the second phase |
-| Actual duration | **82 min 56 s** (4 976 s) |
+| End of measured work | 2026-11-14T16:30:42+10:00 (Unix 1794637842), after the third phase |
+| Actual duration | **94 min 13 s** (5 653 s) |
 | Planned deadline | 2026-11-15T02:56:29+10:00 (not reached) |
 | Source branch / commit | `platform/server-client` / `5123643be41a0227f6cb5e9ea586cfee816e1946` |
 | Audit branch | `audit/12h-platform-hardening` |
-| Final code commit | `73e4ae0` |
-| Commits added | 16 before this report (`3278854`, `8779303`, `af2b637`, `76be783`, `ca40106`, `edf09e6`, `7475045`, `e9a6889`, `4e25b8e`, `e571cf5`, `7944c07`, `c6bcae4`, `7b7048d`, `6a46261`, `35fdcb0`, `73e4ae0`) |
+| Final commit | `fe0639f` |
+| Commits added | 20 audit commits on top of the 3 platform commits (`git log main..HEAD`: 23); the last is `fe0639f` |
 | `main` | untouched |
 
 The session was bounded by the agent environment, not by the work: the backlog in section 12 is what a resumed
@@ -40,7 +40,7 @@ or externally driven session should pick up, in order.
 
 | Metric | Requirement | Result |
 |---|---|---|
-| Actual duration | measured | 82 min 56 s, stated above; not 12 h |
+| Actual duration | measured | 94 min 13 s, stated above; not 12 h |
 | Initial tests | exact | `node --test`: **245** on `main`, **242** on the source branch, 0 failures |
 | Final tests | exact | **343** pass, 0 fail, ~13 s (Linux CI configured for Node 20; measured on Node 20.11/Windows) |
 | New tests | count and purpose | **101 Node tests** (14 new files plus 4 added to migration) + **3 browser scenarios** (24 checks on Chromium; the interface ones also on Firefox and WebKit); listed in section 5 |
@@ -213,7 +213,7 @@ asserts loose bounds so a leak or a quadratic path fails it, not a slow machine.
 | Backup | `node tools/backup.js` via `tests/backup.test.js` | 3/3 |
 | Plugin tokens | `node --test tests/plugin-tokens.test.js` | 7/7, including a server refusal with the host layer bypassed in the browser |
 | CLI | `agentsys-server version`, `help`, `status`, no-token refusal | as documented |
-| Diff review | `git diff --stat main...73e4ae0` | 113 files, +11 202/−1 311; no temporary or user data |
+| Diff review | `git diff --stat main...fe0639f` | 122 files, +11 861/−1 312; no temporary or user data |
 | Working tree | `git status --short` | clean after the final commit |
 | Migration | `tests/migration.test.js` | 6/6, including idempotency and a pre-platform folder |
 
@@ -230,9 +230,10 @@ eleven of its checks pass.
 - No timestamp in the journal was invented. The worklog records wall-clock times; where an entry covers a span,
   it says so.
 - The engine audit produced no defect. That is reported as a negative result rather than turned into a change.
-- A second phase ran after the first report (16:00–16:20) because the objective is a long cycle: it closed the
-  server-side capability gap, added record versions and the sign-in limit, and reproduced the interface checks
-  on Firefox. The report was updated rather than replaced.
+- Two further phases ran after the first report (16:00–16:30) because the objective is a long cycle: they closed
+  the server-side capability gap, added record versions, the sign-in limit and randomized editing tests, fixed
+  five routes missing from undo, ran a bounded soak, and reproduced the interface checks on Firefox and WebKit.
+  The report was updated rather than replaced.
 - One reviewer-visible simplification: the sidecar-script test asserts that the file is removed when the node
   stops being a Script, not the exact node id path; the behaviour is what matters.
 
@@ -281,7 +282,7 @@ Priority E — maintenance:
 
 - `BASELINE.md` — what was measured before any change.
 - `WORKLOG.md` — the journal, with real times.
-- `CHECKPOINT-01..11.md` — phase reports; 10 and 11 cover the second and third phases. Hours 12 did not
+- `CHECKPOINT-01..11.md` — phase reports; 10 and 11 cover the second and third phases. Hour 12 did not
   happen in this session.
 - `BENCHMARKS.md` — the stress numbers.
 - `DEPLOYMENT-VERIFICATION.md` — what ran and what did not.
