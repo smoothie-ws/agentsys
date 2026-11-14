@@ -309,3 +309,56 @@ test('the event stream reconnects with backoff after it closes, without replayin
   assert.equal(Environment.status().status, 'connected');
   await Environment.setActive('local', {reconnect: false});
 });
+
+test('a plugin token is minted once per environment and capability set, and revoked explicitly', async () => {
+  let mints = 0;
+  const deletes = [];
+  const {Environment} = makeEnvironment(request => {
+    if (request.url.includes(API)) return {body: meta};
+    if (request.url.includes('/api/session')) return {body: {ok: true}};
+    if (request.url.includes(Protocol.EVENTS_PATH)) return {stream: {initial: ''}};
+    if (request.url.includes('/api/auth/plugin-session')) {
+      if (request.method === 'DELETE') {
+        deletes.push(request.headers.Authorization);
+        return {body: {revoked: true}};
+      }
+      mints++;
+      return {body: {token: 'pst_' + mints, expires_in: 3600, capabilities: ['graph.read']}};
+    }
+    return {body: []};
+  });
+  await Environment.start();
+  assert.equal(await Environment.pluginToken(['graph.read']), 'pst_1');
+  assert.equal(await Environment.pluginToken(['graph.read']), 'pst_1', 'the cached token is reused');
+  assert.equal(mints, 1);
+  // The capability set is a set: the same values in another order use the same token.
+  assert.equal(await Environment.pluginToken(['graph.read']), 'pst_1');
+  assert.equal(mints, 1);
+  Environment.revokePluginToken('pst_1');
+  await new Promise(resolve => setTimeout(resolve, 30));
+  assert.deepEqual(deletes, ['Bearer pst_1']);
+  // A switch starts a new generation: a token of the previous server is not reused.
+  const second = Environment.save({name: 'Second', url: 'http://second.test'});
+  await Environment.setActive(second.id);
+  assert.equal(await Environment.pluginToken(['graph.read']), 'pst_2');
+  await Environment.setActive(second.id, {reconnect: false});
+});
+
+test('a server without plugin tokens is remembered instead of asked on every plugin call', async () => {
+  let posts = 0;
+  const {Environment} = makeEnvironment(request => {
+    if (request.url.includes(API)) return {body: meta};
+    if (request.url.includes('/api/session')) return {body: {ok: true}};
+    if (request.url.includes(Protocol.EVENTS_PATH)) return {stream: {initial: ''}};
+    if (request.url.includes('/api/auth/plugin-session')) {
+      posts++;
+      return {status: 404, body: {error: {code: 'not_found', message: 'no such route'}}};
+    }
+    return {body: []};
+  });
+  await Environment.start();
+  assert.equal(await Environment.pluginToken(['graph.read']), null);
+  assert.equal(await Environment.pluginToken(['graph.read']), null);
+  assert.equal(posts, 1, 'the missing route is remembered for a while');
+  await Environment.setActive('local', {reconnect: false});
+});
