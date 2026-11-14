@@ -170,4 +170,4 @@ still open. Work of 16:00–16:16:
   WebKit.
 - Node total: **351** (350 pass, 1 POSIX-only skipped). Browser suite 7/7. Docs updated: server, deployment,
   security, testing, `CHECKPOINT-12.md`. Final code commit `f8da522`; total wall time at this point
-  14:56:29 → 16:50:00 = **113 min 31 s** (6 811 s), still not the 12-hour cycle.
+  14:56:29 → 16:46:41 = **110 min 12 s** (6 612 s), still not the 12-hour cycle.

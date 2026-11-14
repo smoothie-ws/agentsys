@@ -13,8 +13,8 @@ security gap: plugin capabilities are now enforced by the server through scoped 
 page that issues them. Later phases closed a Windows static-file bypass, added egress and session limits, and
 put the editor's menu/undo/run path and the Collections flow under browser tests on three engines.
 
-**The 12-hour cycle was not completed.** This session ran **113 minutes 31 seconds** of wall time
-(2026-11-14T14:56:29 → 16:50:00, UTC+10, including all four phases), then returned control to the
+**The 12-hour cycle was not completed.** This session ran **110 minutes 12 seconds** of wall time
+(2026-11-14T14:56:29 → 16:46:41, UTC+10, including all four phases), then returned control to the
 harness. The objective's condition for a
 12-hour cycle (a full 43 200-second interval, or an external controller resuming from the journal) was not met.
 Nothing in this report pretends otherwise. Because the work is resumable, the remaining backlog is written down
@@ -25,8 +25,8 @@ in section 12 and the journal is current.
 | Item | Value |
 |---|---|
 | Start | 2026-11-14T14:56:29+10:00 (Unix 1794632189) |
-| End of measured work | 2026-11-14T16:50:00+10:00 (Unix 1794639000), after the fourth phase |
-| Actual duration | **113 min 31 s** (6 811 s) |
+| End of measured work | 2026-11-14T16:46:41+10:00 (Unix 1794638801), after the fourth phase |
+| Actual duration | **110 min 12 s** (6 612 s) |
 | Planned deadline | 2026-11-15T02:56:29+10:00 (not reached) |
 | Source branch / commit | `platform/server-client` / `5123643be41a0227f6cb5e9ea586cfee816e1946` |
 | Audit branch | `audit/12h-platform-hardening` |
@@ -41,7 +41,7 @@ or externally driven session should pick up, in order.
 
 | Metric | Requirement | Result |
 |---|---|---|
-| Actual duration | measured | 113 min 31 s, stated above; not 12 h |
+| Actual duration | measured | 110 min 12 s, stated above; not 12 h |
 | Initial tests | exact | `node --test`: **245** on `main`, **242** on the source branch, 0 failures |
 | Final tests | exact | **351** (350 pass, 0 fail, 1 skipped: a POSIX-only file-mode check), ~13 s (Linux CI configured for Node 20; measured on Node 20.11/Windows) |
 | New tests | count and purpose | **109 Node tests** (16 new files plus 4 added to migration) + **7 browser scenarios** (4 on the split client with 33 checks; the interface one also on Firefox and WebKit); listed in section 5 |
