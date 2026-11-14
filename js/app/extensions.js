@@ -40,24 +40,36 @@ const Extensions = (() => {
   function sanitizeHTML(value) {
     const template = document.createElement('template');
     template.innerHTML = String(value ?? '').slice(0, 300000);
-    const banned = new Set(['SCRIPT', 'IFRAME', 'OBJECT', 'EMBED', 'LINK', 'META', 'BASE', 'FORM']);
+    // HTML elements report an upper-case tagName, namespaced ones (SVG, MathML) keep their lower-case name: compare
+    // the local name without case, so `<svg><script>` is removed like `<script>`.
+    const banned = new Set(['SCRIPT', 'IFRAME', 'FRAME', 'FRAMESET', 'OBJECT', 'EMBED', 'LINK', 'META', 'BASE', 'FORM']);
+    const tagged = node => String(node.localName || node.tagName || '').toUpperCase();
+    const unsafeURL = text => /^\s*(?:javascript|vbscript|data:text\/html|data:application\/xhtml)/i.test(text);
     const walk = node => {
       for (const child of [...node.children]) {
-        if (banned.has(child.tagName)) {
+        if (banned.has(tagged(child))) {
           child.remove();
           continue;
         }
         for (const attr of [...child.attributes]) {
           const name = attr.name.toLowerCase();
           const text = String(attr.value || '');
-          if (name.startsWith('on') || name === 'srcdoc' || /^(?:javascript|vbscript|data:text\/html):/i.test(text.trim()))
+          if (
+            name.startsWith('on') ||
+            name === 'srcdoc' ||
+            name === 'action' ||
+            name === 'formaction' ||
+            name === 'ping' ||
+            unsafeURL(text)
+          )
             child.removeAttribute(attr.name);
-          else if (name === 'style' && /url\s*\(|expression\s*\(|behavior\s*:/i.test(text))
+          else if (name === 'style' && /url\s*\(|expression\s*\(|behavior\s*:|@import|-moz-binding/i.test(text))
             child.removeAttribute(attr.name);
         }
-        if (child.tagName === 'A') {
+        if (tagged(child) === 'A') {
           child.setAttribute('rel', 'noopener noreferrer');
           if (/^https?:/i.test(child.getAttribute('href') || '')) child.setAttribute('target', '_blank');
+          else child.removeAttribute('target');
         }
         walk(child);
       }
@@ -66,10 +78,19 @@ const Extensions = (() => {
     return template.innerHTML;
   }
 
+  /** A sidebar item points into this client; a URL of another origin or another scheme is not a destination. */
+  function internalHref(value) {
+    const text = String(value || '');
+    if (text.length > 2000 || !/^\/(?!\/)/.test(text) || /[\\\u0000-\u001f\u007f]/.test(text))
+      throw new Error('A sidebar item href must be a path of this client, starting with "/"');
+    return text;
+  }
+
   /** One sandboxed iframe per plugin: no same-origin access, no direct DOM, storage or token. */
   class PluginSandbox {
     constructor(plugin) {
       this.plugin = plugin;
+      this.capabilities = typeof PluginCapabilities === 'undefined' ? [] : PluginCapabilities.forPlugin(plugin);
       this.pending = new Map();
       this.serial = 0;
       this.dead = false;
@@ -127,7 +148,21 @@ const Extensions = (() => {
       if (this.dead) return Promise.reject(new Error('The plugin is not running.'));
       const id = ++this.serial;
       return new Promise((resolve, reject) => {
-        this.pending.set(id, {resolve, reject});
+        // A plugin that never answers must not leave the page waiting forever.
+        const timer = setTimeout(() => {
+          this.pending.delete(id);
+          reject(new Error('The plugin did not answer within 20 seconds.'));
+        }, 20000);
+        this.pending.set(id, {
+          resolve: value => {
+            clearTimeout(timer);
+            resolve(value);
+          },
+          reject: error => {
+            clearTimeout(timer);
+            reject(error);
+          },
+        });
         this.frame.contentWindow?.postMessage({__agentsys: 'host', kind: 'invoke', id, name, args}, '*');
       });
     }
@@ -142,6 +177,17 @@ const Extensions = (() => {
           const clean = String(path || '').replace(/^\/+/, '');
           if (clean.startsWith('auth/') || clean === 'auth')
             throw new Error('A client plugin cannot use authentication endpoints');
+          // The capability of the call is decided from the method, the path and (for net) the body, not from the
+          // plugin's claim: the host is the one that sends it.
+          if (typeof PluginCapabilities !== 'undefined') {
+            const decision = PluginCapabilities.check(
+              this.capabilities,
+              String(method || 'GET').toUpperCase(),
+              clean,
+              body
+            );
+            if (!decision.ok) throw new Error(decision.reason);
+          }
           return Environment.request(String(method || 'GET').toUpperCase(), clean, {body, query});
         }
         case 'storage.get':
@@ -196,7 +242,7 @@ const Extensions = (() => {
             plugin: plugin.id,
             id: spec.id,
             page: spec.page,
-            href: spec.page ? pageHref(plugin.id, spec.page) : String(spec.href),
+            href: spec.page ? pageHref(plugin.id, spec.page) : internalHref(spec.href),
             title: spec.title || spec.id,
             icon: spec.icon || plugin.icon || 'plug',
             order: Number(spec.order) || 0,
@@ -278,7 +324,11 @@ const Extensions = (() => {
         }
         case 'commands.execute': {
           const [id, ...args] = data.args || [];
-          return execute(`${plugin.id}:${id}`, ...args);
+          // A plugin runs its own commands: a plugin id is not a way to reach another plugin's command.
+          const name = String(id ?? '');
+          if (!/^[A-Za-z0-9][A-Za-z0-9._-]{0,79}$/.test(name))
+            throw new Error('A plugin can only run a command of its own, by name');
+          return execute(`${plugin.id}:${name}`, ...args);
         }
         case 'notify': {
           const notification = data.args?.[0] || {};
@@ -327,7 +377,15 @@ const Extensions = (() => {
     api() {
       return {
         id: this.plugin.id,
-        request: (method, path, body, query) => Environment.request(method, path, {body, query}),
+        capabilities: this.capabilities.slice(),
+        request: (method, path, body, query) => {
+          const decision =
+            typeof PluginCapabilities === 'undefined'
+              ? {ok: true}
+              : PluginCapabilities.check(this.capabilities, String(method || 'GET').toUpperCase(), path, body);
+          if (!decision.ok) return Promise.reject(new Error(decision.reason));
+          return Environment.request(method, path, {body, query});
+        },
       };
     }
   }
@@ -340,6 +398,7 @@ const Extensions = (() => {
       description: plugin.description,
       icon: plugin.icon,
       version: plugin.version,
+      capabilities: Array.isArray(plugin.capabilities) ? plugin.capabilities : [],
     }).replace(/</g, '\\u003c');
     return `<!doctype html><meta charset="utf-8"><script>
 (() => {
@@ -381,6 +440,7 @@ const Extensions = (() => {
   const call = (method, path, body, query) => send('host.request', [method, path, body, query]);
   const api = {
     id: plugin.id, title: plugin.title, description: plugin.description, icon: plugin.icon,
+    capabilities: plugin.capabilities || [],
     signal: new AbortController().signal,
     log: (...args) => parent.postMessage({__agentsys: 'plugin', kind: 'log', args: args.map(String)}, '*'),
     request: (method, path, body, query) => send('request', [method, path, body, query]),

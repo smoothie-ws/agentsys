@@ -17,6 +17,7 @@ const PluginStore = (() => {
   const MAX_SOURCE = 400000;
   const ID = /^[A-Za-z0-9][A-Za-z0-9._-]{0,79}$/;
   const API_VERSION = 1;
+  const Capabilities = typeof PluginCapabilities === 'undefined' ? null : PluginCapabilities;
   let loaded = null;
 
   const read = () => {
@@ -46,8 +47,18 @@ const PluginStore = (() => {
     enabled: item.enabled !== false,
     builtin: !!item.builtin,
     source: item.source,
+    capabilities: item.capabilities ? item.capabilities.slice() : Capabilities ? Capabilities.READ_ONLY.slice() : [],
     origin: item.origin || 'installed',
   });
+
+  const capabilitiesOf = value => {
+    if (!Capabilities) return undefined;
+    try {
+      return Capabilities.normalize(value);
+    } catch (error) {
+      throw new ApiError('invalid_request', error.message, 400);
+    }
+  };
 
   const validate = (value, {allowSource = true} = {}) => {
     if (!value || typeof value !== 'object' || Array.isArray(value))
@@ -74,6 +85,8 @@ const PluginStore = (() => {
       enabled: value.enabled !== false,
       builtin: !!value.builtin,
       source: value.source,
+      // No declaration means read-only: a plugin gains writes only by naming them in its package.
+      capabilities: capabilitiesOf(value.capabilities),
       origin: String(value.origin || 'installed').slice(0, 80),
     };
   };

@@ -27,6 +27,7 @@ A package is one JSON object:
   "description": "What it adds.",
   "icon": "sparkles",
   "api": 1,
+  "capabilities": ["graph.read"],
   "source": "exports.activate = api => { api.commands.register('hi', () => api.ui.toast('Hello'), {title: 'Say hello'}); };"
 }
 ```
@@ -34,6 +35,7 @@ A package is one JSON object:
 Install it from **Plugins → Install plugin**: paste the form or import a `.json` file. Packages live in this
 browser (`localStorage`, 400 KB source, at most 50 plugins). They are never uploaded to the server.
 Bundled examples are in `client-plugins/index.json` and are loaded by the client static server.
+A package without `capabilities` runs read-only; see [Capabilities](#capabilities).
 
 ## Sandbox
 
@@ -43,13 +45,50 @@ Each plugin runs in its own `<iframe sandbox="allow-scripts">` loaded from a Blo
 - No `require`, no network of its own. Server calls go through the host's authenticated transport.
 - Communication is JSON `postMessage` with the host; the host validates plugin ids, page ids and limits.
 
-Page and card HTML returned by a plugin is passive and sanitized: scripts, frames, forms, event-handler
-attributes and `javascript:`/HTML-data URLs are removed. Plugin CSS is rejected if it references external
-URLs or uses `@import`.
+Page and card HTML returned by a plugin is passive and sanitized: scripts (including `<svg><script>`), frames,
+forms, event-handler attributes and `javascript:`/HTML-data URLs are removed. Plugin CSS is rejected if it
+references external URLs or uses `@import`.
 
-**Limits, stated honestly:** this isolates the browser from the plugin's code, but it is not a capability
-system. An installed plugin can call any API this user can, including creating a Script that reads a secret.
-Install only plugins you trust. A future permission manifest would make this a real security boundary.
+A plugin can only execute its own commands: `api.commands.execute('other:command')` is refused, so one plugin
+cannot drive another. A sidebar item's `href` must be a path of this client (`/…`); an absolute URL or a
+`javascript:` URL is refused at registration.
+
+## Capabilities
+
+The host decides what a plugin may ask the server to do, from the call itself (method, path and, for `net`, the
+body), never from the plugin's own label. A package declares what it needs:
+
+```json
+{
+  "id": "my-plugin",
+  "title": "My plugin",
+  "api": 1,
+  "capabilities": ["graph.read", "library.read", "library.write"],
+  "source": "exports.activate = async api => { … };"
+}
+```
+
+| Capability | Allows |
+|---|---|
+| `graph.read` / `graph.write` | Read / change projects, workflows and the graph |
+| `library.read` / `library.write` | Read / change Library nodes and resources |
+| `collections.read` / `collections.write` | Read / change generic collections |
+| `run.read` / `run.start` | Inspect a live run / start, stop, pause or resume it |
+| `notifications.read` / `notifications.write` | Read / post notifications |
+| `settings.read` / `settings.write` | Read / change preferences and interface state |
+| `secrets.use:<name>` | Use one named server secret (no wildcard) |
+| `net.fetch:<host>` | Make the server fetch that host (`*` allowed inside the value) |
+
+A package that declares no `capabilities` is **read-only**: the six `*.read` capabilities above. Writes, runs,
+secrets and network hosts are each named explicitly. Anything outside the table (authentication, unknown
+routes, another plugin's secret) is refused whatever the package declares. `api.request` rejects with a message
+that names the missing capability, and the Plugins page shows and edits the list.
+
+**Limits, stated honestly:** the capability check runs in the host page, because the server authenticates the
+browser session, not the plugin. It therefore holds against a plugin's code, which is the sandboxed attacker
+here, but not against a user who edits the client or calls the API directly. That user is the operator and has
+the token, so the server's trust boundary is the token, not the plugin. Install untrusted plugins knowing that
+the sandbox protects your browser session, and that a granted write capability is a real write.
 
 ## Plugin API
 
@@ -82,7 +121,8 @@ exports.deactivate = () => {};
 
 | Member | Purpose |
 |---|---|
-| `api.request(method, path, body?, query?)` | Calls the active server through the host transport. `path` is relative to `/api`. Auth endpoints are blocked. |
+| `api.request(method, path, body?, query?)` | Calls the active server through the host transport, if the plugin's capabilities cover the call. `path` is relative to `/api`. Auth endpoints are blocked. |
+| `api.capabilities` | The capabilities this plugin was granted (read-only list). |
 | `api.storage.get/set/remove` | Private JSON in this browser, scoped by plugin and environment. |
 | `api.settings.get/set` | Shortcut for a settings object in the same store. |
 | `api.commands.register(id, handler, meta)` | A command callable from toolbar, menus and `api.commands.execute`. |

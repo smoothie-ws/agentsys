@@ -33,6 +33,10 @@ function pluginStore() {
   context.self = context;
   context.globalThis = context;
   vm.runInContext(fs.readFileSync(path.join(__dirname, '..', 'shared', 'core.js'), 'utf8'), context);
+  vm.runInContext(
+    fs.readFileSync(path.join(__dirname, '..', 'js', 'app', 'plugin-capabilities.js'), 'utf8'),
+    context
+  );
   vm.runInContext(fs.readFileSync(path.join(__dirname, '..', 'js', 'app', 'plugin-store.js'), 'utf8'), context);
   return vm.runInContext('PluginStore', context);
 }
@@ -63,6 +67,17 @@ test('client plugin packages are validated: id, API version, source and size lim
   });
   assert.equal(plugin.id, 'hello');
   assert.equal(store.list().length, 1);
+  // A package that declares no capabilities is read-only; writes must be named.
+  assert.deepEqual([...plugin.capabilities].sort(), ['collections.read', 'graph.read', 'library.read', 'notifications.read', 'run.read', 'settings.read']);
+  assert.deepEqual(
+    [...store.install({id: 'writer', title: 'Writer', capabilities: ['library.read', 'library.write'], source: 'exports.activate = () => {};'}).capabilities],
+    ['library.read', 'library.write']
+  );
+  assert.throws(
+    () => store.install({id: 'writer2', title: 'Writer', capabilities: ['root'], source: 'exports.activate = () => {};'}),
+    error => error.code === 'invalid_request' && /Unknown plugin capability/.test(error.message)
+  );
+  store.remove('writer');
   assert.equal(store.setEnabled('hello', false).enabled, false);
   assert.equal(store.get('hello').enabled, false);
   store.storage('hello').set('settings', {n: 1});

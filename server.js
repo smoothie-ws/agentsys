@@ -135,15 +135,27 @@ const send = (res, status, body, type = 'application/json; charset=utf-8') => {
 const sendJSON = (res, status, value) => send(res, status, value === undefined ? '' : JSON.stringify(value));
 const readBody = (req, limit = 200e6) =>
   new Promise((resolve, reject) => {
+    // A declared oversized body is refused before it is buffered: the client can still read the 413 answer.
+    const declared = Number(req.headers['content-length']);
+    if (Number.isFinite(declared) && declared > limit) {
+      req.pause();
+      reject(Object.assign(new Error('The request body is larger than the limit'), {status: 413, code: 'too_large'}));
+      return;
+    }
     const chunks = [];
     let size = 0;
+    const tooLarge = () =>
+      Object.assign(new Error('The request body is larger than the limit'), {status: 413, code: 'too_large'});
     req.on('data', c => {
       size += c.length;
       if (size > limit) {
-        reject(Object.assign(new Error('Too large'), {status: 413}));
-        req.destroy();
+        // Stop buffering and answer: destroying the socket here would take the 413 with it.
+        chunks.length = 0;
+        req.pause();
+        reject(tooLarge());
       } else chunks.push(c);
     });
+    req.on('aborted', () => reject(Object.assign(new Error('The client stopped sending'), {status: 400})));
     req.on('end', () => resolve(Buffer.concat(chunks).toString('utf8')));
     req.on('error', reject);
   });
@@ -206,11 +218,20 @@ function createServer(options = {}) {
     return found;
   };
   const newSession = () => {
+    // Expired sessions are dropped when a new one is made, and by the periodic sweep below: the map cannot grow
+    // without bound because a browser forgot its cookie.
+    sweepSessions();
     const id = crypto.randomBytes(32).toString('base64url'),
       hash = sessionHash(id);
     SESSIONS.set(hash, {expires: Date.now() + SESSION_TTL_MS, created: Date.now()});
     return id;
   };
+  function sweepSessions() {
+    const now = Date.now();
+    for (const [hash, session] of SESSIONS) if (session.expires <= now) SESSIONS.delete(hash);
+  }
+  const sessionSweep = setInterval(sweepSessions, 5 * 60 * 1000);
+  sessionSweep.unref();
   const originOf = req => String(req.headers.origin || '').replace(/\/+$/, '').toLowerCase();
   const hostName = req =>
     String(req.headers.host || '')
@@ -676,6 +697,7 @@ function createServer(options = {}) {
       workers: backend?.workerStats ?? null,
       runtime: backend?.Backend.diagnostics?.() ?? null,
       clients: eventClients.size,
+      sessions: SESSIONS.size,
       recent_errors: recentErrors.slice(),
     };
   }
@@ -712,9 +734,10 @@ function createServer(options = {}) {
       server_plugins: false,
       tls: !!TLS,
     },
-  });
-  /** The API page is also a platform reference: add the HTTP-level endpoints to the generated contract. */
+  });  /** The API page is also a platform reference: add the HTTP-level endpoints to the generated contract. */
   function platformOpenAPI(spec) {
+    // The contract reports the running server's version and protocol, not a literal copied from the source.
+    spec.info = {...(spec.info || {}), title: SERVER_NAME + ' API', version: SERVER_VERSION, 'x-protocol': Protocol.PROTOCOL};
     const add = (path, method, summary, description) => {
       spec.paths[path] = {
         ...(spec.paths[path] || {}),
@@ -886,6 +909,15 @@ function createServer(options = {}) {
     res.setHeader('X-Content-Type-Options', 'nosniff');
     res.setHeader('Referrer-Policy', 'no-referrer');
     res.setHeader('X-Agentsys-Protocol', String(Protocol.PROTOCOL));
+    if (SERVE_CLIENT) {
+      // The combined local server hosts the same interface as bin/agentsys-client.js and sends the same policy:
+      // the page cannot be framed, and only its own files, inline styles and the plugin blob frames may load.
+      res.setHeader('X-Frame-Options', 'DENY');
+      res.setHeader(
+        'Content-Security-Policy',
+        "default-src 'self'; script-src 'self' 'unsafe-eval' 'unsafe-inline' blob:; style-src 'self' 'unsafe-inline'; img-src 'self' data: blob:; connect-src 'self' http: https:; frame-src 'self' blob:; object-src 'none'; base-uri 'none'"
+      );
+    }
     for (const [name, value] of Object.entries(corsHeaders(req))) res.setHeader(name, value);
     let run;
     try {
@@ -938,6 +970,7 @@ function createServer(options = {}) {
     async close() {
       closing = true;
       clearInterval(watcher);
+      clearInterval(sessionSweep);
       await backend?.Backend.shutdownExecutions();
       for (const res of clients) res.end();
       clients.clear();
@@ -954,6 +987,8 @@ function createServer(options = {}) {
     },
     api: backend?.Backend ?? null,
     apiAvailable: !!backend && (loopbackBound || !!TOKEN),
+    /** The message redactor used for API errors and diagnostics (tested directly). */
+    redact,
   };
 }
 

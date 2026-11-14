@@ -64,6 +64,15 @@ const pluginCard = p => {
   });
 };
 
+/** The capabilities field is a comma separated list; empty means the read-only default. */
+const readCapabilities = form => {
+  const values = String(form.elements.capabilities?.value || '')
+    .split(',')
+    .map(value => value.trim())
+    .filter(Boolean);
+  return values.length ? values : undefined;
+};
+
 /** What a plugin's sandbox put into the interface while it is running. */
 function pluginInterface(plugin) {
   if (!plugin.enabled)
@@ -99,6 +108,7 @@ function pluginEditor(plugin = {}) {
     ${field('Description', `<textarea name="description" rows="2" maxlength="2000">${esc(plugin.description || '')}</textarea>`)}
     ${field('Icon', `<input name="icon" value="${esc(plugin.icon || 'plug')}" placeholder="plug">`)}
     ${field('Source', `<textarea name="source" rows="16" spellcheck="false" required placeholder="exports.activate = async api => { ... }">${esc(plugin.source || '')}</textarea>`)}
+    ${field('Server capabilities', `<input name="capabilities" value="${esc((plugin.capabilities || []).join(', '))}" placeholder="graph.read, library.write" autocomplete="off" spellcheck="false"><span class="field-help">Comma separated. Leave empty for read-only access. Writes, runs, secrets and network hosts must each be named: <code>graph.write</code>, <code>run.start</code>, <code>collections.write</code>, <code>secrets.use:my-key</code>, <code>net.fetch:api.example.com</code>.</span>`)}
     <p class="muted small">The plugin runs in a sandboxed iframe. It reaches the server only through <code>api.request</code>, and it never receives the server token.</p>
     <p class="form-error" data-form-error hidden></p>
   </form>`;
@@ -116,6 +126,7 @@ function installPluginDialog() {
           description: form.elements.description.value,
           icon: form.elements.icon.value,
           source: form.elements.source.value,
+          capabilities: readCapabilities(form),
         });
         await reloadPlugins();
         toast('Plugin installed in this browser.');
@@ -159,6 +170,7 @@ async function pluginPage(view, route) {
       <div><dt>State</dt><dd><span class="plugin-state ${state[0]}">${state[1]}</span></dd></div>
       <div><dt>Version</dt><dd>${esc(plugin.version)}</dd></div>
       <div><dt>Runs in</dt><dd>This browser · sandboxed iframe</dd></div>
+      <div><dt>Server access</dt><dd>${esc(typeof PluginCapabilities === 'undefined' ? '' : PluginCapabilities.describe(plugin.capabilities))}</dd></div>
       <div><dt>Source</dt><dd>${plugin.builtin ? 'Bundled with the client' : 'Installed here'}</dd></div>
     </dl></section>
     <section><h2>Interface</h2>${pluginInterface(plugin)}</section>
@@ -179,6 +191,7 @@ async function pluginPage(view, route) {
         description: form.elements.description.value,
         icon: form.elements.icon.value,
         source: form.elements.source.value,
+        capabilities: readCapabilities(form),
       });
       return reloadPlugins().then(() => {
         toast('Plugin saved.');
