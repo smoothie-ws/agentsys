@@ -132,7 +132,7 @@ still open. Work of 16:00–16:16:
 - **Second browser engine**: `browser_ux.py firefox` passes all eight checks; screenshots get a `-firefox` suffix.
 - Docs: `docs/server.md` gains an Errors table and the token endpoint; `docs/security.md` and `docs/plugins.md`
   state the two-layer model honestly; `docs/architecture.md` lists the endpoint; CI installs both engines.
-- Node total: **338**. Final code commit `73e4ae0`. Total wall time at this point: 14:56:29 → 16:20 =
-  **83 min 31 s** (5 011 s), still not the 12-hour cycle.
+- Node total: **338**. Final code commit `73e4ae0`. Total wall time at the last verification: 14:56:29 → 16:19:25 =
+  **82 min 56 s** (4 976 s), still not the 12-hour cycle.
 
 

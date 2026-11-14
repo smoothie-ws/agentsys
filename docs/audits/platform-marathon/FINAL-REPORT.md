@@ -12,8 +12,8 @@ scenarios and twelve new Node test files lock the behaviour in. A second phase c
 security gap: plugin capabilities are now enforced by the server through scoped tokens, not only by the host
 page that issues them.
 
-**The 12-hour cycle was not completed.** This session ran **62 minutes 49 seconds** of wall time
-(2026-11-14T14:56:29 → 15:59:18, UTC+10, including the last verification), then returned control to the
+**The 12-hour cycle was not completed.** This session ran **82 minutes 56 seconds** of wall time
+(2026-11-14T14:56:29 → 16:19:25, UTC+10, including both phases), then returned control to the
 harness. The objective's condition for a
 12-hour cycle (a full 43 200-second interval, or an external controller resuming from the journal) was not met.
 Nothing in this report pretends otherwise. Because the work is resumable, the remaining backlog is written down
@@ -24,8 +24,8 @@ in section 12 and the journal is current.
 | Item | Value |
 |---|---|
 | Start | 2026-11-14T14:56:29+10:00 (Unix 1794632189) |
-| End of measured work | 2026-11-14T16:20:00+10:00 (Unix 1794637200), after the second phase |
-| Actual duration | **83 min 31 s** (5 011 s) |
+| End of measured work | 2026-11-14T16:19:25+10:00 (Unix 1794637165), after the second phase |
+| Actual duration | **82 min 56 s** (4 976 s) |
 | Planned deadline | 2026-11-15T02:56:29+10:00 (not reached) |
 | Source branch / commit | `platform/server-client` / `5123643be41a0227f6cb5e9ea586cfee816e1946` |
 | Audit branch | `audit/12h-platform-hardening` |
@@ -40,7 +40,7 @@ or externally driven session should pick up, in order.
 
 | Metric | Requirement | Result |
 |---|---|---|
-| Actual duration | measured | 83 min 31 s, stated above; not 12 h |
+| Actual duration | measured | 82 min 56 s, stated above; not 12 h |
 | Initial tests | exact | `node --test`: **245** on `main`, **242** on the source branch, 0 failures |
 | Final tests | exact | **338** pass, 0 fail, ~12 s (Linux CI configured for Node 20; measured on Node 20.11/Windows) |
 | New tests | count and purpose | **96 Node tests** (12 new files plus 4 added to migration) + **3 browser scenarios** (24 checks; the interface ones also on Firefox); listed in section 5 |
