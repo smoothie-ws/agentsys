@@ -720,6 +720,8 @@ function createServer(options = {}) {
   const failure = (res, error) => {
     const status = Number.isInteger(error?.status) ? error.status : error instanceof URIError ? 400 : 500; // a malformed %-escape in the address
     noteError(status, error);
+    // A 405 names the methods the path accepts.
+    if (status === 405 && error?.allow) res.setHeader('Allow', String(error.allow));
     sendJSON(res, status, {
       error: {
         code: error?.code || (status === 500 ? 'internal' : 'error'),

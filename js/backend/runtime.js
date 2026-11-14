@@ -447,7 +447,16 @@ const Backend = {
   async request(method, path, {body = {}, query = {}, edit = null, scriptContext = null} = {}) {
     path = path.replace(/^\/+|\/+$/g, '');
     const found = ROUTES.find(r => r.methods.has(method) && r.regex.test(path));
-    if (!found) throw missing('API endpoint not found');
+    if (!found) {
+      // A known path with another method is a 405 with the methods it does accept, not a 404.
+      const allowed = [...new Set(ROUTES.filter(r => r.regex.test(path)).flatMap(r => [...r.methods]))];
+      if (allowed.length) {
+        const error = new ApiError('method_not_allowed', `Use ${allowed.join(', ')} for /${path}`, 405);
+        error.allow = allowed.join(', ');
+        throw error;
+      }
+      throw missing('API endpoint not found');
+    }
     const params = Object.fromEntries(
       Object.entries(path.match(found.regex).groups || {}).map(([k, v]) => {
         let value;
