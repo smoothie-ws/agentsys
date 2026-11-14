@@ -34,10 +34,13 @@ Environment variables: `AGENTSYS_TOKEN`, `AGENTSYS_ALLOWED_ORIGINS` (comma separ
 ## Startup and shutdown
 
 1. The data folder is created if needed.
-2. An interrupted `.transaction.json` is replayed once, then the files are scanned.
-3. The backend loads from the fixed `server/manifest.js`; the API is available immediately.
-4. The file watcher announces external changes to connected clients.
-5. On `SIGINT`/`SIGTERM`: active workflows are stopped, event streams close, and the process exits.
+2. The folder is locked (`data/.server.lock`, holding the pid): a second server on the same folder exits with a
+   message naming the process that holds it. A lock left by a crashed process is detected and taken over.
+3. An interrupted `.transaction.json` is replayed once, then the files are scanned.
+4. The backend loads from the fixed `server/manifest.js`; the API is available immediately.
+5. The file watcher announces external changes to connected clients.
+6. On `SIGINT`/`SIGTERM`: active workflows are stopped, event streams close, the lock is released, and the
+   process exits.
 
 The server restores stored JSON, port values and previews. It does **not** resume JavaScript stacks, timers or
 pending external requests, and it does not automatically re-run workflows that were active before a restart.
@@ -86,9 +89,13 @@ Errors are JSON:
 - A token is required on any other address; the CLI refuses to start without one.
 - `POST /api/auth/session` accepts a token in the JSON body or as a Bearer header and sets an HttpOnly session
   cookie. Reads and writes accept either the cookie or the Bearer header.
+- Sessions live in memory for `--session-hours` (12 by default). The map is swept and capped (`sessionLimit`,
+  10 000 by default); the oldest session is evicted first. A restart invalidates every session.
 - Unsafe cookie-authenticated requests need `X-AgentSys: 1` and an allowed `Origin` (CSRF protection).
 - CORS is an exact allowlist (`--allowed-origin`); `*` is never sent for credentials. A tokenless loopback
   server also accepts loopback origins so the split local launcher works.
+- A known path called with an unsupported method answers `405` and names the methods in `Allow`; an unknown path
+  is `404`; a body over the limit is `413`.
 
 See [security.md](security.md) and [deployment.md](deployment.md).
 

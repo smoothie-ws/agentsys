@@ -75,18 +75,30 @@ not rewritten in this cycle; their regression tests still pass.
 ## Client plugin isolation
 
 A client plugin runs in a sandboxed iframe with an opaque origin: no host DOM, no browser storage, no cookies, no
-token, no direct network. It receives a narrow RPC API through the host. Page HTML is sanitized; CSS cannot load
-external resources.
+token, no direct network. It receives a narrow RPC API through the host. Page HTML is sanitized (including
+namespaced `<svg><script>`), CSS cannot load external resources, sidebar links must be paths of this client, and
+a plugin can execute only its own commands.
 
-This is isolation of code, not authorization of intent. **Installed plugins are trusted by the user**: they can
-make any API call the user can. Do not describe them as safe for untrusted code. See [plugins.md](plugins.md).
+On top of the sandbox there is a **capability layer** for server calls: the host classifies every `api.request`
+by method, path and (for `net`) the body, and refuses calls the package did not declare. A package without
+`capabilities` is read-only; writes, runs, secrets and network hosts are named explicitly
+(`graph.write`, `run.start`, `secrets.use:<name>`, `net.fetch:<host>`). Auth endpoints are never reachable.
+
+This is still isolation of code inside a trusted browser session, not authorization of the person: the check runs
+in the host page, so it holds against the plugin, not against an operator who edits the client and calls the API
+directly. **Install plugins with the capabilities you are willing to grant.** See [plugins.md](plugins.md).
 
 ## Remaining risks
 
 - Loopback trust assumes the machine itself is not hostile. Any local process can use a tokenless loopback API.
-- In-memory sessions are lost on restart; a client must hold its token to renew silently.
+- In-memory sessions are lost on restart; a client must hold its token to renew silently. The session map is
+  capped (10 000) and swept, and a restart invalidates every session.
 - The client loads local validation code from its own origin; a compromised client host can change the client,
   but not the server (the server manifest is independent).
 - Generic collections and Script nodes are user data. The server validates their shape but cannot know whether a
   workflow has harmful external side effects; permissions and project policy are the control.
-- No per-plugin capabilities, no multi-user roles, no audit log of individual users. These are future work.
+- `POST /api/net` is reachable by any token holder and by a plugin with `net.fetch:<host>`; the host, not the
+  method, decides what is fetched. Treat a token as an operator credential.
+- A plugin's `graph.write` (or `library.write`) is a real write to the user's data. Capabilities bound the
+  plugin's reach; they do not make an untrusted plugin safe to install.
+- No multi-user roles, no per-user audit log. These are future work.
