@@ -129,7 +129,21 @@ async function render() {
   } catch (error) {
     if (revision !== renderRevision) return;
     const [label, href] = parentPage(route);
-    view.innerHTML = `<div class="page">${pageHead({title: 'Could not open this page', sub: esc(error.message), menu: ''})}<p><a class="button" href="${esc(href)}" data-link>Back to ${esc(label)}</a></p></div>`;
+    // Keep the page the reader asked for: its title, what failed, and a way forward. Replacing the whole view
+    // with a bare error loses the place the reader is in, which matters most while the server is away.
+    const title =
+      {projects: 'Projects', resources: 'Library', settings: 'Settings', plugins: 'Plugins', api: 'API', environments: 'Environments', collections: 'Collections'}[
+        route.page
+      ] || 'This page';
+    const offline = error.code === 'network_error' || (typeof Environment !== 'undefined' && Environment.status?.().status === 'disconnected');
+    view.innerHTML = `<div class="page">${pageHead({title: esc(title), menu: ''})}<div class="empty"><h2>${
+      offline ? 'The server could not be reached' : 'This page could not be opened'
+    }</h2><p class="muted">${esc(
+      offline ? 'Check the environment this client is connected to, then try again.' : error.message
+    )}</p>${offline ? `<p class="muted small">${esc(error.message)}</p>` : ''}<p><button type="button" class="primary" data-retry>Try again</button> <a class="button" href="${esc(
+      href
+    )}" data-link>Back to ${esc(label)}</a></p></div></div>`;
+    $('[data-retry]', view)?.addEventListener('click', () => render().catch(fail));
   }
   if (revision !== renderRevision) return;
   app.currentURL = routeURL();

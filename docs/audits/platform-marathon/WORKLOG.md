@@ -58,3 +58,40 @@ Candidates recorded for verification (not yet confirmed defects):
   code, (e) client sources never use the server store or `require()` Node modules, (f) the server source
   tree never requires a client module, (g) no hard-coded `localhost`/`127.0.0.1` in client logic except
   the documented default resolver, (h) no cyclic relative requires between Node modules.
+
+## 2026-11-14T15:23 — Phases 2–6 done; suite at 301 tests
+
+Written at 15:23 (27 min after the start), covering 15:15–15:23. Each phase ended in a commit:
+
+- `3278854` Architecture + transport: boundary analyser, transport in a Node vm, abort on switch/remove, one
+  default URL resolver. +16 tests.
+- `8779303` Security (plugins + HTTP): capability layer, command scoping, href check, sanitizer, session
+  sweep, 413, CSP, OpenAPI version. +14 Node tests, +1 browser scenario.
+- `af2b637` Storage + migration: one writer per data folder, recovery tests, migration key preservation.
+  +14 tests.
+- `76be783` Concurrency: If-Match conflicts, two clients, restart, rapid switching. +7 tests.
+
+Confirmations against the candidates recorded at 15:15 (all reproduced, all fixed):
+
+1. Transport abort: `controller` was never assigned. Each generation owns one now; a test asserts
+   `signal.aborted` after a switch.
+2. Removing the active environment left `status: connected` and an open stream from the removed server.
+   `remove()` now starts a new generation and connects the next environment.
+3. `commands.execute('other:cmd')` reached another plugin's command. Refused; a browser test proves the
+   victim command never ran.
+4. `ui.addSidebarItem({href:'javascript:…'})` executed in the client origin on click (the router only
+   intercepts same-origin links). Only `/…` paths are accepted now.
+5. SVG `<script>` survived `sanitizeHTML` (upper-case tagName comparison). Removed by local name now.
+6. `SESSIONS` grew forever. Swept on login and every 5 minutes (unref'd); diagnostics reports the count.
+7. An oversized body killed the socket before the 413. A declared oversized body is answered now, and a
+   streaming one stops buffering and is answered. Test posts 21 MB and reads the JSON 413.
+8. The combined server sent no CSP/frame policy. Identical to the client now.
+9. OpenAPI reported a literal `0.3.0`; it reports the running version and protocol now.
+10. Two servers on one data folder overwrote each other's documents. A pid lock refuses the second process,
+    takes over a stale lock, and `AGENTSYS_ALLOW_SHARED_DATA=1` is the explicit escape hatch.
+
+Additional defect found while testing migration: a duplicate provider record without `apiKey` erased the
+`{{secret:…}}` reference migrated from the earlier record. Fixed; the key reference is kept.
+
+Still open: engine regression scenarios, resource/bench measurements, UI checks and screenshots, API/perf
+matrix, deployment artefacts, final audit.

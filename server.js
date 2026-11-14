@@ -195,6 +195,7 @@ function createServer(options = {}) {
     TRUST_PROXY = !!options.trustProxy || process.env.AGENTSYS_TRUST_PROXY === '1',
     SESSIONS = new Map(),
     SESSION_TTL_MS = Math.max(60000, Number(options.sessionTtlMs || 12 * 60 * 60 * 1000)),
+    SESSION_LIMIT = Math.max(1, Math.min(100000, Number(options.sessionLimit || 10000))),
     ALLOW_SHARED_DATA = options.allowSharedData === true || process.env.AGENTSYS_ALLOW_SHARED_DATA === '1',
     LOCK_FILE = path.join(DATA, '.server.lock');
   // Two server processes on one data folder would each cache whole documents and overwrite the other's writes:
@@ -263,6 +264,8 @@ function createServer(options = {}) {
     const id = crypto.randomBytes(32).toString('base64url'),
       hash = sessionHash(id);
     SESSIONS.set(hash, {expires: Date.now() + SESSION_TTL_MS, created: Date.now()});
+    // A flood of sign-ins must not grow memory without limit: the oldest session goes first.
+    while (SESSIONS.size > SESSION_LIMIT) SESSIONS.delete(SESSIONS.keys().next().value);
     return id;
   };
   function sweepSessions() {

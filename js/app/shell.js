@@ -200,6 +200,8 @@ async function destinations() {
     {label: 'Dashboard', hint: 'Page', href: '/'},
     {label: 'Projects', hint: 'Page', href: '/projects'},
     {label: 'Library', hint: 'Page', href: '/library'},
+    {label: 'Collections', hint: 'Page', href: '/collections'},
+    {label: 'Environments', hint: 'Page', href: '/environments'},
     {label: 'API', hint: 'Page', href: '/api'},
     {label: 'Plugins', hint: 'Page', href: '/plugins'},
     {label: 'Settings', hint: 'Page', href: '/settings'},
@@ -275,10 +277,14 @@ function openSearch() {
     clearTimeout(timer);
     timer = setTimeout(() => run().catch(fail), 150);
   };
-  // Enter opens the first result; the arrow keys walk the list.
+  // Enter opens the first result; the arrow keys walk the list. Escape closes the search from the field as well:
+  // a `type="search"` input would otherwise spend the first Escape on clearing its text in Chromium.
   input.onkeydown = event => {
     const first = $('a, button', results);
-    if (event.key === 'Enter' && first) {
+    if (event.key === 'Escape') {
+      event.preventDefault();
+      $('#modal').close();
+    } else if (event.key === 'Enter' && first) {
       event.preventDefault();
       first.click();
     } else if (event.key === 'ArrowDown' && first) {
