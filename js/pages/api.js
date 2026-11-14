@@ -25,7 +25,7 @@ function apiPathTree(rows) {
   return root;
 }
 /** Keep method navigation on the page so folding the application sidebar never hides it. */
-function mountApiReference(box, spec = Backend.openapi()) {
+function mountApiReference(box, spec) {
   const rows = apiReferenceRows(spec),
     state = Tabs.stateOf('api'),
     open = new Set(state.apiOpen ?? []);
@@ -130,7 +130,7 @@ function mountApiReference(box, spec = Backend.openapi()) {
 }
 
 PAGES.api = async (view, route) => {
-  const spec = DB.mode === 'files' ? await api('openapi.json') : Backend.openapi();
+  const spec = await api('openapi.json');
   if (app.route !== route) return;
   view.innerHTML = `<div class="page api-page">${pageHead({title: 'API reference', menu: '', sub: 'Every action of the app is an API call.', actions: `<button type="button" id="api-download" title="Download OpenAPI" aria-label="Download OpenAPI">${icon('download')}<span>Download OpenAPI</span></button>`})}
     <section id="api-reference"><div id="api-box"></div></section></div>`;

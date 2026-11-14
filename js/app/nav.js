@@ -19,13 +19,15 @@ function sectionOf(route) {
   if (route.page === 'ext') return 'ext:' + route.plugin;
   if (route.project?.startsWith('lib-')) return 'library'; // a Custom Node is edited as a workflow
   if (route.project || route.page === 'projects') return 'projects';
-  return {resources: 'library', plugins: 'plugins', settings: 'settings', api: 'home'}[route.page] || 'home';
+  return {resources: 'library', collections: 'collections', plugins: 'plugins', environments: 'environments', settings: 'settings', api: 'home'}[route.page] || 'home';
 }
 const SECTION_TITLES = {
   home: 'Dashboard',
   plugins: 'Plugins',
   projects: 'Projects',
   library: 'Library',
+  collections: 'Collections',
+  environments: 'Environments',
   settings: 'Settings',
   api: 'API reference',
 };

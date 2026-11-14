@@ -1,13 +1,12 @@
 'use strict';
-// Loads the browser-free half of the app (storage, model, backend) into a Node vm context. The script list is read from
-// index.html, so a new backend file only needs to be added there. Used by the server (the HTTP API,
-// with Script nodes in worker threads and the data folder as the store) and by the tests (in memory, Scripts inline).
+// Loads the server half of the app (shared helpers, storage, model, backend) into a Node vm context. The script
+// list is the fixed manifest in server/manifest.js: the client's index.html cannot add code to the server.
+// Used by the server (HTTP API, worker threads, data folder) and by the tests (in memory, Scripts inline).
 const fs = require('node:fs');
 const path = require('node:path');
 const vm = require('node:vm');
 const {Worker} = require('node:worker_threads');
-
-const LAYERS = /^js\/(storage|model|backend)\//;
+const {FILES} = require('./server/manifest');
 
 // A worker thread that looks like the browser's Web Worker to the Script runner (backend/scripts.js).
 const WORKER_PRELUDE = `const {parentPort} = require('node:worker_threads');
@@ -75,8 +74,7 @@ class NodeWorker {
 function loadBackend({root, store = null, scripts = 'worker'} = {}) {
   const workerStats = {started: 0, terminated: 0, exited: 0};
   root = path.resolve(root || __dirname);
-  const html = fs.readFileSync(path.join(root, 'index.html'), 'utf8');
-  const files = [...html.matchAll(/<script defer src="([^"]+)"/g)].map(m => m[1]).filter(f => LAYERS.test(f));
+  const files = FILES;
   const sandbox = {
     console,
     crypto: globalThis.crypto,

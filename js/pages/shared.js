@@ -41,7 +41,7 @@ function livePage(route, update) {
         run();
       }, 250);
   };
-  const unsubscribe = Backend.subscribe(schedule, {own: true});
+  const unsubscribe = Environment.subscribe(schedule);
   const interval = setInterval(run, 3000);
   document.addEventListener('visibilitychange', schedule);
   app.pageDispose = () => {

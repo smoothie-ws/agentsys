@@ -104,7 +104,7 @@ test('the API creates, runs and persists: projects become files in the data fold
     assert.ok(fs.existsSync(path.join(dataDir, 'projects.json')));
     assert.ok(fs.existsSync(path.join(dataDir, 'workflows', `${id}.json`)));
     assert.ok(!fs.existsSync(path.join(dataDir, 'runs')));
-    assert.equal((await call(url, 'GET', 'openapi.json')).body.info.title, 'AgentSys browser API');
+    assert.equal((await call(url, 'GET', 'openapi.json')).body.info.title, 'AgentSys Server API');
   });
 });
 

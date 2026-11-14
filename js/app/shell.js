@@ -305,21 +305,147 @@ function openSearch() {
   run().catch(fail);
 }
 
+// ----- environments -----
+const ENVIRONMENT_LABEL = {
+  connected: 'Connected',
+  connecting: 'Connecting',
+  disconnected: 'Disconnected',
+  unauthorized: 'Unauthorized',
+  incompatible: 'Incompatible version',
+  error: 'Connection error',
+};
+let lastEnvironmentStatus = null;
+
+function renderEnvironmentIndicator(state = Environment.status()) {
+  const button = $('#environment-indicator');
+  if (!button) return;
+  const name = state.environment?.name || 'No server';
+  $('.env-name', button).textContent = name;
+  $('.env-dot', button).dataset.status = state.status;
+  button.title = `AgentSys server: ${name} · ${ENVIRONMENT_LABEL[state.status] || state.status}${
+    state.detail ? ' · ' + state.detail : ''
+  }`;
+  button.setAttribute('aria-label', button.title);
+}
+
+async function chooseEnvironment(id) {
+  const button = $('#environment-indicator');
+  button.disabled = true;
+  try {
+    toast('Switching server…');
+    const ok = await Environment.setActive(id);
+    if (!ok) {
+      toast(stateMessage(Environment.status()), true);
+      await go('/environments');
+    }
+  } finally {
+    button.disabled = false;
+  }
+}
+
+const stateMessage = state => {
+  if (state.status === 'unauthorized') return 'This server requires a token. Add it in Environments.';
+  if (state.status === 'incompatible') return state.detail || 'This client and server speak different protocol versions.';
+  if (state.status === 'disconnected') return state.detail || 'The server could not be reached.';
+  return state.detail || 'The environment is not connected.';
+};
+
+function environmentMenu() {
+  const state = Environment.status();
+  const items = [
+    [`${ENVIRONMENT_LABEL[state.status] || state.status}${state.meta?.server_name ? ' · ' + state.meta.server_name : ''}`, null, {header: true}],
+    ...Environment.list().map(env => [
+      env.name,
+      env.id === state.environment?.id ? null : () => chooseEnvironment(env.id).catch(fail),
+      {checked: env.id === state.environment?.id, hint: env.url, icon: 'server'},
+    ]),
+    null,
+    ['Reconnect', () => Environment.reconnect().then(ok => ok || toast(stateMessage(Environment.status()), true)).catch(fail), {icon: 'refresh'}],
+    ['Manage environments…', () => go('/environments').catch(fail), {icon: 'settings'}],
+  ];
+  return items;
+}
+
+document.addEventListener('click', event => {
+  const button = event.target.closest('#environment-indicator');
+  if (!button) return;
+  event.preventDefault();
+  const rect = button.getBoundingClientRect();
+  popup(rect.left, rect.bottom + 4, environmentMenu());
+});
+
 // ----- boot -----
 async function boot() {
   await store.ready;
   Tabs.load();
+  renderEnvironmentIndicator();
+  Environment.subscribeStatus(state => {
+    renderEnvironmentIndicator(state);
+    const was = lastEnvironmentStatus;
+    lastEnvironmentStatus = state.status;
+    // A client that lost the stream for a while gets the current state, never a replay of its own mutations.
+    if (was && was !== 'connected' && state.status === 'connected' && app.booted) refreshAfterReconnect().catch(fail);
+    if (state.status === 'unauthorized' && was !== 'unauthorized' && app.booted)
+      toast('The server rejected this client. Add its token in Environments.', true);
+  });
+  const connected = await Environment.start();
+  lastEnvironmentStatus = Environment.status().status;
+  if (!connected) {
+    await go('/environments', true).catch(error => {
+      $('#view').innerHTML = `<div class="empty"><h2>Could not open Environments</h2><p>${esc(error.message)}</p></div>`;
+    });
+    return;
+  }
   const session = await api('session');
   Object.assign(app, {preferences: session.preferences, shortcutDefaults: session.shortcut_defaults});
   applyStyle(session.preferences.style);
-  if (!Backend.persistent)
-    setTimeout(() => toast('Storage is unavailable here. Changes will be lost when you close this tab.', true), 500);
   await api('library/builtin', {method: 'POST', body: {}}).catch(() => {}); // the built-in nodes join the Library
   await Promise.all([loadLibrary(), loadProjects(), loadPlugins()]);
+  app.booted = true;
   await render();
   await Tabs.refreshRuntimes();
 }
-Backend.subscribe(keys => {
+
+async function refreshAfterReconnect() {
+  const route = app.route;
+  await Promise.all([loadProjects().catch(() => {}), loadLibrary().catch(() => {})]);
+  if (typeof ClientPlugins !== 'undefined') ClientPlugins.sync().catch(() => {});
+  if (route && ['workflow', 'project', 'home', 'resources'].includes(route.page)) await render().catch(() => {});
+  await Tabs.refreshRuntimes().catch(() => {});
+}
+
+/** Flush every open editor and forget per-server view state before the transport points somewhere else. */
+Environment.onBeforeSwitch(async () => {
+  if (!app.booted) return;
+  try {
+    await flushNodeEdits?.();
+  } catch {}
+  app.pageDispose?.();
+  app.pageDispose = null;
+  Tabs.items = [];
+  Tabs.pages = {};
+  Tabs.runtimes.clear();
+  Tabs.seen.clear();
+  Tabs.save();
+  Tabs.render();
+  app.projects = [];
+  app.resources = [];
+  navOpen.clear();
+  projectTree.workflows.clear();
+});
+Environment.onAfterSwitch(async () => {
+  if (!app.booted) return;
+  const session = await api('session');
+  Object.assign(app, {preferences: session.preferences, shortcutDefaults: session.shortcut_defaults});
+  applyStyle(session.preferences.style);
+  await api('library/builtin', {method: 'POST', body: {}}).catch(() => {});
+  await Promise.all([loadLibrary(), loadProjects()]);
+  await go('/');
+  toast(`Connected to ${Environment.status().environment?.name || 'the server'}.`);
+});
+
+Environment.subscribe(keys => {
+  if (!app.booted) return;
   if (keys.includes('projects')) {
     loadProjects().catch(() => {});
     for (const key of navOpen) if (key.startsWith('p:')) loadProjectWorkflows(key.slice(2), true);
@@ -328,11 +454,9 @@ Backend.subscribe(keys => {
     loadLibrary()
       .then(renderSidebar)
       .catch(() => {});
-  // Turned on or off in another tab: its interface follows the server module.
-  if (keys.includes('plugins-disabled') && typeof Extensions !== 'undefined') Extensions.reload().catch(fail);
 });
 // on_placed, on_deleted, on_input_connected and on_widget run by themselves after a change, so a failure has to be told to the person.
-Backend.subscribeHooks(entry =>
+Environment.subscribeHooks(entry =>
   toast(
     `${entry.hook} of ${entry.hook === 'on_deleted' ? 'a Library node' : `[a Library node](node:${entry.node_id})`} failed: ${entry.error}`,
     true

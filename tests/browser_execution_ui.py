@@ -134,8 +134,13 @@ async def audit(base):
         before = await page.evaluate(geometry, ids['script'])
         assert before['background'] != 'rgba(0, 0, 0, 0)'
         await page.evaluate('async id=>{await api(`projects/${W.project}/node-style`,{method:"PUT",body:wf({node_id:id,color:"#3b6ea8"})});await reload();}', ids['script'])
+        await page.wait_for_timeout(300)  # fonts/layout settle before comparing paint-only properties
         after = await page.evaluate(geometry, ids['script'])
-        assert {k: v for k, v in before.items() if k != 'background'} == {k: v for k, v in after.items() if k != 'background'}
+        # Subpixel layout can differ by a fraction between two paints; round before comparing.
+        def rounded(values):
+            return {k: round(v, 2) if isinstance(v, (int, float)) else v for k, v in values.items() if k != 'background'}
+
+        assert rounded(before) == rounded(after), (before, after)
         await page.locator('[data-side-tab=workflow]').click()
         assert await page.locator('.workflow-section').count() >= 3
         assert await page.locator('.workflow-section[open]').count() == 0

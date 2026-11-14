@@ -2,9 +2,12 @@
 // (a private workflow whose id is "lib-<resource id>").
 'use strict';
 
+// Library sections used to be registered by server plugins. A server has none now; a client plugin can add a
+// section in its own interface. The endpoint stays so older clients do not break.
+route('GET', 'library/sections', 'List server-registered Library sections (none by design)', async () => []);
+
 // ----- Library groups for Custom Nodes: a tree of named groups, stored apart from the nodes -----
-const parentPath = path => (path.includes('/') ? path.slice(0, path.lastIndexOf('/')) : '');
-const underPath = (path, root) => path === root || path.startsWith(root + '/');
+// parentPath and underPath are shared with the client (shared/core.js).
 /** Stored groups plus every level of the group path of each item (imported items name a group that may not exist yet). */
 async function nodeFolders(c) {
   const all = new Set(await c.ctx.get('node_folders', []));
@@ -97,6 +100,40 @@ route(
     return {id: item.id, folder};
   },
   {body: {folder: 'Logic'}}
+);
+
+// A client plugin uses this to turn a small form into an ordinary Library node. The node is saved by the server
+// and has no dependency on the plugin after this call: it is a normal graph with a Script.
+route(
+  'POST',
+  'library/script-nodes',
+  'Create a Script-backed Library node',
+  async c => {
+    const name = String(c.body.name || '').trim();
+    if (!name || name.length > 100) throw bad('A node name has 1 to 100 characters');
+    const code = String(c.body.code ?? '');
+    if (!code.trim() || code.length > 200000) throw bad('The Script code has 1 to 200000 characters');
+    const inputs = c.body.inputs === undefined ? [] : c.body.inputs,
+      outputs = c.body.outputs === undefined ? [] : c.body.outputs,
+      grants = c.body.grants === undefined ? ['graph.read'] : c.body.grants;
+    if (!Array.isArray(inputs) || inputs.length > 64 || !Array.isArray(outputs) || outputs.length > 64)
+      throw bad('inputs and outputs are lists of at most 64 ports');
+    checkManifest({grants});
+    const items = await c.ctx.get('resources', []);
+    if (items.some(item => item.name === name)) throw bad('A node with that name already exists.');
+    const payload = scriptNodePayload({
+      name,
+      inputs,
+      outputs,
+      grants,
+      code,
+      description: String(c.body.description ?? '').slice(0, 2000),
+      folder: String(c.body.folder ?? '').slice(0, 200),
+      icon: c.body.icon,
+    });
+    return saveResource(c, items, null, name, payload);
+  },
+  {body: {name: 'HTTP Request', code: 'node.output.value = 1;', inputs: [], outputs: ['value']}}
 );
 
 // ----- Library graph editor: a private workflow that holds the Custom Node being edited -----

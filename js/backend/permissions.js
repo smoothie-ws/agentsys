@@ -1,17 +1,7 @@
 'use strict';
 
-const CAPABILITY =
-  /^(graph\.(read|write)|library\.(read|write)|net\.fetch:[A-Za-z0-9.*:\[\]-]+|run\.(read|start)|notifications\.(read|write)|plugins\.call|secrets\.use:[A-Za-z0-9_-]+)$/;
-function checkManifest(manifest) {
-  for (const field of ['grants'])
-    if (
-      manifest[field] !== undefined &&
-      (!Array.isArray(manifest[field]) ||
-        manifest[field].length > 50 ||
-        manifest[field].some(v => typeof v !== 'string' || !CAPABILITY.test(v)))
-    )
-      throw bad(`Invalid ${field}`);
-}
+// CAPABILITY and checkManifest live in shared/core.js: the editor checks grants before it saves, and the
+// server checks them again at the API boundary.
 // Every route gets an explicit method -> needs entry. Unknown families are denied to scripts.
 function routeNeeds(pattern, method) {
   if (pattern === 'projects/{project_id}/evaluate-node' || pattern.startsWith('projects/{project_id}/execution'))
@@ -19,7 +9,7 @@ function routeNeeds(pattern, method) {
   if (pattern === 'net') return ['net.fetch:{host}'];
   if (pattern === 'notifications')
     return [method === 'GET' ? 'notifications.read' : method === 'POST' ? 'notifications.write' : 'system.admin'];
-  if (pattern === 'plugins/{id}/{name}') return ['plugins.call'];
+  if (/^collections/.test(pattern)) return [method === 'GET' ? 'collections.read' : 'collections.write'];
   if (/^(resources|library)(\/|$)/.test(pattern)) return [method === 'GET' ? 'library.read' : 'library.write'];
   if (/^projects(\/|$)/.test(pattern) || pattern === 'search/nodes')
     return [method === 'GET' ? 'graph.read' : 'graph.write'];

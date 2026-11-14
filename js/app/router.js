@@ -40,9 +40,11 @@ function parseRoute(path = routePath(), query = routeQuery()) {
     return {page: 'not-found'};
   }
   const page =
-    {projects: 'projects', settings: 'settings', library: 'resources', api: 'api', plugins: 'plugins'}[parts[0]] ||
-    'not-found';
+    {projects: 'projects', settings: 'settings', environments: 'environments', collections: 'collections', library: 'resources', api: 'api', plugins: 'plugins'}[
+      parts[0]
+    ] || 'not-found';
   if (page === 'plugins') return parts.length <= 2 ? {page, id: parts[1]} : {page: 'not-found'};
+  if (page === 'collections') return parts.length <= 2 ? {page, name: parts[1]} : {page: 'not-found'};
   if (page !== 'resources') return parts.length === 1 ? {page} : {page: 'not-found'};
   if (parts.length > 3 || (parts[1] && parts[1] !== 'nodes' && !/^[a-z][a-z0-9-]*$/.test(parts[1])))
     return {page: 'not-found'};
@@ -68,6 +70,7 @@ function parentPage(route) {
   }
   if (route.page === 'plugins' && route.id) return ['Plugins', '/plugins'];
   if (route.page === 'ext') return ['Plugins', '/plugins'];
+  if (route.page === 'environments') return ['Dashboard', '/'];
   return ['Dashboard', '/'];
 }
 let navigationRevision = 0,

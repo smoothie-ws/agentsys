@@ -21,6 +21,8 @@ const Tabs = {
         project: 'p:' + route.project,
         'project-settings': 'ps:' + route.project,
         settings: 'settings',
+        environments: 'environments',
+        collections: ['collections', route.name].filter(Boolean).join(':'),
         // (no "/" in a key: an editor's key is project/workflow)
         resources: ['res', route.section, route.id || (route.folder ? 'in:' + encodeURIComponent(route.folder) : '')]
           .filter(Boolean)
@@ -455,7 +457,7 @@ $('#tabs').addEventListener('pointerdown', event => {
 // Runtime commits also update tabs whose canvases are closed. Coalesce bursts of state/value events.
 const changedTabRuntimes = new Set();
 let tabRuntimeTimer = null;
-Backend.subscribe(
+Environment.subscribe(
   keys => {
     for (const key of keys) {
       const match = /^workflows\/([^/]+)\/runtime$/.exec(key);

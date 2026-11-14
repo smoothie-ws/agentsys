@@ -1,8 +1,11 @@
 'use strict';
+// LEGACY REFERENCE ONLY — the platform server never loads this file or any code under data/plugins/.
+// Server plugins were removed because they could register arbitrary routes and change the execution process.
+// It is kept (unreferenced) so the migration can explain the old contract; see server/migrate.js and docs/plugins.md.
+//
 // Plugins, in the manner of Substance Painter: a plugin is a folder in `data/plugins/` with a `main.js` that exports
-// `start(api)` and (optionally) `stop()`. There is no manifest, no sandbox and no permission list: a plugin is trusted
-// code that runs in the server process, like any other program the person installed. Plugins can be turned off and the
-// folder reloaded from the Plugins page.
+// `start(api)` and (optionally) `stop()`. There is no sandbox and no permission list: a plugin was trusted code that
+// ran in the server process. The client plugin host (js/app/extensions.js) replaces this model.
 //
 //   exports.title = 'My plugin';            // optional, shown on the Plugins page
 //   exports.description = 'What it does.';  // optional

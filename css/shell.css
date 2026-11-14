@@ -988,3 +988,36 @@ main {
   padding-left: 1.2rem;
 }
 
+
+/* Environments: the current server in the top strip. The dot is the connection state. */
+.environment-indicator { display: flex; align-items: center; gap: 7px; max-width: 190px; min-width: 0; padding: 4px 9px; border: 1px solid var(--line); border-radius: 999px; background: transparent; color: var(--muted); font: inherit; font-size: 12px; cursor: pointer; }
+.environment-indicator:hover { color: var(--text); border-color: var(--muted); }
+.environment-indicator .env-name { overflow: hidden; text-overflow: ellipsis; white-space: nowrap; }
+.env-dot { width: 8px; height: 8px; border-radius: 50%; flex: none; background: var(--muted); box-shadow: 0 0 0 2px color-mix(in srgb, var(--muted) 22%, transparent); }
+.env-dot[data-status="connected"] { background: var(--ok); box-shadow: 0 0 0 2px color-mix(in srgb, var(--ok) 22%, transparent); }
+.env-dot[data-status="connecting"] { background: var(--warn); animation: env-pulse 1s ease-in-out infinite; }
+.env-dot[data-status="disconnected"], .env-dot[data-status="error"] { background: var(--bad); }
+.env-dot[data-status="unauthorized"], .env-dot[data-status="incompatible"] { background: var(--warn); }
+@keyframes env-pulse { 50% { opacity: .35; } }
+.environment-list { display: grid; gap: 10px; }
+.environment-row { display: grid; grid-template-columns: 1fr auto; gap: 10px 18px; align-items: center; padding: 14px 16px; border: 1px solid var(--line); border-radius: var(--radius, 10px); }
+.environment-row.active { border-color: var(--accent); }
+.environment-row h3 { margin: 0; font-size: 1rem; }
+.environment-row .muted { margin: 2px 0 0; }
+.environment-status { display: inline-flex; align-items: center; gap: 6px; font-size: 12px; }
+.badge { display: inline-block; padding: 1px 7px; border-radius: 999px; font-size: 11px; font-weight: 600; vertical-align: middle; background: var(--field); color: var(--muted); }
+.badge[data-tone="info"] { color: var(--accent); background: var(--soft); }
+.badge[data-tone="success"] { color: var(--ok); background: color-mix(in srgb, var(--ok) 14%, transparent); }
+.badge[data-tone="warning"] { color: var(--warn); background: color-mix(in srgb, var(--warn) 14%, transparent); }
+.badge[data-tone="error"] { color: var(--bad); background: color-mix(in srgb, var(--bad) 14%, transparent); }
+.callout { padding: 12px 16px; border: 1px solid var(--line); border-left: 3px solid var(--accent); border-radius: var(--radius); background: var(--card); margin: 0 0 18px; }
+.callout p { margin: 0; }
+.callout p + p { margin-top: 6px; }
+.callout[data-tone="error"] { border-left-color: var(--bad); }
+.callout[data-tone="warning"] { border-left-color: var(--warn); }
+.environment-row .button-row { justify-content: flex-end; flex-wrap: wrap; }
+@media (max-width: 760px) {
+  .environment-indicator { max-width: 120px; }
+  .environment-row { grid-template-columns: 1fr; }
+  .environment-row .button-row { justify-content: flex-start; }
+}

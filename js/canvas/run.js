@@ -187,7 +187,7 @@ async function followExecution(detail, session = W.executionSession) {
     }
   };
   session.unfollow?.();
-  const unsubscribe = Backend.subscribe(keys => keys.includes(key) && session.pull().catch(fail), {commits: true});
+  const unsubscribe = Environment.subscribe(keys => keys.includes(key) && session.pull().catch(fail));
   session.unfollow = () => {
     unsubscribe();
     session.unfollow = session.pull = null;

@@ -60,7 +60,7 @@ document.addEventListener('keydown', event => {
     $('#open-notifications').focus();
   }
 });
-Backend.subscribe(keys => {
+Environment.subscribe(keys => {
   if (keys.includes('notifications')) loadNotifications().catch(() => {});
 });
 document.addEventListener('DOMContentLoaded', () => setTimeout(() => loadNotifications().catch(() => {}), 0));

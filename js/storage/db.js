@@ -1,30 +1,6 @@
-// Storage for the whole application: a key-value store with an in-memory cache. With the AgentSys server
-// (node server.js) keys use JSON files; without it data stays in IndexedDB.
-// Also defines the small helpers every layer uses: ApiError, bad(), missing(), uid(), clone(), isObject(), finite(), hashText().
+// Server-side storage: a key-value store with an in-memory cache. The server (headless.js) hands in a file store;
+// tests use the in-memory store. Shared helpers (ApiError, clone, uid, ...) live in shared/core.js, which is loaded first.
 'use strict';
-
-class ApiError extends Error {
-  constructor(code, message, status) {
-    super(message);
-    this.code = code;
-    this.status = status || (code === 'not_found' ? 404 : code === 'invalid_request' ? 400 : 409);
-  }
-}
-const bad = message => new ApiError('invalid_request', message, 400);
-const missing = message => new ApiError('not_found', message, 404);
-
-const uid = () => {
-  const bytes = new Uint8Array(16);
-  crypto.getRandomValues(bytes);
-  return [...bytes].map(b => b.toString(16).padStart(2, '0')).join('');
-};
-const clone = value => (value === undefined ? undefined : JSON.parse(JSON.stringify(value)));
-const isObject = value => value !== null && typeof value === 'object' && !Array.isArray(value);
-const finite = value => typeof value === 'number' && Number.isFinite(value);
-const hashText = async text =>
-  [...new Uint8Array(await crypto.subtle.digest('SHA-256', new TextEncoder().encode(text)))]
-    .map(b => b.toString(16).padStart(2, '0'))
-    .join('');
 
 const DB = (() => {
   const STORE = 'kv',

@@ -525,6 +525,25 @@ const Backend = {
   get storage() {
     return {mode: DB.mode, directory: DB.directory};
   },
+  /** Read-only server diagnostics: counts and the states of live runtimes, never workflow data or secrets. */
+  diagnostics() {
+    const runtimes = [...GRAPH_RUNTIMES.values()].map(entry => ({
+      workflow_id: entry.workflow,
+      status: runtimeStatus(entry),
+      paused: entry.paused,
+      active_signals: entry.pending.size,
+      detached: entry.detached.size,
+      last_used: entry.lastUsed,
+      storage_error: entry.storageError || null,
+    }));
+    return {
+      routes: ROUTES.length,
+      runtimes,
+      running: runtimes.filter(item => item.status !== 'idle').length,
+      hook_log: HOOKS.log.slice(-20),
+      pending_hooks: HOOKS.pending.size,
+    };
+  },
   /** An OpenAPI-style description of every call, for the API page. */
   openapi() {
     const paths = {};
@@ -554,6 +573,6 @@ const Backend = {
           'x-needs': r.needs[method],
         };
     }
-    return {info: {title: 'AgentSys browser API'}, paths};
+    return {info: {title: 'AgentSys Server API', version: '0.3.0'}, paths};
   },
 };
