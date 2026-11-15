@@ -70,7 +70,6 @@
     }
     return 0;
   }
-  const numeric = part => (/^\d+$/.test(part) ? Number(part) : null);
   function oneTest(version, token) {
     const text = String(token || '').trim();
     if (!text || text === '*' || text === 'x' || text === 'X') return true;
