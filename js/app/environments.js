@@ -211,7 +211,7 @@ const Environment = (() => {
   async function request(method, path, {body, query, edit, signal, env, auth} = {}) {
     return requestOnce(method, path, {body, query, edit, signal, env, auth}, true);
   }
-  async function requestOnce(method, path, {body, query, edit, signal, env: target, auth}, mayRenew) {
+  async function requestOnce(method, path, {body, query, edit, signal, env: target, auth}, mayRenew, payload) {
     const env = target || active || ensureDefaults();
     // A server that speaks another protocol is not asked: its answers would be read as this protocol's.
     if (status === 'incompatible')
@@ -232,13 +232,15 @@ const Environment = (() => {
     if (edit) headers['X-Edit'] = edit;
     let response;
     try {
+      // Capture once, including for a clean-401 renewal: callers may change their form draft meanwhile.
+      payload ??= {body: body === undefined || method === 'GET' || method === 'DELETE' ? undefined : JSON.stringify(body)};
       response = await fetch(apiURL(env, path, query), {
         method,
         headers,
         credentials: 'include',
         cache: 'no-store',
         signal: signalWithTimeout([gate, signal], timeout),
-        ...(body === undefined || method === 'GET' || method === 'DELETE' ? {} : {body: JSON.stringify(body)}),
+        ...(body === undefined || method === 'GET' || method === 'DELETE' ? {} : payload),
       });
     } catch (error) {
       if (gen !== generation) throw new ApiError('stale_environment', 'The environment changed', 409);
@@ -253,7 +255,7 @@ const Environment = (() => {
         try {
           await startSession(env, gate);
           if (gen !== generation) throw new ApiError('stale_environment', 'The environment changed', 409);
-          if (gen === generation) return requestOnce(method, path, {body, query, edit, signal, env, auth}, false);
+          if (gen === generation) return requestOnce(method, path, {body, query, edit, signal, env, auth}, false, payload);
         } catch (error) {
           if (gen !== generation) throw new ApiError('stale_environment', 'The environment changed', 409);
         }

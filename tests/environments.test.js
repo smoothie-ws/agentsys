@@ -165,6 +165,37 @@ test('a 401 renews the session once and repeats the same read', async () => {
   Environment.sessionStorage;
 });
 
+test('API renewal retries the original encoded body even if the caller mutates its object', async () => {
+  const sent = [];
+  let encodings = 0;
+  const body = {name: 'Original', nested: {value: 1}};
+  Object.defineProperty(body, 'toJSON', {value() {
+    encodings++;
+    return {name: this.name, nested: this.nested};
+  }});
+  const {Environment, context} = makeEnvironment((request, tools) => {
+    if (request.method === 'POST' && request.url.endsWith('/api/projects')) {
+      sent.push(request.body);
+      if (sent.length === 1) {
+        body.name = 'Changed later';
+        body.nested.value = 2;
+        return {status: 401, body: {error: {code: 'unauthorized', message: 'Renew the session'}}};
+      }
+      return {body: {id: 'p1'}};
+    }
+    return plainServer(request, tools);
+  });
+  const remote = Environment.save({name: 'Remote', url: 'https://server.test', token: 'owner-token'});
+  assert.equal(await Environment.setActive(remote.id), true);
+  context.document = {addEventListener() {}};
+  vm.runInContext(fs.readFileSync(path.join(ROOT, 'js/app/helpers.js'), 'utf8'), context);
+  const api = vm.runInContext('api', context);
+  assert.equal((await api('projects', {method: 'POST', body})).id, 'p1');
+  const original = JSON.stringify({name: 'Original', nested: {value: 1}});
+  assert.deepEqual(sent, [original, original]);
+  assert.equal(encodings, 1, 'body is encoded once for the entire request lifecycle');
+});
+
 test('a network failure is never retried, and a mutation is not repeated', async () => {
   const {Environment, requests} = makeEnvironment((request) => {
     if (request.url.includes(API)) return {body: meta};
