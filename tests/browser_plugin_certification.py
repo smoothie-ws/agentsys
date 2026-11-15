@@ -108,6 +108,7 @@ async def main():
             report = await page.evaluate("id => PluginStore.storage('graph-developer-tools').get('report:' + id)", 'local')
             assert report['report']['edges'] >= 11, report
             assert len(report['report']['customNodes']) == 6, report
+            assert report['report']['disconnected'] == [], report
             selection = await page.evaluate("Extensions.execute('graph-developer-tools:selection', {selected: ['chosen']})")
             assert selection['selection'] == ['chosen'], selection
             await page.evaluate("ids => { const host = document.createElement('div'); host.id = 'cert-inspector'; document.body.append(host); Extensions.renderInspector(host, {node: {id: 'chosen', kind: 'function'}, project: ids.project, workflow: ids.workflow, selection: ['chosen']}); }", graph)
