@@ -111,6 +111,8 @@ No unresolved vulnerability was observed in the exercised plugin/host/server bou
 synthetic integrations do not certify arbitrary third-party code or indefinite operation. Old identity-unaware
 servers are intentionally unsupported by the hardened plugin transport.
 
-**Current verdict: NOT READY — awaiting the final published GitHub Actions run.**
-The [certification matrix](PLUGIN-RELEASE-CANDIDATE.md) will record the final remote result explicitly; local success
-is not a substitute for that release gate.
+**Verdict: READY WITH LIMITATIONS.** All required exercised scenarios and the remote release gates passed.
+Linux Node 22/24 ran all 460 tests without skips; Windows Node 22/24 retained the existing POSIX-only skip.
+Chromium, Firefox and WebKit each executed the plugin platform, product certification and security scenarios.
+The [certification matrix](PLUGIN-RELEASE-CANDIDATE.md) records the evidence and practical limits.
+The final report/evidence commit has no runtime changes, and its branch CI is checked before delivery.

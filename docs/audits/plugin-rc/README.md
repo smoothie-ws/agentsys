@@ -15,3 +15,5 @@ They do not substitute for GitHub Actions. `ci-results.json` records the exact p
 Local toolchain: Windows, Node 20.17.0, Python 3.12.6, Playwright 1.57.0.
 The paths and temporary port numbers in logs belong to synthetic isolated test servers. Cancelled SSE/API requests during
 switching, disable and reload are expected; the fixture separately asserts that no uncaught page errors remain.
+
+Log line endings are normalized to LF; test results and measurements are preserved.
