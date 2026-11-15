@@ -21,9 +21,10 @@ const source = file => /^(?:(?:js|shared|server|bin|css|legacy)\/.*\.(?:js|css)|
 const generated = file => file === 'js/backend/builtin-nodes.js';
 const rows = names.filter(source).map(file => {
   const text = ref ? git(['show', `${ref}:${file}`]) : fs.readFileSync(path.join(root, file), 'utf8');
-  const lines = text.replace(/\r\n/g, '\n').split('\n').length - Number(text.endsWith('\n'));
+  const normalized = text.replace(/\r\n/g, '\n');
+  const lines = normalized.split('\n').length - Number(normalized.endsWith('\n'));
   const imports = [...text.matchAll(/\brequire\(\s*['"](\.[^'"]+)['"]\s*\)/g)].map(match => match[1]);
-  return {file, lines, imports};
+  return {file, lines, bytes: Buffer.byteLength(normalized), imports};
 });
 const active = rows.filter(row => !generated(row.file) && !row.file.startsWith('legacy/'));
 const sum = rows => rows.reduce((total, row) => total + row.lines, 0);
@@ -31,6 +32,7 @@ process.stdout.write(JSON.stringify({
   revision: ref || 'working-tree',
   scope: 'js/shared/server/bin/css plus root server.js/headless.js/index.html; generated builtins and retired legacy separate',
   source_lines: sum(active),
+  source_bytes: active.reduce((total, row) => total + row.bytes, 0),
   modules: active.length,
   local_require_edges: active.reduce((count, row) => count + row.imports.length, 0),
   retired_source_lines: sum(rows.filter(row => row.file.startsWith('legacy/'))),

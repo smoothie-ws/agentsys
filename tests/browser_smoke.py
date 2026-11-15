@@ -136,7 +136,7 @@ async def main():
         ok('pinned tab has no close button',await pg.evaluate("document.querySelector('.tab.is-pinned')&&!document.querySelector('.tab.is-pinned .tab-close')"))
         await pg.click('.tab >> nth=0', button='right'); await pg.click('.popup button:has-text("Close All")'); await pg.wait_for_timeout(500)
         ok('Close All keeps pinned',await pg.evaluate("document.querySelectorAll('.tab').length===1"))
-        ok('every wire style draws a valid path',await pg.evaluate("WIRE_STYLES.every(([id])=>{graphStyle={...graphStyle,wire_style:id};const d=wirePath({x:0,y:0},{x:-200,y:90})+wirePath({x:0,y:0},{x:300,y:-40});return /^M/.test(d)&&!/NaN/.test(d)})"))
+        ok('every wire style draws a valid path',await pg.evaluate("WIRE_STYLES.every(([id])=>{graphStyle={...graphStyle,wire_style:id};const d=wirePath({x:0,y:0},{x:-200,y:90},graphStyle)+wirePath({x:0,y:0},{x:300,y:-40},graphStyle);return /^M/.test(d)&&!/NaN/.test(d)})"))
         await pg.goto(U+'#/settings'); await pg.wait_for_timeout(300); await pg.goto(U+'#/library/nodes'); await pg.wait_for_timeout(300)
         ok('pages have no tabs: only graph editors do',await pg.evaluate("![...document.querySelectorAll('.tab-title')].some(e=>['Settings','Library','API','Projects'].includes(e.textContent))&&document.querySelectorAll('.tab.active').length===0"))
         ok('no breadcrumb: the open section and item are shown on the left',await pg.evaluate("!document.querySelector('#crumbs')&&!document.querySelector('#subnav-title')&&document.querySelector('#subnav').getAttribute('aria-label')==='Library navigation'&&document.querySelector('#sidebar [data-section=library]').classList.contains('active')"))

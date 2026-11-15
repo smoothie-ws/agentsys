@@ -6,11 +6,12 @@ const fs = require('node:fs');
 const path = require('node:path');
 const vm = require('node:vm');
 
-function sandbox(Environment) {
+function sandbox(Environment, globals = {}) {
   const source = fs.readFileSync(path.join(__dirname, '../js/app/extensions.js'), 'utf8');
   const context = vm.createContext({
     Environment, AbortController, URL, clearTimeout,
     window: {removeEventListener() {}},
+    ...globals,
   });
   const start = source.indexOf('  class PluginSandbox {');
   const end = source.indexOf('  function cleanupRegistrations', start);
@@ -22,6 +23,20 @@ function sandbox(Environment) {
     frame: {contentWindow: {postMessage() {}}, remove() {}},
   });
 }
+
+test('disposing a sandbox settles its open dialog and removes host callbacks', async () => {
+  const callbacks = new Map();
+  const modal = {
+    addEventListener: (name, callback) => callbacks.set(name, callback),
+    removeEventListener: (name, callback) => { if (callbacks.get(name) === callback) callbacks.delete(name); },
+  };
+  const host = sandbox({}, {$: () => modal, dialog() {}, sanitizeHTML: String, esc: String});
+  const answer = host.showDialog({body: 'Passive body'});
+  assert.equal(callbacks.size, 2);
+  host.dispose();
+  assert.equal((await answer).action, null);
+  assert.equal(callbacks.size, 0);
+});
 
 test('disabling a plugin during token issuance revokes the late token and sends no request', async () => {
   let release;

@@ -39,7 +39,6 @@ const Extensions = (() => {
   const cssId = id => String(id).replace(/[^A-Za-z0-9_-]/g, '-');
 
   const sanitizeHTML = value => PluginContent.sanitize(value);
-  const decorateHTML = (value, pluginId) => PluginContent.decorate(value, pluginId);
   const internalHref = value => PluginContent.internalHref(value);
 
   /** One sandboxed iframe per plugin: no same-origin access, no direct DOM, storage or token. */
@@ -394,8 +393,10 @@ const Extensions = (() => {
           finished = true;
           modal.removeEventListener('click', onClick);
           modal.removeEventListener('close', onClose);
+          this.requests.signal.removeEventListener('abort', onAbort);
           resolve(value);
         };
+        const onAbort = () => finish({action: null});
         const onClose = () => {
           if (!actionPending) finish({action: null});
         };
@@ -421,6 +422,7 @@ const Extensions = (() => {
         dialog(title, body + buttons, null);
         modal.addEventListener('click', onClick);
         if (spec.close !== false) modal.addEventListener('close', onClose);
+        this.requests.signal.addEventListener('abort', onAbort, {once: true});
       });
     }
     /** Runs the deactivate hook, then removes the frame. A plugin cannot act after this returns. */
@@ -556,36 +558,27 @@ const Extensions = (() => {
 
       // A dependency that was turned off (or removed) takes its dependants down with it, even if they are
       // already running: a plugin must not keep using a service that is no longer enabled.
-      if (typeof PluginManifest !== 'undefined')
-        for (const plugin of wanted.values()) {
-          if (!loaded.has(plugin.id)) continue;
-          const deps = PluginManifest.checkDependencies(plugin, list, {requireEnabled: true});
-          if (deps.ok) continue;
-          await stopModule(plugin.id, 'deactivate');
-          errors.set(plugin.id, deps.errors.map(item => item.message).join(' '));
-
-        }
-
-      let order = [...wanted.values()];
-      if (typeof PluginManifest !== 'undefined') {
-        const sorted = PluginManifest.activationOrder(order);
-        order = sorted.order;
-        for (const problem of sorted.errors) {
-          if (errors.has(problem.id)) continue;
-          errors.set(problem.id, problem.message);
-
-          console.error(`[plugins] ${problem.id}: ${problem.message}`);
-        }
+      for (const plugin of wanted.values()) {
+        if (!loaded.has(plugin.id)) continue;
+        const deps = PluginManifest.checkDependencies(plugin, list, {requireEnabled: true});
+        if (deps.ok) continue;
+        await stopModule(plugin.id, 'deactivate');
+        errors.set(plugin.id, deps.errors.map(item => item.message).join(' '));
       }
+
+      const sorted = PluginManifest.activationOrder([...wanted.values()]);
+      for (const problem of sorted.errors) {
+        if (errors.has(problem.id)) continue;
+        errors.set(problem.id, problem.message);
+        console.error(`[plugins] ${problem.id}: ${problem.message}`);
+      }
+      const order = sorted.order;
       for (const plugin of order) {
         if (loaded.has(plugin.id) || errors.has(plugin.id)) continue;
-        if (typeof PluginManifest !== 'undefined') {
-          const deps = PluginManifest.checkDependencies(plugin, list, {requireEnabled: true});
-          if (!deps.ok) {
-            errors.set(plugin.id, deps.errors.map(item => item.message).join(' '));
-
-            continue;
-          }
+        const deps = PluginManifest.checkDependencies(plugin, list, {requireEnabled: true});
+        if (!deps.ok) {
+          errors.set(plugin.id, deps.errors.map(item => item.message).join(' '));
+          continue;
         }
         const {hook, from} = hookFor(plugin);
         await loadModule(plugin, hook, from);
@@ -653,11 +646,8 @@ const Extensions = (() => {
     const record = PluginStore.record(id);
     if (!record) throw new ApiError('not_found', 'Plugin not found', 404);
     await stopModule(id, 'onUninstall', {version: record.version});
-    if (typeof PluginStore !== 'undefined') {
-      PluginStore.clear(id);
-      PluginStore.remove(id);
-    }
-
+    PluginStore.clear(id);
+    PluginStore.remove(id);
     errors.delete(id);
     renderAll();
     return true;
@@ -666,7 +656,6 @@ const Extensions = (() => {
   async function disable(id) {
     const plugin = PluginStore.setEnabled(id, false);
     await stopModule(id, 'deactivate');
-
     errors.delete(id);
     await sync();
     renderAll();
@@ -675,7 +664,6 @@ const Extensions = (() => {
 
   async function enable(id) {
     const plugin = PluginStore.setEnabled(id, true);
-
     errors.delete(id);
     await sync();
     if (errors.has(id)) throw new ApiError('plugin_activation_failed', errors.get(id), 500);
@@ -683,7 +671,6 @@ const Extensions = (() => {
   }
 
   async function recover(id) {
-
     errors.delete(id);
     await sync();
     return !errors.has(id);

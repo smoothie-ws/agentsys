@@ -104,7 +104,7 @@ const THEMES = {
   Midnight: {background: '#0b1020', surface: '#141b2e', text: '#e2e8f6', accent: '#8fb0ff'},
   Moss: {background: '#0f1612', surface: '#18221c', text: '#e1ece4', accent: '#9bd08a'},
 };
-/** Graph Editor look: corner radii (px), wire shape and thickness. Wire shapes are drawn by `wirePath` in render.js. */
+/** Graph Editor look: corner radii (px), wire shape and thickness. Wire shapes are drawn by `wirePath` in canvas/geometry.js. */
 const GRAPH_DEFAULTS = {node_radius: 16, group_radius: 33, wire_style: 'bezier', wire_width: 2, wire_curve: 50};
 const WIRE_STYLES = [
   ['bezier', 'Bezier curve'],

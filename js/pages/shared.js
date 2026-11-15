@@ -303,12 +303,7 @@ function previewSVG(graph) {
       const a = positions.get(from),
         b = positions.get(to);
       if (!a || !b) return '';
-      const x1 = a.x + a.w,
-        y1 = a.y + 20,
-        x2 = b.x,
-        y2 = b.y + 20,
-        d = Math.max(40, Math.abs(x2 - x1) / 2);
-      return `<path d="M${x1} ${y1} C${x1 + d} ${y1} ${x2 - d} ${y2} ${x2} ${y2}"/>`;
+      return `<path d="${wirePath({x: a.x + a.w, y: a.y + 20}, {x: b.x, y: b.y + 20}, {wire_style: 'bezier', wire_curve: 50})}"/>`;
     })
     .join('');
   const frames = graph.groups
