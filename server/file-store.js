@@ -163,7 +163,9 @@ function createFileStore(DATA) {
     try {
       value = JSON.parse(fs.readFileSync(abs(key), 'utf8'));
     } catch (error) {
-      if (error.code === 'ENOENT') return undefined;
+      // A missing key below a regular file is ENOTDIR on POSIX and ENOENT on Windows. Both mean this key is
+      // absent. A later write still fails after its redo record is durable, so restart can diagnose the failure.
+      if (error.code === 'ENOENT' || error.code === 'ENOTDIR') return undefined;
       throw error;
     }
     if (key === 'resources' || key.startsWith('wf:')) {
