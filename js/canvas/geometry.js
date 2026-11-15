@@ -52,4 +52,3 @@ function roundedPolyline(points, radius) {
   const last = points[points.length - 1];
   return `${d} L${last.x},${last.y}`;
 }
-
