@@ -52,6 +52,11 @@ Pure validation shared by the browser, the pack tool and the tests:
   failure recovery.
 - Holds every UI registration in a host-side registry and removes it with the plugin.
 
+### Passive content ? `js/app/plugin-content.js`
+
+HTML/CSS sanitization and own-command decoration are separate from lifecycle/RPC. Packages cannot provide host
+action attributes. See [plugin-ui.md](plugin-ui.md) for the supported passive syntax.
+
 ### Capability layer — `js/app/plugin-capabilities.js`
 
 Classifies each API call from its method, path and body (not from the plugin's label) and rejects one the package did

@@ -51,7 +51,9 @@ function pinnedRequest({url, method = 'GET', headers = {}, body, address, limit 
       const chunks = [];
       let size = 0;
       const fail = error => {
+        decoder?.destroy();
         stream.destroy();
+        request.destroy();
         reject(error);
       };
       const source = decoder ? stream.pipe(decoder) : stream;
@@ -105,11 +107,22 @@ const sandbox = {__host:{
 const context = vm.createContext(sandbox);
 vm.runInContext(\`(() => {
   const host = globalThis.__host; delete globalThis.__host;
-  const encode=JSON.stringify;
+  const encode=JSON.stringify, RealmError=Error, RealmTypeError=TypeError, toNumber=Number;
+  // No host object, including an exception, may cross back into the Script realm. A host TypeError carries
+  // its host Function constructor and would expose Node globals even though the global names are hidden.
+  const invoke = (operation, ...args) => {
+    try { return host[operation](...args); }
+    catch (error) { throw new RealmError(String(error?.message || 'The host operation failed')); }
+  };
   globalThis.self = globalThis;
-  globalThis.postMessage = value => host.send(encode(value));
-  globalThis.setTimeout = (fn,ms,...args) => host.schedule(()=>fn(...args),ms);
-  globalThis.clearTimeout = id => host.clear(id);
+  globalThis.postMessage = value => invoke('send',encode(value));
+  globalThis.setTimeout = (fn,ms,...args) => {
+    if(typeof fn !== 'function') throw new RealmTypeError('The timer callback must be a function');
+    // Coercion runs here: Symbol and user-defined valueOf failures must be realm-local too.
+    const delay=toNumber(ms);
+    return invoke('schedule',()=>fn(...args),delay);
+  };
+  globalThis.clearTimeout = id => invoke('clear',id);
 })();\`,context);
 let receiver;
 parentPort.on('message',data=>receiver(JSON.stringify(data)));

@@ -33,7 +33,9 @@ node bin/agentsys-server.js start --port 8080 --data ./data
 node bin/agentsys-client.js --port 8081 --server http://127.0.0.1:8080
 ```
 
-No npm install or build step is required: Node.js 20+ built-in modules and browser APIs are enough.
+No npm install or build step is required. Use a supported Node.js LTS release (22 or newer; 24 recommended);
+the application uses built-in modules and browser APIs only. Node 20 compatibility is tested locally, but that
+release is end-of-life and should not be used for production.
 
 ## Use another server
 
@@ -84,6 +86,7 @@ servers and server-only execution in Chromium, Firefox and WebKit. See [Testing]
 
 ## Documentation
 
+The latest implementation and verification report is [MVP finalization](docs/audits/mvp-finalization/REPORT.md).
 Read [Architecture](docs/architecture.md) first, then:
 
 - [Audit](docs/audit.md) — what was wrong and what this cycle changed.

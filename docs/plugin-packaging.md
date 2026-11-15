@@ -59,6 +59,7 @@ Options:
 The builder:
 
 - collects `.js` and `.json` files except `plugin.json` and built packages;
+- normalizes text files to LF before computing package contents/checksums, so Windows CRLF and Unix checkouts build identically;
 - puts `main` in `files`, so `require('./main')` and a re-export work;
 - base64-encodes PNG/JPEG/GIF/WebP files under `assets/`;
 - copies `contributes`;

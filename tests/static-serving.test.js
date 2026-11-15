@@ -82,6 +82,11 @@ test('server-only and non-public files are never served, whatever the path spell
       '/index.html%00.js',
       '/server.js.',
       '/server.js%20',
+      '/js/BACKEND/scripts.js',
+      '/js/storage/DB.js',
+      '/js/model/EXECUTOR.js',
+      '/js/backend./scripts.js',
+      '/js/backend%20/scripts.js',
     ];
     for (const pathname of forbidden) {
       const response = await raw(base, pathname);
@@ -119,12 +124,28 @@ test('the client static server has the same boundary', async () => {
       await new Promise(resolve => setTimeout(resolve, 50));
     }
     assert.equal((await raw(base, '/js/app/helpers.js')).status, 200);
-    for (const pathname of ['/js/storage/db.js', '/js/model/executor.js', '/server.js', '/js/backend/routes-app.js', '/js/storage/db.js::$DATA']) {
+    for (const pathname of ['/js/storage/db.js', '/js/model/executor.js', '/server.js', '/js/backend/routes-app.js', '/js/storage/db.js::$DATA', '/js/BACKEND/scripts.js', '/js/storage/DB.js', '/js/backend./scripts.js', '/js/backend%20/scripts.js']) {
       const response = await raw(base, pathname);
       assert.ok([400, 404].includes(response.status), `${pathname} -> ${response.status}`);
       assert.equal(response.body.includes('const DB ='), false, pathname);
     }
   } finally {
     child.kill();
+  }
+});
+
+test('a public-looking symlink cannot publish server files or files outside the client root', async () => {
+  const {resolveAsset} = require('../server/static-assets');
+  const dir = fs.mkdtempSync(path.join(os.tmpdir(), 'agentsys-static-links-'));
+  try {
+    fs.mkdirSync(path.join(dir, 'js'));
+    fs.mkdirSync(path.join(dir, 'server'));
+    fs.writeFileSync(path.join(dir, 'server', 'private.js'), 'private');
+    fs.symlinkSync(path.join(dir, 'server'), path.join(dir, 'js', 'alias'), 'junction');
+    assert.equal(await resolveAsset(dir, '/js/alias/private.js'), null);
+    fs.symlinkSync(os.tmpdir(), path.join(dir, 'js', 'outside'), 'junction');
+    assert.equal(await resolveAsset(dir, '/js/outside/' + path.basename(dir) + '/server/private.js'), null);
+  } finally {
+    fs.rmSync(dir, {recursive: true, force: true});
   }
 });

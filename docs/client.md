@@ -53,7 +53,7 @@ in a page or canvas module.
 | `agentsys-active-environment` | id of the last active environment |
 | `agentsys-client-plugins` | installed client plugin packages |
 | `agentsys-plugin-<id>@<env>:` | plugin-private JSON, scoped per plugin and server |
-| `sessionStorage: agentsys-token:<env>` | per-tab token; cleared when the tab closes |
+| `sessionStorage: agentsys-token:<env>@<encoded-url>` | per-tab token; cleared when the tab closes |
 
 The old server-side `data/other/ui-state.json` is not used for new writes. Environments → *Import old interface
 state* reads it once through the authenticated API for a person who wants the previous layout.
@@ -68,8 +68,13 @@ state* reads it once through the authenticated API for a person who wants the pr
 6. Load the new session, projects, Library.
 7. Reconnect SSE and render the dashboard.
 
+A failed save or a declined leave guard cancels the switch and preserves the old environment. Concurrent
+switch requests honour the latest selection even if an older save hook finishes later.
 Late answers from the old environment are rejected by the generation check; they cannot repaint the new one.
 Workflows are not copied between environments. Moving data between servers is a separate future feature.
+
+While a page loads, its view is `aria-busy` and inert, so controls from the previous page cannot be operated.
+Only the latest render releases that state.
 
 ## Connection states
 

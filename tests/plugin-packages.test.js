@@ -10,6 +10,22 @@ const {readSource} = require('../tools/plugin-pack');
 
 const ROOT = path.join(__dirname, '..', 'client-plugins', 'reference');
 const slugs = ['ui-showcase', 'library-pack', 'structured-data', 'external-integration', 'security-test'];
+
+test('source packaging is identical for LF and CRLF checkouts', () => {
+  const os = require('node:os');
+  const dir = fs.mkdtempSync(path.join(os.tmpdir(), 'agentsys-package-lines-'));
+  try {
+    fs.writeFileSync(path.join(dir, 'plugin.json'), JSON.stringify({id: 'line-test', name: 'Lines', version: '1.0.0', api: 2}));
+    const main = path.join(dir, 'main.js');
+    fs.writeFileSync(main, 'exports.activate = api => {\n  return undefined;\n};\n');
+    const lf = Manifest.exportPackage(Manifest.normalizePackage(readSource(dir)));
+    fs.writeFileSync(main, fs.readFileSync(main, 'utf8').replace(/\n/g, '\r\n'));
+    const crlf = Manifest.exportPackage(Manifest.normalizePackage(readSource(dir)));
+    assert.deepEqual(crlf, lf);
+  } finally {
+    fs.rmSync(dir, {recursive: true, force: true});
+  }
+});
 const expectedIds = [
   'reference-ui-showcase',
   'reference-library-pack',

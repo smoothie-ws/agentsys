@@ -49,6 +49,26 @@ test('worker has no direct network, messaging, Node globals or constructor escap
   assert.deepEqual(r.outputs[n.id].result, Array(7).fill('undefined'));
 });
 
+test('timer validation errors cannot expose the host realm to a Script', async () => {
+  const {app, p} = await fakeApp('worker');
+  try {
+    const n = await fn(app, p.id, {}, {
+      code: `const results = [];
+        for (const delay of [Symbol('delay'), {valueOf() { return Symbol('delay'); }}]) {
+          try { setTimeout(() => {}, delay); results.push('accepted'); }
+          catch (error) { results.push(error.constructor.constructor('return typeof process')()); }
+        }
+        node.output.result = results;`,
+      outputs: ['result'], grants: [],
+    });
+    const r = await app.api('POST', `projects/${p.id}/execution`, {node_ids: [n.id], wait: true});
+    assert.deepEqual(r.errors, {});
+    assert.deepEqual(r.outputs[n.id].result, ['undefined', 'undefined']);
+  } finally {
+    await app.Backend.shutdownExecutions();
+  }
+});
+
 test('network allow lists and secret substitution are enforced by the host', async () => {
   const {app, p} = await fakeApp();
   await app.api('PUT', `projects/${p.id}/policy`, {allow: ['net.fetch:good.test', 'secrets.use:service']});

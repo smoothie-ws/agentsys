@@ -26,6 +26,9 @@ shared/
 server/
   manifest.js        the fixed server script list (no index.html reading, no plugin discovery)
   api-server.js      createApiServer(): API-only composition
+  file-store.js      canonical files, sidecars, redo recovery, external-change fingerprints
+  credentials.js     per-server session/token maps, expiry and revocation
+  static-assets.js   public asset resolution and shared client headers (no execution/storage dependency)
   migrate.js         conservative server-plugin data migration
 client/ (static)   js/app, js/pages, js/canvas, js/inspector, js/model (editing only), css, index.html
 bin/
@@ -46,7 +49,7 @@ js/model/executor.js server-only interpreter
 - HTTP API under `/api`, versioned by `protocol` in `GET /api/meta` and the `X-Agentsys-Protocol` header.
 - Fixed feature set. **No server plugins**: no file below `data/plugins/` is executed or scanned by the
   server. User code runs only through the graph runtime (Script nodes in worker threads). The removed host and
-  routes are kept, unloaded, under `legacy/`.
+  routes are available in git history; executable legacy copies are no longer shipped.
 - Owns definitions, Library resources, generic collections, secrets, runtime and permissions.
 - Owns execution. Closing a browser, or all browsers, does not pause or stop a workflow.
 - Persists JSON below `--data`. JavaScript stacks, timers and pending external work do not survive a restart.
@@ -106,8 +109,9 @@ Compatibility matters more than renaming routes.
   an HttpOnly `SameSite` session cookie, so EventSource-like streaming and reloads do not expose it to scripts.
 - Scripts still need both the enclosing instance grants and the project policy. `plugins.call` is accepted in
   old projects for compatibility but grants nothing now.
-- Client plugins are not a security principal: they call the same API as the user and are installed at the
-  user's risk. See [plugins.md](plugins.md) and [security.md](security.md).
+- Client plugins use distinct server-enforced scoped bearer tokens. Host checks and token checks both apply.
+  Only a server returning 404 for token issuance uses legacy host-only checks; other failures stop the call.
+  See [plugins.md](plugins.md) and [security.md](security.md).
 
 ## State ownership
 

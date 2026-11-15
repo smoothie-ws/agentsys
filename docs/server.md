@@ -1,7 +1,8 @@
 # AgentSys Server
 
 `bin/agentsys-server.js` is a headless Node program. It has no GUI dependency, no server plugin loader and no
-browser storage endpoint. It only needs Node.js (20 or newer) and a writable data folder.
+browser storage endpoint. Use a supported Node.js LTS release (22 or newer; 24 recommended) and a writable data folder.
+Node 20 compatibility remains tested, but it is end-of-life. There are no third-party runtime dependencies.
 
 ## Commands
 

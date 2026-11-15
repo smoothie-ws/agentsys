@@ -64,6 +64,25 @@ test('event streams are counted, released on disconnect, and capped', async () =
   });
 });
 
+test('a backpressured event subscriber is disconnected instead of retaining an unbounded write queue', async () => {
+  await withServer({}, async ({app, base}) => {
+    app.server.prependListener('request', (req, res) => {
+      if (req.url !== '/api/events') return;
+      const write = res.write.bind(res);
+      let writes = 0;
+      // Deliver ready normally, then simulate a subscriber whose outgoing buffer is full.
+      res.write = (...args) => ++writes === 1 ? write(...args) : false;
+    });
+    const open = await stream(base);
+    assert.equal((await diagnostics(base)).clients, 1);
+    const created = await fetch(base + '/api/projects', {method: 'POST', headers: bearer, body: JSON.stringify({name: 'Change'})});
+    assert.equal(created.status, 200);
+    await until(async () => (await diagnostics(base)).clients === 0, 'backpressured stream released');
+    open.controller.abort();
+    await open.reader.cancel().catch(() => {});
+  });
+});
+
 test('sessions are capped, and an expired session is swept by the next sign-in', async () => {
   await withServer({sessionLimit: 3, sessionTtlMs: 1000}, async ({base}) => {
     for (let i = 0; i < 8; i++) {
@@ -135,5 +154,18 @@ test('a rejected session keeps the failure counter bounded so a restart is not n
       body: JSON.stringify({token: TOKEN}),
     });
     assert.equal(accepted.status, 200);
+  });
+});
+
+test('a trusted proxy counts its appended client address, not a spoofed forwarded prefix', async () => {
+  await withServer({trustProxy: true, authAttempts: 2}, async ({base}) => {
+    for (let i = 0; i < 3; i++) {
+      const response = await fetch(base + '/api/auth/session', {
+        method: 'POST',
+        headers: {'Content-Type': 'application/json', 'X-Forwarded-For': `198.51.100.${i}, 203.0.113.9`},
+        body: JSON.stringify({token: 'wrong'}),
+      });
+      assert.equal(response.status, i < 2 ? 401 : 429);
+    }
   });
 });

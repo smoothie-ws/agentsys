@@ -11,7 +11,7 @@
 'use strict';
 
 const Extensions = (() => {
-  const loaded = new Map(); // plugin id -> {plugin, sandbox, disposables}
+  const loaded = new Map(); // plugin id -> {plugin, sandbox}
   const errors = new Map();
   const failed = new Set();
   const pages = [];
@@ -44,109 +44,9 @@ const Extensions = (() => {
   const pluginTitle = id => (typeof app !== 'undefined' && app.plugins?.find(p => p.id === id)?.title) || id;
   const cssId = id => String(id).replace(/[^A-Za-z0-9_-]/g, '-');
 
-  /** Passive HTML from a plugin page or card. Scripts, frames, external styles, event handlers and unsafe URLs are removed. */
-  function sanitizeHTML(value) {
-    const template = document.createElement('template');
-    template.innerHTML = String(value ?? '').slice(0, 300000);
-    // HTML elements report an upper-case tagName, namespaced ones (SVG, MathML) keep their lower-case name: compare
-    // the local name without case, so `<svg><script>` is removed like `<script>`.
-    const banned = new Set([
-      'SCRIPT',
-      'IFRAME',
-      'FRAME',
-      'FRAMESET',
-      'OBJECT',
-      'EMBED',
-      'LINK',
-      'META',
-      'BASE',
-      'FORM',
-      'STYLE',
-    ]);
-    const tagged = node => String(node.localName || node.tagName || '').toUpperCase();
-    // URL parsers ignore ASCII tabs/newlines inside a scheme (`java&#10;script:` is javascript:), so normalize
-    // before matching. A data URL may only be an image in an image element; SVG data can carry script.
-    const compactURL = text => String(text || '').replace(/[\u0000-\u0020\u007f-\u009f]+/g, '').toLowerCase();
-    const imageData = /^data:image\/(?:png|jpeg|gif|webp)[;,]/;
-    const unsafeURL = (text, tag, name) => {
-      const value = compactURL(text);
-      if (/^(?:javascript|vbscript|file):/.test(value)) return true;
-      if (/^data:(?:text\/html|application\/xhtml\+xml|image\/svg\+xml)/.test(value)) return true;
-      if (/^(?:action|formaction|ping|srcdoc)$/i.test(name)) return true;
-      if (value.startsWith('data:')) {
-        const image = ['IMG', 'IMAGE', 'SOURCE'].includes(tag);
-        if (!image || !imageData.test(value)) return true;
-      }
-      // A passive document may use the images its package carries, not a remote, protocol-relative or relative
-      // URL: an <img> would otherwise tell a host that this page was opened.
-      if (['IMG', 'IMAGE', 'SOURCE'].includes(tag) && name.toLowerCase() === 'src' && !imageData.test(value))
-        return true;
-      if (name.toLowerCase() === 'poster' || name.toLowerCase() === 'background') return true;
-      if (name.toLowerCase() === 'srcset') {
-        // Every candidate, not only the first, must be an image data URL.
-        for (const part of value.split(',')) {
-          const candidate = part.trim().split(/\s+/)[0] || '';
-          if (!imageData.test(candidate)) return true;
-        }
-      }
-      return false;
-    };
-    const walk = node => {
-      for (const child of [...node.children]) {
-        const tag = tagged(child);
-        if (banned.has(tag)) {
-          child.remove();
-          continue;
-        }
-        for (const attr of [...child.attributes]) {
-          const name = attr.name.toLowerCase();
-          const text = String(attr.value || '');
-          const urlAttribute = /^(?:href|xlink:href|src|srcset|poster|action|formaction|ping|background)$/.test(name);
-          if (name.startsWith('on') || name === 'srcdoc' || (urlAttribute && unsafeURL(text, tag, name)))
-            child.removeAttribute(attr.name);
-          else if (name === 'style' && /url\s*\(|expression\s*\(|behavior\s*:|@import|-moz-binding/i.test(text))
-            child.removeAttribute(attr.name);
-        }
-        if (tag === 'A') {
-          child.setAttribute('rel', 'noopener noreferrer');
-          if (/^https?:/i.test(child.getAttribute('href') || '')) child.setAttribute('target', '_blank');
-          else child.removeAttribute('target');
-        }
-        walk(child);
-      }
-    };
-    walk(template.content);
-    return template.innerHTML;
-  }
-
-  /** Sanitized passive HTML with one extra control: a button marked `data-command` runs that plugin's command. */
-  function decorateHTML(value, pluginId) {
-    const template = document.createElement('template');
-    template.innerHTML = sanitizeHTML(value);
-    for (const node of template.content.querySelectorAll('[data-command]')) {
-      const command = String(node.getAttribute('data-command') || '');
-      if (!/^[A-Za-z0-9][A-Za-z0-9._-]{0,79}$/.test(command)) {
-        node.removeAttribute('data-command');
-        continue;
-      }
-      let args = [];
-      try {
-        const parsed = JSON.parse(node.getAttribute('data-args') || '[]');
-        if (Array.isArray(parsed)) args = parsed.slice(0, 20);
-      } catch {}
-      node.setAttribute('data-ext-command', `${pluginId}:${command}`);
-      if (args.length) node.setAttribute('data-ext-args', JSON.stringify(args));
-    }
-    return template.innerHTML;
-  }
-
-  /** A sidebar item points into this client; a URL of another origin or another scheme is not a destination. */
-  function internalHref(value) {
-    const text = String(value || '');
-    if (text.length > 2000 || !/^\/(?!\/)/.test(text) || /[\\\u0000-\u001f\u007f]/.test(text))
-      throw new Error('A sidebar item href must be a path of this client, starting with "/"');
-    return text;
-  }
+  const sanitizeHTML = value => PluginContent.sanitize(value);
+  const decorateHTML = (value, pluginId) => PluginContent.decorate(value, pluginId);
+  const internalHref = value => PluginContent.internalHref(value);
 
   /** The sandbox document: a module loader, the public API object, lifecycle hooks and the message bridge. */
   function sandboxDocument(plugin, context) {
@@ -425,6 +325,7 @@ const Extensions = (() => {
       this.serial = 0;
       this.dead = false;
       this.stopping = false;
+      this.requests = new AbortController();
       this.token = null; // a server-issued token scoped to this plugin's capabilities
       this.dataVersion = Number(plugin.dataVersion) || 0;
       this.onCrash = null;
@@ -560,29 +461,35 @@ const Extensions = (() => {
     /** One API call on behalf of this plugin, checked against its capabilities, with the scoped token when the
      * server issues one and retried once after that token expires or the server restarts. */
     async sendRequest(method, path, body, query) {
-      if (this.dead || this.stopping) throw new Error('The plugin is not running.');
-      const upper = String(method || 'GET').toUpperCase();
-      if (!this.token && typeof Environment.pluginToken === 'function') {
-        try {
-          this.token = await Environment.pluginToken(this.capabilities);
-        } catch {
-          this.token = null;
+      const gen = Environment.generation();
+      const ensureRunning = () => {
+        if (this.dead || this.stopping) throw new Error('The plugin is not running.');
+        if (gen !== Environment.generation()) throw new Error('The environment changed.');
+      };
+      const acquire = async refresh => {
+        const token = await Environment.pluginToken(this.capabilities, {owner: this.plugin.id, refresh});
+        if (this.dead || this.stopping || gen !== Environment.generation()) {
+          Environment.revokePluginToken(token);
+          ensureRunning();
         }
-      }
-      const send = () => Environment.request(upper, path, {body, query, auth: this.token || undefined});
+        this.token = token;
+      };
+      ensureRunning();
+      const upper = String(method || 'GET').toUpperCase();
+      if (!this.token && typeof Environment.pluginToken === 'function') await acquire(false);
+      const send = () => {
+        ensureRunning();
+        return Environment.request(upper, path, {body, query, auth: this.token || undefined, signal: this.requests.signal});
+      };
+      const usedToken = this.token;
       try {
         return await send();
       } catch (error) {
-        if (this.token && ['plugin_token_expired', 'plugin_token_invalid'].includes(error.code)) {
-          this.token = null;
-          try {
-            this.token = await Environment.pluginToken(this.capabilities, {refresh: true});
-          } catch {
-            this.token = null;
-          }
-          return send();
-        }
-        throw error;
+        if (!usedToken || !['plugin_token_expired', 'plugin_token_invalid'].includes(error.code)) throw error;
+        ensureRunning();
+        // Another request may already have renewed this sandbox's token while this response was in flight.
+        if (this.token === usedToken) await acquire(true);
+        return send();
       }
     }
     /** The capability boundary for direct host helpers (resource deployment): same rules as api.request. */
@@ -860,7 +767,7 @@ const Extensions = (() => {
         case 'ui.addStyles': {
           const css = String(data.args?.[0] || '');
           if (css.length > 100000) throw new Error('Styles are too large');
-          if (/@import|url\s*\(|expression\s*\(|javascript:/i.test(css))
+          if (PluginContent.unsafeCSS(css))
             throw new Error('Plugin styles cannot load external resources');
           const node = document.createElement('style');
           node.dataset.plugin = plugin.id;
@@ -993,6 +900,7 @@ const Extensions = (() => {
     }
     dispose() {
       this.dead = true;
+      this.requests.abort();
       clearTimeout(this.timer);
       // A disabled plugin's scoped token ends now, not when it happens to expire.
       if (this.token && typeof Environment !== 'undefined' && typeof Environment.revokePluginToken === 'function')
@@ -1063,7 +971,7 @@ const Extensions = (() => {
         loaded.delete(plugin.id);
         renderAll();
       };
-      loaded.set(plugin.id, {plugin, sandbox, disposables: []});
+      loaded.set(plugin.id, {plugin, sandbox});
       document.body.classList.add('plugin-' + cssId(plugin.id));
       errors.delete(plugin.id);
       failed.delete(plugin.id);

@@ -18,7 +18,11 @@
 - `server/api-server.js`, `bin/agentsys-server.js`: API-only server and CLI.
 - `bin/agentsys-client.js`, `bin/agentsys-local.js`: static client server and local two-process launcher.
 - `server/migrate.js`: conservative migration from the server-plugin era.
-- `legacy/`: the removed server plugin host and routes; reference only, never loaded.
+- `server/file-store.js`: canonical file mapping, sidecars, redo recovery and external-change detection.
+- `server/credentials.js`: per-server session/plugin credential ownership and expiry.
+- `server/static-assets.js`: one public-file boundary and header policy for both static launchers.
+- `js/app/plugin-content.js`: passive HTML, command attributes and resource-free CSS validation.
+- `legacy/README.md`: migration reference; executable old hosts/routes live only in git history.
 - `server.js`, `headless.js`: the combined local/test server and the Node backend loader.
 
 Client scripts are plain globals listed in `index.html`. Server scripts are plain globals listed in

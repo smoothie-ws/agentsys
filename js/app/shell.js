@@ -33,7 +33,8 @@ addEventListener('beforeunload', event => {
   }
   if (!dirty) return;
   event.preventDefault();
-  event.returnValue = '';
+  // Supply a nonempty legacy returnValue as well; browsers choose their own confirmation text.
+  event.returnValue = 'Unsaved changes';
 });
 
 /** A keyboard-reachable separator on a panel's boundary; it sits just outside the panel (see .panel-resize). */
@@ -407,9 +408,8 @@ async function refreshAfterReconnect() {
 /** Flush every open editor and forget per-server view state before the transport points somewhere else. */
 Environment.onBeforeSwitch(async () => {
   if (!app.booted) return;
-  try {
-    await flushNodeEdits?.();
-  } catch {}
+  if (!(await leaveView())) return false;
+  await flushNodeEdits?.();
   app.pageDispose?.();
   app.pageDispose = null;
   Tabs.items = [];

@@ -1,147 +1,38 @@
-// Server-side storage: a key-value store with an in-memory cache. The server (headless.js) hands in a file store;
-// tests use the in-memory store. Shared helpers (ApiError, clone, uid, ...) live in shared/core.js, which is loaded first.
+// Server-only cached key-value adapter. A file store is injected by headless.js; tests use memory.
 'use strict';
 
 const DB = (() => {
-  const STORE = 'kv',
-    API = '/__data',
-    cache = new Map(),
-    listeners = new Set(),
-    committed = new Set(), // listeners also observe writes made by this backend
-    announced = new Set(), // the listeners that also hear about writes made here by hooks
-    client = uid(),
-    // The headless server (headless.js) hands in its own file store; browsers never define it.
-    external = typeof AGENTSYS_STORE !== 'undefined' ? AGENTSYS_STORE : null;
-  let idb = null,
-    channel = null,
-    files = null; // {dir, keys} while the AgentSys server keeps the data as JSON files
-  const notify = keys => {
-    for (const key of keys) cache.delete(key);
-    for (const listener of listeners) listener(keys);
-  };
-  const openIdb = () =>
-    new Promise(resolve => {
-      try {
-        const request = indexedDB.open('agentsys', 1);
-        request.onupgradeneeded = () => request.result.createObjectStore(STORE);
-        request.onsuccess = () => resolve(request.result);
-        request.onerror = request.onblocked = () => resolve(null);
-      } catch {
-        resolve(null);
-      }
-    });
-  const transaction = (mode, work) =>
-    new Promise((resolve, reject) => {
-      const tx = idb.transaction(STORE, mode),
-        request = work(tx.objectStore(STORE));
-      tx.oncomplete = () => resolve(request?.result);
-      tx.onerror = tx.onabort = () => reject(tx.error || new Error('The browser database failed.'));
-    });
-  const probe = async () => {
-    if (typeof fetch !== 'function' || typeof location === 'undefined' || !/^https?:$/.test(location.protocol))
-      return null;
-    try {
-      const response = await fetch(API, {cache: 'no-store'});
-      if ([401, 403, 503].includes(response.status))
-        throw Object.assign(
-          new Error(
-            'Server storage is unavailable or requires authentication. Open the local server without a token, or configure authenticated access.'
-          ),
-          {storageDenied: true}
-        );
-      const info = response.ok ? await response.json() : null;
-      return info?.agentsys ? info : null;
-    } catch (error) {
-      if (error.storageDenied) throw error;
-      return null;
-    }
-  };
-  const post = async body => {
-    const response = await fetch(API, {
-      method: 'POST',
-      headers: {'Content-Type': 'application/json', 'X-AgentSys': '1', 'X-Client': client},
-      body: JSON.stringify(body),
-    });
-    if (!response.ok) throw new Error('The data folder could not be written.');
-  };
-  const ready = (async () => {
-    if (external) return;
-    files = await probe();
-    if (!files) {
-      idb = await openIdb();
-      // No server: everything stays in this browser, shared between its tabs.
-      if ('BroadcastChannel' in self) {
-        channel = new BroadcastChannel('agentsys');
-        channel.onmessage = event => notify(event.data.keys);
-      }
-      return;
-    }
-    const events = new EventSource(API + '/events');
-    events.onmessage = event => {
-      const {keys, by} = JSON.parse(event.data);
-      if (by !== client) notify(keys);
-    };
-  })();
+  const cache = new Map(), listeners = new Set(), committed = new Set(), announced = new Set();
+  const external = typeof AGENTSYS_STORE !== 'undefined' ? AGENTSYS_STORE : null;
   return {
-    get persistent() {
-      return !!(files || idb || external);
-    },
-    /** 'files' (JSON files in the data folder), 'browser' (IndexedDB) or 'memory'. */
-    get mode() {
-      return files || external ? 'files' : idb ? 'browser' : 'memory';
-    },
-    get directory() {
-      return files?.dir || external?.dir || '';
-    },
+    get persistent() { return !!external; },
+    get mode() { return external ? 'files' : 'memory'; },
+    get directory() { return external?.dir || ''; },
     async get(key, {fresh = false} = {}) {
-      await ready;
-      if (fresh && (external || files || idb)) cache.delete(key);
-      if (cache.has(key)) return cache.get(key);
-      let value;
-      if (external) value = await external.get(key);
-      else if (files) {
-        const response = await fetch(`${API}/${encodeURIComponent(key)}`, {cache: 'no-store'});
-        if (response.status === 200) value = await response.json();
-        else if (response.status !== 204) throw new Error('The data folder could not be read.');
-      } else if (idb) value = await transaction('readonly', store => store.get(key));
-      cache.set(key, value);
-      return value;
+      if (fresh && external) cache.delete(key);
+      if (!cache.has(key)) cache.set(key, external ? await external.get(key) : undefined);
+      return cache.get(key);
     },
-    /** Writes several keys at once; an undefined value deletes the key. */
     async commit(changes) {
-      await ready;
       const keys = Object.keys(changes);
       if (!keys.length) return;
-      if (external || files) {
-        const transaction = {
-          set: Object.fromEntries(keys.filter(k => changes[k] !== undefined).map(k => [k, changes[k]])),
-          remove: keys.filter(k => changes[k] === undefined),
-        };
-        await (external ? external.commit(transaction) : post(transaction));
-      } else if (idb)
-        await transaction('readwrite', store => {
-          for (const key of keys) changes[key] === undefined ? store.delete(key) : store.put(changes[key], key);
-        });
+      if (external) await external.commit({
+        set: Object.fromEntries(keys.filter(k => changes[k] !== undefined).map(k => [k, changes[k]])),
+        remove: keys.filter(k => changes[k] === undefined),
+      });
       for (const key of keys) changes[key] === undefined ? cache.delete(key) : cache.set(key, changes[key]);
-      if (!files) channel?.postMessage({keys});
       for (const listener of committed) listener(keys);
     },
-    /** Tells this store that keys were changed from outside (another process wrote the files): cached copies are dropped. */
-    changed: notify,
-    /** Tells the listeners that asked for it (`own`) that keys were written here by code that runs by itself (a hook). */
-    announce: keys => {
-      for (const listener of announced) listener(keys);
+    changed(keys) {
+      for (const key of keys) cache.delete(key);
+      for (const listener of listeners) listener(keys);
     },
-    /** Called with the changed keys when another tab writes or a file is edited on disk. */
+    announce(keys) { for (const listener of announced) listener(keys); },
     subscribe(listener, {own = false, commits = false} = {}) {
       listeners.add(listener);
       if (own) announced.add(listener);
       if (commits) committed.add(listener);
-      return () => {
-        listeners.delete(listener);
-        announced.delete(listener);
-        committed.delete(listener);
-      };
+      return () => { listeners.delete(listener); announced.delete(listener); committed.delete(listener); };
     },
   };
 })();

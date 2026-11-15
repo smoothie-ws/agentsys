@@ -24,18 +24,18 @@ const Environment = (() => {
   let generation = 0;
   let controller = null; // abort signal of the current environment: a switch cancels its in-flight requests
   let stream = null; // AbortController of the event stream
-  let streamTask = null;
   let reconnectTimer = null;
   let reconnectAttempt = 0;
-  let started = false;
+  let switchRevision = 0;
   let switching = 0; // a setActive() is between its start and its answer
   // Scoped tokens handed to client plugins, per environment and capability set. They die with the generation.
   const pluginTokens = new Map();
+  const pluginTokenRequests = new Map();
 
   /** Revokes one scoped token at the server that issued it, without touching the active status. */
   function revokeRemotely(token, environmentId) {
     if (!token || typeof fetch !== 'function') return;
-    const env = environments.find(item => item.id === environmentId) || active;
+    const env = typeof environmentId === 'object' ? environmentId : environments.find(item => item.id === environmentId);
     if (!env) return;
     try {
       fetch(apiURL(env, 'auth/plugin-session'), {
@@ -58,6 +58,7 @@ const Environment = (() => {
     // next environment (a browser session cookie or a token must not cross this boundary).
     for (const entry of pluginTokens.values()) revokeRemotely(entry.token, entry.environment);
     pluginTokens.clear();
+    pluginTokenRequests.clear();
     return controller.signal;
   }
 
@@ -139,18 +140,26 @@ const Environment = (() => {
       return 'tab-' + uid();
     }
   })();
-  /** A token lives only for this browser tab: it is never written to localStorage. */
-  const tokenOf = id => {
+  /** Credentials belong to an exact server URL as well as a saved entry. Editing a URL cannot transfer them. */
+  const tokenOf = (id, url = environments.find(env => env.id === id)?.url) => {
+    if (!url) return '';
     try {
-      return sessionStorage.getItem(tokenKey(id)) || '';
-    } catch {
-      return '';
-    }
+      const key = tokenKey(id) + '@' + encodeURIComponent(url);
+      const legacy = sessionStorage.getItem(tokenKey(id));
+      if (legacy) {
+        sessionStorage.setItem(key, legacy);
+        sessionStorage.removeItem(tokenKey(id));
+      }
+      return sessionStorage.getItem(key) || '';
+    } catch { return ''; }
   };
-  const setToken = (id, token) => {
+  const setToken = (id, token, url) => {
     try {
-      if (token) sessionStorage.setItem(tokenKey(id), String(token).slice(0, MAX_TOKEN_LENGTH));
-      else sessionStorage.removeItem(tokenKey(id));
+      if (token) sessionStorage.setItem(tokenKey(id) + '@' + encodeURIComponent(url), String(token).slice(0, MAX_TOKEN_LENGTH));
+      else {
+        const keys = Array.from({length: sessionStorage.length}, (_, i) => sessionStorage.key(i));
+        for (const key of keys) if (key === tokenKey(id) || key?.startsWith(tokenKey(id) + '@')) sessionStorage.removeItem(key);
+      }
     } catch {}
   };
   const setStatus = (next, detail = '') => {
@@ -192,7 +201,7 @@ const Environment = (() => {
     return typeof AbortSignal.any === 'function' ? AbortSignal.any(signals) : signals[0];
   };
   const authHeaders = env => {
-    const token = tokenOf(env.id);
+    const token = tokenOf(env.id, env.url);
     return token ? {Authorization: 'Bearer ' + token} : {};
   };
 
@@ -238,13 +247,16 @@ const Environment = (() => {
       throw new ApiError('network_error', 'The server could not be reached: ' + (error?.message || 'network error'), 503);
     }
     if (gen !== generation) throw new ApiError('stale_environment', 'The environment changed', 409);
-    if (response.status === 401) {
+    if (response.status === 401 && !auth) {
       // A restarted server forgets in-memory sessions; the token for this tab can make a new one.
-      if (mayRenew && tokenOf(env.id) && !/^auth\//.test(String(path).replace(/^\/+/, ''))) {
+      if (mayRenew && tokenOf(env.id, env.url) && !/^auth\//.test(String(path).replace(/^\/+/, ''))) {
         try {
           await startSession(env, gate);
-          if (gen === generation) return requestOnce(method, path, {body, query, edit, signal}, false);
-        } catch {}
+          if (gen !== generation) throw new ApiError('stale_environment', 'The environment changed', 409);
+          if (gen === generation) return requestOnce(method, path, {body, query, edit, signal, env, auth}, false);
+        } catch (error) {
+          if (gen !== generation) throw new ApiError('stale_environment', 'The environment changed', 409);
+        }
       }
       setStatus('unauthorized', 'The server asked for a token.');
       throw new ApiError('unauthorized', 'The server rejected this client. Add its token on the Server page.', 401);
@@ -301,7 +313,7 @@ const Environment = (() => {
 
   /** Exchanges the optional typed token for a short-lived HttpOnly session cookie. */
   async function startSession(env, gate) {
-    const token = tokenOf(env.id);
+    const token = tokenOf(env.id, env.url);
     if (!token) return {mode: meta?.auth || 'none'};
     const response = await fetch(new URL(env.url + PROTOCOL.SESSION_PATH), {
       method: 'POST',
@@ -321,39 +333,48 @@ const Environment = (() => {
     reconnectTimer = null;
     stream?.abort();
     stream = null;
-    streamTask = null;
   }
 
-  /** A scoped token for a client plugin, cached per environment and capability set. Null when the server does not
-   * issue them (an older server) or will not issue them to this caller: the host-side check remains the boundary. */
-  async function pluginToken(capabilities, {refresh = false} = {}) {
+  /** One scoped credential per sandbox owner, environment and capability set. Only 404 permits legacy mode. */
+  async function pluginToken(capabilities, {refresh = false, owner = 'host'} = {}) {
     const env = active || ensureDefaults();
-    const caps = [...capabilities].sort();
-    const key = env.id + '|' + caps.join(',');
-    if (refresh) pluginTokens.delete(key);
+    const gen = generation;
+    const caps = [...new Set(capabilities)].sort();
+    const key = JSON.stringify([env.id, owner, caps]);
+    if (refresh) {
+      const cached = pluginTokens.get(key);
+      pluginTokens.delete(key);
+      if (cached?.token) revokeRemotely(cached.token, cached.environment);
+    }
     const cached = pluginTokens.get(key);
-    if (cached && cached.generation === generation && (cached.token === null || cached.expires > Date.now()))
-      return cached.token;
-    let answer;
-    try {
-      answer = await request('POST', 'auth/plugin-session', {body: {capabilities: caps}});
-    } catch (error) {
-      // An older server has no such route: remember that for a while instead of asking on every plugin call.
-      if (error.status === 404) {
-        pluginTokens.set(key, {token: null, expires: Date.now() + 5 * 60 * 1000, generation});
+    if (cached && cached.generation === gen && cached.expires > Date.now()) return cached.token;
+    if (pluginTokenRequests.has(key)) return pluginTokenRequests.get(key);
+    const pending = (async () => {
+      let answer;
+      try {
+        answer = await request('POST', 'auth/plugin-session', {body: {capabilities: caps}, env});
+      } catch (error) {
+        if (error.status !== 404 || gen !== generation) throw error;
+        pluginTokens.set(key, {token: null, expires: Date.now() + 5 * 60 * 1000, generation: gen});
         return null;
       }
-      if ([401, 403].includes(error.status)) return null;
-      throw error;
-    }
-    if (!answer?.token) return null;
-    pluginTokens.set(key, {
-      token: answer.token,
-      expires: Date.now() + Math.max(30, Number(answer.expires_in || 3600) - 30) * 1000,
-      generation,
-      environment: env.id,
-    });
-    return answer.token;
+      if (gen !== generation) {
+        revokeRemotely(answer?.token, env);
+        throw new ApiError('stale_environment', 'The environment changed', 409);
+      }
+      if (!answer?.token || !Number.isFinite(Number(answer.expires_in)))
+        throw new ApiError('invalid_response', 'The server did not issue a valid plugin token', 502);
+      pluginTokens.set(key, {
+        token: answer.token,
+        expires: Date.now() + Math.max(0, Number(answer.expires_in) * 1000 - 1000),
+        generation: gen,
+        environment: {id: env.id, url: env.url},
+      });
+      return answer.token;
+    })();
+    pluginTokenRequests.set(key, pending);
+    try { return await pending; }
+    finally { if (pluginTokenRequests.get(key) === pending) pluginTokenRequests.delete(key); }
   }
 
   /** Ends a scoped token now (a plugin was disabled or removed), instead of waiting for it to expire. */
@@ -373,7 +394,7 @@ const Environment = (() => {
     const gen = generation;
     const ctrl = new AbortController();
     stream = ctrl;
-    const task = (async () => {
+    (async () => {
       let response;
       try {
         response = await fetch(new URL(env.url + PROTOCOL.EVENTS_PATH), {
@@ -389,7 +410,7 @@ const Environment = (() => {
       if (gen !== generation) return;
       if (response.status === 401) {
         // Sessions live in the server's memory: after a restart, renew once from this tab's token.
-        if (tokenOf(env.id)) {
+        if (tokenOf(env.id, env.url)) {
           try {
             await startSession(env);
             if (gen === generation) setTimeout(() => gen === generation && openStream(), 0);
@@ -442,7 +463,6 @@ const Environment = (() => {
       }
       if (gen === generation && !ctrl.signal.aborted) scheduleReconnect(gen, 'The event stream closed.');
     })();
-    streamTask = task;
   }
 
   function scheduleReconnect(gen, detail) {
@@ -480,7 +500,6 @@ const Environment = (() => {
       openStream();
       if (!current()) return false;
       setStatus('connected');
-      if (!started) started = true;
       return true;
     } catch (error) {
       if (!current() || error?.code === 'stale_environment') return false;
@@ -492,13 +511,8 @@ const Environment = (() => {
   }
 
   const runHooks = async list => {
-    for (const hook of list) {
-      try {
-        await hook();
-      } catch (error) {
-        console.error('Environment hook failed:', error);
-      }
-    }
+    for (const hook of list) if ((await hook()) === false) return false;
+    return true;
   };
 
   /** Switches servers without mixing their data: old requests are aborted and their answers discarded. */
@@ -506,10 +520,11 @@ const Environment = (() => {
     const env = environments.find(item => item.id === id);
     if (!env) throw new ApiError('not_found', 'Environment not found', 404);
     // A switch already on its way to this environment is not a reason to skip: it has not arrived yet.
-    if (!switching && active?.id === id && status === 'connected') return true;
+    if (!switching && active?.id === id && active.url === env.url && status === 'connected') return true;
+    const revision = ++switchRevision;
     switching++;
     try {
-      await runHooks(beforeSwitch);
+      if (!(await runHooks(beforeSwitch)) || revision !== switchRevision) return false;
       if (active?.id !== id) beginGeneration();
       active = env;
       activeId = env.id;
@@ -553,11 +568,14 @@ const Environment = (() => {
     save(env) {
       const clean = validate(env);
       const index = environments.findIndex(item => item.id === clean.id);
-      if (index >= 0) environments[index] = clean;
+      if (index >= 0) {
+        tokenOf(clean.id, environments[index].url); // bind any legacy token before changing its URL
+        environments[index] = clean;
+      }
       else environments.push(clean);
       persistList();
       // An empty field on an existing environment means "keep the token": use Forget token to clear it.
-      if (env.token) setToken(clean.id, env.token);
+      if (env.token) setToken(clean.id, env.token, clean.url);
       return this.get(clean.id);
     },
     /** Drops the token for this tab and tells the server to end the session cookie when it can. */
@@ -565,12 +583,12 @@ const Environment = (() => {
       if (!id) return;
       const scoped = [...pluginTokens.entries()].map(([, entry]) => entry);
       setToken(id, '');
-      const url = environments.find(env => env.id === id)?.url || active?.url || '';
+      const url = (active?.id === id ? active.url : environments.find(env => env.id === id)?.url) || '';
       // Scoped plugin tokens are independent credentials: end them at the server that issued them.
       for (const entry of scoped) revokeRemotely(entry.token, entry.environment);
       pluginTokens.clear();
       try {
-        await fetch(new URL(url, PROTOCOL.LOGOUT_PATH), {
+        await fetch(new URL(url + PROTOCOL.LOGOUT_PATH), {
           method: 'POST',
           credentials: 'include',
           headers: {'X-AgentSys': '1'},
@@ -605,12 +623,15 @@ const Environment = (() => {
       return this.list();
     },
     setActive,
-    reconnect: () => connect(active),
+    reconnect() {
+      const saved = environments.find(env => env.id === active?.id);
+      return saved && saved.url !== active.url ? setActive(saved.id) : connect(active);
+    },
     probe,
     /** Tests typed-in values without adding them to the saved list. */
     async probeDraft({name = 'Server', url, token = ''}) {
       const env = {id: 'draft-' + uid(), name, url: normalizeURL(url)};
-      setToken(env.id, token);
+      setToken(env.id, token, env.url);
       try {
         return await probe(env);
       } finally {

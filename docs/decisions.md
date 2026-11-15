@@ -20,3 +20,10 @@
 18. Idle workflow runtimes are released after ten minutes without a signal, and at most sixteen idle runtimes stay live (least recently used first). Eviction closes the host and drops the in-memory entry; `state`, `outputs`, `displays` and errors are already saved and a later read rebuilds the runtime from them. Paused, detached, stopping, saving or active runtimes are never evicted.
 19. Script notifications are coalesced: the first `state`/`values` change in a turn is sent at once (so acknowledged data survives a long synchronous block), later ones replace each other and only the last is sent on a microtask. `latest`, versions and dependency invalidation still change synchronously, and flush points precede completion, Pause and Stop. Compiled Script bodies are cached by text (LRU, 100 entries and 8 MB) because the function captures no state.
 20. A failed runtime write keeps `dirty` set and reports `storage_error`; a later save retries with the current data. The server replays a `.transaction.json` once at startup; an unreadable record is renamed to `.invalid` and the stored files, which are the source of truth, are served normally.
+
+21. File persistence, session credentials and public static assets have separate server modules. The server-only
+    DB adapter has memory and injected-store modes only; no browser storage or transport fallback remains.
+22. Host exceptions are never returned across a Script VM boundary. Plugin credentials belong to sandbox owners;
+    a scoped failure cannot retry with operator privileges. Passive plugin HTML cannot carry host action attributes.
+23. The retired server-plugin executable copies are removed; migration is implemented by server/migrate.js and
+    old implementations remain available in git history. No graph execution semantics or quotas changed.

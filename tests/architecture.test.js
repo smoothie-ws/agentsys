@@ -62,24 +62,13 @@ test('the server manifest is a fixed list of existing files, never client interf
 
 test('the server runtime touches no DOM, browser storage or browser-only API', () => {
   for (const file of FILES) {
-    // db.js is the storage adapter: it carries the browser fallback for the legacy combined page, behind an
-    // early `if (external) return;`. It is asserted below, separately.
-    if (file === 'js/storage/db.js') continue;
     let source = read(file);
     // scripts.js names the browser APIs it takes away from a Script: that list is the opposite of a dependency.
     if (file === 'js/backend/scripts.js') source = source.replace(/const WORKER_BLOCKED = \[[\s\S]*?\];/, '');
     const found = DOM_MEMBERS.exec(source);
     assert.equal(found, null, `${file} must not use ${found?.[0]}`);
   }
-  const db = read('js/storage/db.js');
-  assert.match(db, /const ready = \(async \(\) => \{\s*if \(external\) return;/, 'the store leaves before the browser branches when the server hands it a file store');
-  const guard = db.indexOf('if (external) return;');
-  // The IndexedDB branch is only entered after the guard; the browser event sources are created only there too.
-  assert.ok(db.indexOf('idb = await openIdb()') > guard);
-  for (const browser of ['new BroadcastChannel', 'new EventSource']) {
-    const at = db.indexOf(browser);
-    assert.ok(at === -1 || at > guard, `${browser} is only reached without a server store`);
-  }
+
 });
 
 test('the client entry point loads the model and the interface, never server code', () => {
@@ -186,10 +175,10 @@ test('the server never loads plugin code, and a client plugin reaches the platfo
   }
 });
 
-test('the client CLI imports only protocol and manifest data from the server half', () => {
+test('the client CLI imports only protocol and static serving from the server half', () => {
   const source = read('bin/agentsys-client.js');
   const imports = requires(source).filter(request => request.startsWith('.')).sort();
-  assert.deepEqual(imports.sort(), ['../server/manifest', '../shared/protocol']);
+  assert.deepEqual(imports.sort(), ['../server/static-assets', '../shared/protocol']);
   for (const file of ['js/app/environments.js', 'js/app/helpers.js']) {
     const client = read(file);
     assert.doesNotMatch(client, /graphRuntime|GRAPH_RUNTIMES|signalGraph|shutdownExecutions/, `${file} has no server runtime`);

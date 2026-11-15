@@ -10,7 +10,7 @@ Uses only Node built-in modules. Each test builds an independent in-memory backe
 Coverage includes graph editing, types, wires, nested nodes, signals, reads, loops, execution controls,
 permissions, Data and Graph nodes, durable JSON, the HTTP server, collections, migration, the client transport,
 architectural boundaries, the plugin capability layer, concurrency and resource bounds. Recent result:
-**387 tests, 386 pass, 0 fail, 1 skipped (~20 s)**. The skip is the POSIX file-mode check on Windows.
+**435 tests, 434 pass, 0 fail, 1 skipped** on Windows (Node 20 compatibility and Node 24 LTS). The skip is the POSIX file-mode check on Windows.
 
 Useful focused runs:
 
@@ -80,7 +80,7 @@ Selected scenarios:
 - `ux` - desktop, tablet and phone layouts; empty states; one heading and named controls on every page; an
   unreachable server that keeps its title and offers a retry; removing a server from its row; keyboard
   search; a readable API error; an unsaved settings change warning. Runs on Chromium, Firefox and WebKit. Saves
-  screenshots to `docs/audits/platform-marathon/screenshots/`.
+  screenshots to `node_modules/.cache/ui-review/` (override with `AGENTSYS_UI_ARTIFACTS`).
 - `execution_ui` - Run/Pause/Resume/Stop and previews across tabs and reloads on the combined local server.
 - `shell` - navigation, tabs, toolbar and responsive shell.
 - `design` - page geometry at desktop, tablet and phone widths; node/signal appearance.
@@ -124,3 +124,33 @@ method are in [baseline](baseline.md).
   [plugin-testing.md](plugin-testing.md) and [plugin-security.md](plugin-security.md); it is still not an
   authorization system against a modified client or the owner's own token.
 - Durable resumption of JavaScript (not implemented).
+
+## Finalization regressions and measurements
+
+- `tests/plugin-sandbox.test.js`: disposal during credential issuance, fail-closed issuance, scoped renewal,
+  concurrent expiry replies and environment switching.
+- `tests/environments.test.js`: scoped 401 never becomes an owner request; per-owner issuance/revocation,
+  logout, save-vetoed switches and credentials revoked at the original URL.
+- `tests/permissions.test.js`: real Worker timer errors cannot expose the host realm.
+- `tests/static-serving.test.js`: Windows case/dot/space spellings and symlinks cannot publish server files.
+- `tests/lifecycle.test.js`: backpressure disconnects slow SSE clients; proxy-appended addresses own sign-in counters.
+- `tests/network-policy.test.js`: refused headers close unfinished upstream bodies.
+- `tests/storage-integrity.test.js`: whole-transaction validation and malformed external filenames.
+- `tests/plugin-packages.test.js`: LF/CRLF package reproducibility.
+
+```sh
+node tools/source-metrics.js --ref HEAD
+node tools/source-metrics.js
+python tests/browser_plugin_platform.py
+```
+
+The source metrics exclude generated `builtin-nodes.js`, dependencies, tests, tooling and user data; retired
+legacy code is reported separately. Comparison artifacts and measured workload timings are in
+[audits/mvp-finalization](audits/mvp-finalization/REPORT.md). CI covers Node 22/24 on Linux and Windows; the
+browser job uses Node 24. No new runtime npm dependencies were added.
+
+`browser_ux.py` now tests a delayed navigation and a dirty form with a deliberately delayed save. It asserts that
+the real application `beforeunload` handler cancels unloading. Native confirmation is also required whenever
+the browser supports it. An independent empty-page probe detects headless Firefox builds which suppress that
+native dialog even with a cancelling handler and user activation; only the native dialog assertion is skipped
+with an explicit reason on those builds. Chromium and WebKit native confirmation remains asserted.

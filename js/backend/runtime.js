@@ -1,5 +1,5 @@
-// The in-browser "server": route table, one request context (Call), undo history and Backend.request().
-// api() in app/helpers.js calls Backend.request(). Routes are added with route() in the routes-*.js files.
+// Server application service: route table, request contexts, serialized mutations and per-client undo history.
+// HTTP and checked Script calls both use Backend.request(); routes live in routes-*.js.
 'use strict';
 
 // ----- request plumbing -----

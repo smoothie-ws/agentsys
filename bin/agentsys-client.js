@@ -10,20 +10,9 @@ const http = require('node:http');
 const fs = require('node:fs');
 const path = require('node:path');
 const Protocol = require('../shared/protocol');
-const {SERVER_ONLY} = require('../server/manifest');
+const {resolveAsset, TYPES, CLIENT_HEADERS} = require('../server/static-assets');
 
 const ROOT = path.resolve(__dirname, '..');
-const TYPES = {
-  '.html': 'text/html; charset=utf-8',
-  '.js': 'text/javascript; charset=utf-8',
-  '.css': 'text/css; charset=utf-8',
-  '.json': 'application/json; charset=utf-8',
-  '.svg': 'image/svg+xml',
-  '.png': 'image/png',
-  '.ico': 'image/x-icon',
-  '.md': 'text/markdown; charset=utf-8',
-};
-const PUBLIC = /^(?:index\.html$|(?:js|css|docs|shared|client-plugins)\/)/;
 const HELP = `AgentSys Client ${Protocol.VERSION}
 
 Usage: agentsys-client [options]
@@ -80,7 +69,7 @@ function main() {
   } catch {
     fail('--server must be an http:// or https:// URL');
   }
-  const server = http.createServer((req, res) => {
+  const server = http.createServer(async (req, res) => {
     let pathname;
     try {
       pathname = decodeURIComponent(new URL(req.url, 'http://localhost').pathname);
@@ -89,18 +78,16 @@ function main() {
       return res.end('Bad request');
     }
     if (pathname === '/') pathname = '/index.html';
-    // No colon (a Windows drive or NTFS stream suffix), no backslash and no NUL: a served path never needs them,
-    // and `file.js::$DATA` would otherwise read a server-only file past the pattern below. A Windows 8.3 alias
-    // (`BACKEN~1`) is refused for the same reason.
-    if (/[:\\\0]/.test(pathname) || (process.platform === 'win32' && /(?:^|\/)[^/]*~[0-9][^/]*(?:\/|$)/.test(pathname))) {
-      res.writeHead(404, {'Content-Type': 'text/plain; charset=utf-8'});
-      return res.end('Not found');
+    let file;
+    try {
+      file = await resolveAsset(ROOT, pathname, {
+        fallback: !path.extname(pathname) || /^\/(?:p|library|ext|plugins|environments|settings)\//.test(pathname),
+      });
+    } catch {
+      res.writeHead(500, {'Content-Type': 'text/plain; charset=utf-8'});
+      return res.end('The client file could not be read');
     }
-    if (!path.extname(pathname) || /^\/(?:p|library|ext|plugins|environments|settings)\//.test(pathname))
-      pathname = '/index.html';
-    const file = path.join(ROOT, pathname);
-    const relative = path.relative(ROOT, file).split(path.sep).join('/');
-    if (!file.startsWith(ROOT + path.sep) || !PUBLIC.test(relative) || SERVER_ONLY.test(relative)) {
+    if (!file) {
       res.writeHead(404, {'Content-Type': 'text/plain; charset=utf-8'});
       return res.end('Not found');
     }
@@ -113,11 +100,7 @@ function main() {
       res.writeHead(200, {
         'Content-Type': TYPES[path.extname(file)] || 'application/octet-stream',
         'Cache-Control': 'no-store',
-        'X-Content-Type-Options': 'nosniff',
-        'Referrer-Policy': 'no-referrer',
-        'X-Frame-Options': 'DENY',
-        'Content-Security-Policy':
-          "default-src 'self'; script-src 'self' 'unsafe-eval' 'unsafe-inline' blob:; style-src 'self' 'unsafe-inline'; img-src 'self' data: blob:; connect-src 'self' http: https:; frame-src 'self' blob:; object-src 'none'; base-uri 'none'",
+        ...CLIENT_HEADERS,
       });
       res.end(data);
     });

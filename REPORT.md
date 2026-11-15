@@ -1,3 +1,5 @@
+> Historical report. For the current implementation and verified results, see [MVP finalization](docs/audits/mvp-finalization/REPORT.md).
+
 # AgentSys platform refactoring — report
 
 Branch: `platform/server-client`, based on `main` at `7cca21e`.

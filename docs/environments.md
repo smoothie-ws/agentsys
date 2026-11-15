@@ -23,7 +23,10 @@ Open the **Server** row in the left sidebar, just above **Settings** (it shows t
 - **Reconnect**: retries the active server, useful after a restart.
 - **Forget token for this tab** (on an active server with a saved token): removes the tab's token and asks the server to end the cookie session.
 
-Tokens are stored in `sessionStorage`, per tab. They are never written to `localStorage`, never put in a URL
+Tokens are stored in `sessionStorage`, per tab and exact server URL. Editing a saved address does not transfer
+its credential. Reconnect applies a changed address through the normal save guards; enter a new token explicitly
+if that endpoint requires one. Token fields are never prefilled. Legacy tab tokens are bound to their original
+saved URL before an address edit. They are never written to `localStorage`, never put in a URL
 and never shown again by the client. A token is exchanged for an HttpOnly session cookie; plugin code cannot
 read either.
 
@@ -37,7 +40,8 @@ read either.
 
 ## Switching and isolation
 
-Switching flushes edits, aborts old requests, closes the old stream, clears the old server's tabs and caches,
+Switching first runs the current page's leave/save guards. A failed save or a declined guard keeps the current
+server and edits in place. Switching then flushes edits, aborts old requests, closes the old stream, clears the old server's tabs and caches,
 then loads the new server. Each request carries the generation of the environment it was made for. An answer
 from a previous generation raises `stale_environment` and is ignored. SSE events from the old socket are
 discarded because the socket is closed and the generation changed.

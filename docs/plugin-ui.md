@@ -165,3 +165,14 @@ refused, so a plugin cannot load a remote resource through CSS. The style node i
 
 See [plugin-security.md](plugin-security.md) and the reference plugin `reference-ui-showcase`, which registers every
 extension point.
+
+## Passive content boundary
+
+Plugin HTML keeps `data-command` and `data-args` for its own command buttons; other `data-*` attributes are
+removed before insertion. In particular, a package cannot forge `data-ext-command` or host menu/action attributes.
+The host decorates a validated command with the owning plugin id. Templates, active SVG elements, MathML and
+media elements are removed. Static SVG shapes and packaged raster images remain supported.
+
+Inline styles and `addStyles` reject CSS escapes, comments and resource-loading constructs (including
+`image-set`), in addition to `url`, imports and expressions. This deliberately narrows CSS syntax to prevent
+obfuscated network loads. Plugin styles can still affect application presentation; install only trusted UI packages.
