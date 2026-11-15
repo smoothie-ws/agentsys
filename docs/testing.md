@@ -1,5 +1,33 @@
 # Testing
 
+Architectural measurements and regression results are recorded in
+[the refactoring report](audits/architecture-refactoring/REPORT.md). Reproduce with:
+
+```sh
+node tools/source-metrics.js --ref ba4bca8
+node tools/source-metrics.js
+node --expose-internals tools/architecture-metrics.js --ref ba4bca8
+node --expose-internals tools/architecture-metrics.js
+python tools/client-bench.py --samples 5 --nodes 200 --output client-performance.json
+node --expose-gc tools/stress.js --json
+```
+
+`architecture-metrics.js` uses Node's bundled Acorn parser via `--expose-internals`, for development analysis
+only. It reports exact token duplication, function/branch counts, browser payload and CommonJS cycles. It does
+not infer classic-script global call cycles, semantic clone equivalence or formal cyclomatic complexity. Its
+parser version is included in the output; use the same Node executable for comparisons.
+
+For browser comparisons, create a detached baseline worktree and pass its absolute path to
+`client-bench.py --root PATH`. Every server gets a disposable data directory and every browser context is new.
+The workload measures cold dashboard loading, 200-node graph loading/color edits/layout saves, a full plugin
+install/disable/enable/remove cycle and switching to a second server and back. Colors and positions change on
+each sample. The harness requires the same Playwright setup as the browser tests.
+
+Additional architecture regressions cover owner-wide view cleanup and page collisions
+(`plugin-views.test.js`), DOM-independent wire geometry (`canvas-geometry.test.js`), plugin dialog cancellation
+(`plugin-sandbox.test.js`) and refusal to serve mutation/validation/execution implementations
+(`architecture.test.js`, `static-serving.test.js`).
+
 ## Node suite
 
 ```sh
@@ -149,8 +177,10 @@ legacy code is reported separately. Comparison artifacts and measured workload t
 [audits/mvp-finalization](audits/mvp-finalization/REPORT.md). CI covers Node 22/24 on Linux and Windows; the
 browser job uses Node 24. No new runtime npm dependencies were added.
 
-`browser_ux.py` now tests a delayed navigation and a dirty form with a deliberately delayed save. It asserts that
-the real application `beforeunload` handler cancels unloading. Native confirmation is also required whenever
-the browser supports it. An independent empty-page probe detects headless Firefox builds which suppress that
-native dialog even with a cancelling handler and user activation; only the native dialog assertion is skipped
-with an explicit reason on those builds. Chromium and WebKit native confirmation remains asserted.
+`browser_ux.py` tests delayed navigation and a dirty form whose save request stays held until the user-close
+check finishes. It asserts that the real application `beforeunload` handler cancels unloading and that the native
+prompt appears. Explicit browser contexts keep context disposal separate from the user-close path: the
+Browser.new_page convenience API otherwise closes its owned context before an asynchronous prompt handler
+necessarily answers. Native confirmation passes in the installed Chromium, Firefox and WebKit builds. The
+independent Firefox capability probe remains for builds that actually suppress prompts; it uses an explicit
+context too and never skips application cancellation assertions.

@@ -23,11 +23,12 @@ the initial environment for a fresh browser profile; the user can add or change 
 
 - `shared/core.js`, `shared/protocol.js` — pure helpers and the API contract.
 - `js/storage/format.js` — reading and writing `agentsys.text/1` packets for import/export.
-- `js/model/{schema,types,snapshot,documents,editor,evaluate}.js` — local graph editing, validation and previews.
+- `js/model/{graph,types}.js` — read-only graph contracts, type compatibility and preview lookup.
 - `js/app/*`, `js/pages/*`, `js/canvas/*`, `js/inspector/*`, CSS.
 
-It does **not** load `js/model/executor.js`, `js/backend/**` or `js/storage/db.js`. The static server refuses
-to send them even if a link points there.
+It does **not** load the graph mutation editor, schema validation, snapshot/document construction,
+execution-view builder or interpreter. Those six model implementations, `js/backend/**` and
+`js/storage/db.js` are refused by both static launchers. All graph changes go through the application API.
 
 ## API transport
 

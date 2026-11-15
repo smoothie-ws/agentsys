@@ -76,3 +76,35 @@ reduction, fewer overlapping mutable registries and no new forbidden edges/cycle
 - Boundary/plugin/UI checkpoint: 439 Node tests (438 pass, 1 platform skip); full browser suite 7/7. The browser now loads only graph reading contracts and types, never Editor/schema/snapshot/document mutation or execution-view implementations. Views have one authoritative registration list, failure state one error map, SSE one subscriber map. Focused static-serving tests pass for the expanded boundary.
 - One initial browser run exposed a test wait racing a pending Run; the condition now includes pending starts (runActive). SSE backpressure injection now starts after both handshake writes, since handshake writes also enforce backpressure. Neither regression assertion was removed.
 - CSS audit found one overwritten declaration; consolidated it. Broad stylesheet churn is unsupported by the audit.
+
+- Final cleanup: the mandatory manifest/capability modules no longer have permissive missing-module branches
+  in the package store or request gate. Removed the unused host content wrapper. Dialogs now settle and remove
+  their host listeners when their sandbox aborts; a regression exercises disposal with a dialog open.
+- Canvas: wire geometry now takes appearance explicitly and has no workflow/DOM dependency. Page previews,
+  rendering and selection use the same curve implementation. Focused geometry and architecture tests pass.
+- Performance: an initial 2–3x slowdown also reproduced on the unchanged baseline. Adjacent baseline/current
+  runs are recorded separately; initial samples are retained. CPU profiles were compared rather than
+  attributing the machine-wide shift to the refactoring.
+- Completion audit: removed the redundant canvas `W.nodeMap`; binding resolution uses the existing `W.nodes`
+  index (nodes and Complex Node interfaces). Focused graph/custom/architecture/syntax tests: 39/39 pass.
+  The semantic state inventory is in STATE.md; eight mutable collections have been removed in total.
+- Browser harness diagnosis: owned contexts created by Browser.new_page could be closed by Page.close before
+  native dialog handlers answered. Explicit contexts isolate that disposal from the tested user-close path.
+  A controlled pending-save gate replaces a fixed delay. Native unload confirmation now passes in all three
+  installed engines, including Firefox (the prior unsupported-prompt observation was a harness artifact).
+- Final transport review caught a regression from removing the API facade's body clone: a clean-401 retry
+  could encode a caller's later mutation. The new regression failed with the changed body on the second
+  attempt. Environment now captures one encoded payload and reuses it through renewal; all 40 focused
+  environment/sandbox/architecture/syntax tests pass. The redundant facade clone remains removed.
+- Matched CPU profiles are complete: buildSnapshot accounts for 19.0%/18.4% of before/after self-samples;
+  native file operations dominate the remaining measured cost in both revisions. No interpreter rewrite
+  or speculative performance optimization was introduced.
+
+- Final functional checkpoint: Node 20 and 24 each ran 443 tests (442 pass, one POSIX-on-Windows skip);
+  seven default browser scenarios and 25 extended plugin checks passed. Chromium, Firefox and WebKit all
+  passed native unload confirmation. Final deletion of an unused private pure helper passed 23 focused tests.
+- Final inventory: 30,357 active lines (-310), browser JavaScript 638,671 bytes (-16.02%), exact duplicated
+  ranges 1,802 bytes (-66.42%). Eight redundant mutable collections eliminated. Total LOC contraction is
+  modest; REPORT.md distinguishes that result from the larger boundary/state improvements.
+- Repeated disposable backend/client measurements and matched CPU profile summaries are retained. No
+  statistically supported speedup is claimed. ACCEPTANCE.md maps the entire brief to evidence and limitations.

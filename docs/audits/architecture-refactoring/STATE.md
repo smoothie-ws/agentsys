@@ -53,3 +53,7 @@ value. These are distinct from necessary derived indexes such as sockets, group 
 
 The audit retains two explicit cross-owner boundaries: server data changes invalidate client projections through
 Environment, and a page owns its subscriptions/form flushes. It does not introduce a global state framework.
+
+Request payloads belong to one Environment request chain: the first fetch captures one encoded body, and
+clean-401 renewal reuses it. Caller mutations cannot alter a retried operation. Settlement/cancellation ends
+that local payload lifetime; it is neither a remote-state cache nor shared between separate operations.

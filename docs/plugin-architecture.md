@@ -46,11 +46,24 @@ Pure validation shared by the browser, the pack tool and the tests:
 
 - Starts every enabled plugin in its own `<iframe sandbox="allow-scripts">` with an opaque origin and a restrictive
   CSP. The frame is one CSS pixel and off-screen.
-- Implements the public `api`: requests, storage, settings, commands, UI contributions, Library/collection/workflow
-  helpers, network and secret metadata.
+- Dispatches checked host calls from the public `api`: requests, storage, settings, commands, UI contributions,
+  Library/collection/workflow helpers, network and secret metadata.
 - Owns lifecycle: activation context (`install`, `update`, `activate`), `deactivate`, `onUninstall`, cleanup and
   failure recovery.
-- Holds every UI registration in a host-side registry and removes it with the plugin.
+- Owns live sandboxes and one error map. Commands, explicit links and styles are removed with their owner.
+
+### Isolated SDK program — `js/app/plugin-frame.js`
+
+Builds the opaque iframe document from serialized package/lifecycle configuration. Module loading, SDK helpers
+and plugin-side invocation handlers run inside that document. They cannot close over host state. The host-facing
+interface is only `PluginFrame.document(plugin, context)`; the public plugin SDK remains unchanged.
+
+### Rendered contributions — `js/app/plugin-views.js`
+
+One registration list owns pages, Library sections, resource views, home cards, settings and Inspector sections.
+Page/navigation/section lists are derived rather than independently synchronized. Each record uses only its
+owner's `invoke` and `checkedRequest` capabilities. Resource views cannot fetch records through an operator
+credential. Cleanup removes all projections by removing the owner's records.
 
 ### Passive content ? `js/app/plugin-content.js`
 

@@ -15,7 +15,9 @@
 13. The server and the client are separate programs. The server has a fixed, documented feature set and does not load plugins; the client is static and reaches the server only through one versioned API transport. Closing a client cannot stop a workflow.
 14. Client extensions are sandboxed packages installed in the browser. They run in an opaque-origin iframe with a narrow RPC API, cannot read the page DOM, browser storage, cookies or server token, and interact with the server only through the documented API. Page/card HTML is sanitized. This isolates code, not intent: installing a plugin is an act of trust.
 15. A client plugin may create ordinary server resources (Library nodes, workflows, generic collection records). The server owns those resources, and execution never depends on the plugin or the client being present. This replaces server plugins that added privileged routes.
-16. The server runs graphs; the client may keep the editing model for local validation, but never loads the interpreter (`executor.js`) or the backend routes. There is no browser-only backend mode.
+16. The server runs and mutates graphs. The client loads only read-only graph contracts and type compatibility;
+    the mutation editor, validators, snapshot construction, execution view and interpreter are server-only.
+    There is no browser-only backend mode.
 17. UI preferences belong to the client (`localStorage`). Tokens are per tab (`sessionStorage`) and exchanged for HttpOnly sessions; project data, runtime and secrets belong to the server.
 18. Idle workflow runtimes are released after ten minutes without a signal, and at most sixteen idle runtimes stay live (least recently used first). Eviction closes the host and drops the in-memory entry; `state`, `outputs`, `displays` and errors are already saved and a later read rebuilds the runtime from them. Paused, detached, stopping, saving or active runtimes are never evicted.
 19. Script notifications are coalesced: the first `state`/`values` change in a turn is sent at once (so acknowledged data survives a long synchronous block), later ones replace each other and only the last is sent on a microtask. `latest`, versions and dependency invalidation still change synchronously, and flush points precede completion, Pause and Stop. Compiled Script bodies are cached by text (LRU, 100 entries and 8 MB) because the function captures no state.
@@ -27,3 +29,8 @@
     a scoped failure cannot retry with operator privileges. Passive plugin HTML cannot carry host action attributes.
 23. The retired server-plugin executable copies are removed; migration is implemented by server/migrate.js and
     old implementations remain available in git history. No graph execution semantics or quotas changed.
+24. Rendered plugin contributions have one authoritative registry. Navigation, page lists and Library sections
+    are projections of the same entries; error presence determines activation failure. The iframe SDK program
+    receives serialized configuration and cannot capture host state.
+25. Both SSE encodings share a subscription owner and backpressure cleanup. The legacy encoding remains
+    compatible; it is an adapter at the HTTP boundary, not a second state synchronization implementation.

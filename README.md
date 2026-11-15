@@ -86,7 +86,8 @@ servers and server-only execution in Chromium, Firefox and WebKit. See [Testing]
 
 ## Documentation
 
-The latest implementation and verification report is [MVP finalization](docs/audits/mvp-finalization/REPORT.md).
+The latest implementation and verification report is [Architectural refactoring](docs/audits/architecture-refactoring/REPORT.md).
+The preceding security cycle is recorded in [MVP finalization](docs/audits/mvp-finalization/REPORT.md).
 Read [Architecture](docs/architecture.md) first, then:
 
 - [Audit](docs/audit.md) — what was wrong and what this cycle changed.

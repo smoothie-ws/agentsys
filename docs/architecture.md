@@ -61,8 +61,10 @@ See [server.md](server.md).
 ## Client
 
 - Static files: HTML, CSS and browser JavaScript. There is no backend, storage layer or interpreter in it.
-- Loads `js/model/{schema,types,snapshot,documents,editor,evaluate}.js` for editing, validation and previews.
-  `js/model/executor.js`, `js/backend/**` and `js/storage/db.js` are never sent to a browser.
+- Loads `js/model/graph.js` for read-only snapshot lookup, binding resolution, event names and import defaults,
+  and `js/model/types.js` for presentation and wire compatibility. Graph mutations and snapshot construction
+  run only on the server. `schema`, `documents`, `editor`, `snapshot`, `evaluate` and `executor` are server-only
+  assets, as are `js/backend/**` and `js/storage/db.js`.
 - All server reads and writes go through one transport (`js/app/environments.js`). No component calls a fixed
   `/api` URL.
 - Keeps only client concerns locally: environments (URLs and names), per-tab tokens, UI state, layout and
@@ -139,6 +141,23 @@ flush edits to the old server, abort its requests, close its stream, clear per-s
 the new server. Responses from the old generation are rejected with `stale_environment`.
 
 ## Compatibility
+
+The refactoring responsibility/dependency inventory is in
+[the architectural worklog](audits/architecture-refactoring/WORKLOG.md). Ordered manifests still provide
+classic-script dependencies; the source graph is not an ES-module graph. Canvas and Inspector share the
+current page's `W` object. It contains presentation indexes and transient edits, not an executable graph or
+an independently authoritative backend model.
+
+Rendered plugin contributions have one owner (`PluginViews`): page, Library, resource, home, settings and
+Inspector registrations live in one list. Navigation and page/section lists are projections; disabling a plugin
+removes one owner's entries. `extensions.js` owns sandbox lifecycle, commands and explicit toolbar/menu links;
+`plugin-frame.js` supplies the isolated SDK program; `plugin-content.js` remains the sanitization boundary.
+Failures are recorded once in the host's error map. Scoped credentials remain owned by the environment
+transport and revoked when a sandbox is disposed or an environment generation ends.
+
+The HTTP server has one SSE subscriber map and cleanup path for both `/api/events` and legacy
+`/__data/events`. Their public encodings remain distinct. Backpressure ends a subscription, including during
+the handshake. The file watcher uses the actual subscriber count; both encodings observe external changes.
 
 Existing project data uses `agentsys.text/1` graph files and JSON keys; the engine and format were not
 rewritten. Existing Library nodes, including nodes created by the old AI plugin, remain ordinary graphs and
