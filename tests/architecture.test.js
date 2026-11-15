@@ -54,9 +54,9 @@ test('the server manifest is a fixed list of existing files, never client interf
   assert.deepEqual(backend.filter(file => !FILES.includes(file)), [], 'every js/backend file is part of the server runtime');
   assert.ok(FILES.includes('js/storage/db.js') && FILES.includes('js/model/executor.js'));
   // Server-only files are never sent to a browser; the shared model and the helpers are.
-  for (const file of [...backend, 'js/storage/db.js', 'js/model/executor.js', 'server.js', 'headless.js', 'server/migrate.js', 'bin/agentsys-server.js', 'legacy/server-plugin-host.js'])
+  for (const file of [...backend, 'js/storage/db.js', ...['executor', 'editor', 'snapshot', 'evaluate', 'schema', 'documents'].map(name => `js/model/${name}.js`), 'server.js', 'headless.js', 'server/migrate.js', 'bin/agentsys-server.js', 'legacy/server-plugin-host.js'])
     assert.equal(SERVER_ONLY.test(file), true, `server-only: ${file}`);
-  for (const file of [...list('js/app'), ...list('js/pages'), ...list('js/canvas'), ...list('js/inspector'), 'js/model/schema.js', 'shared/core.js', 'shared/protocol.js'])
+  for (const file of [...list('js/app'), ...list('js/pages'), ...list('js/canvas'), ...list('js/inspector'), 'js/model/graph.js', 'js/model/types.js', 'shared/core.js', 'shared/protocol.js'])
     assert.equal(SERVER_ONLY.test(file), false, `a client file must be servable: ${file}`);
 });
 
@@ -77,7 +77,7 @@ test('the client entry point loads the model and the interface, never server cod
   assert.ok(scripts.length > 20, 'the page loads the client program');
   for (const file of scripts) {
     assert.ok(exists(file), `loaded script exists: ${file}`);
-    assert.doesNotMatch(file, /^(?:js\/backend\/|js\/storage\/db\.js$|js\/model\/executor\.js$|server\/|bin\/|legacy\/)/);
+    assert.doesNotMatch(file, /^(?:js\/backend\/|js\/storage\/db\.js$|js\/model\/(?:executor|editor|snapshot|evaluate|schema|documents)\.js$|server\/|bin\/|legacy\/)/);
   }
   // No client interface file may be dead weight: each is loaded, and each loaded file is on disk (checked above).
   const loaded = new Set(scripts);

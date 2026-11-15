@@ -11,18 +11,12 @@
 'use strict';
 
 const Extensions = (() => {
-  const loaded = new Map(); // plugin id -> {plugin, sandbox}
+  const loaded = new Map(); // plugin id -> sandbox
   const errors = new Map();
-  const failed = new Set();
-  const pages = [];
   const sidebarItems = [];
   const toolbarButtons = [];
   const menuContributions = [];
-  const homeCards = [];
-  const settingsSections = [];
-  const librarySections = [];
-  const inspectorSections = [];
-  const resourceViews = [];
+  const views = new PluginViews();
   const commands = new Map();
   const styleNodes = new Map();
   let loading = null;
@@ -38,9 +32,9 @@ const Extensions = (() => {
   const removeWhere = (list, match) => {
     for (let i = list.length - 1; i >= 0; i--) if (match(list[i])) list.splice(i, 1);
   };
-  const pagesOf = id => pages.filter(p => p.plugin === id).sort(byOrder);
-  const findPage = (plugin, id) => pages.find(p => p.plugin === plugin && p.id === id);
-  const pageHref = (plugin, id) => `/ext/${encodeURIComponent(plugin)}/${encodeURIComponent(id)}`;
+  const pagesOf = id => views.pages(id);
+  const findPage = (plugin, id) => views.page(plugin, id);
+  const pageHref = (plugin, id) => PluginViews.href(plugin, id);
   const pluginTitle = id => (typeof app !== 'undefined' && app.plugins?.find(p => p.id === id)?.title) || id;
   const cssId = id => String(id).replace(/[^A-Za-z0-9_-]/g, '-');
 
@@ -48,279 +42,11 @@ const Extensions = (() => {
   const decorateHTML = (value, pluginId) => PluginContent.decorate(value, pluginId);
   const internalHref = value => PluginContent.internalHref(value);
 
-  /** The sandbox document: a module loader, the public API object, lifecycle hooks and the message bridge. */
-  function sandboxDocument(plugin, context) {
-    const config = JSON.stringify({
-      id: plugin.id,
-      title: plugin.title,
-      description: plugin.description,
-      icon: plugin.icon,
-      version: plugin.version,
-      api: plugin.api || 1,
-      capabilities: Array.isArray(plugin.capabilities) ? plugin.capabilities : [],
-      main: plugin.main || 'plugin.js',
-      source: plugin.source,
-      files: plugin.files || {},
-      assets: plugin.assets || {},
-      lifecycle: {
-        hook: context?.hook || 'activate',
-        from: context?.from || null,
-        to: context?.to || plugin.version,
-        dataVersion: Number(context?.dataVersion) || 0,
-      },
-    }).replace(/</g, '\\u003c');
-    return `<!doctype html><meta charset="utf-8"><meta http-equiv="Content-Security-Policy" content="default-src 'none'; script-src 'unsafe-inline' 'unsafe-eval'; style-src 'unsafe-inline'; img-src data: blob:; font-src data:; media-src data: blob:; connect-src 'none'; frame-src 'none'; child-src 'none'; worker-src 'none'; form-action 'none'; base-uri 'none'"><script>
-(() => {
-  const plugin = ${config};
-  const handlers = new Map();
-  const changeListeners = new Set();
-  const pending = new Map();
-  const moduleCache = new Map();
-  const controller = new AbortController();
-  let serial = 0;
-  let exportsObject = {};
-  const send = (kind, args) => new Promise((resolve, reject) => {
-    const id = ++serial;
-    pending.set(id, {resolve, reject});
-    parent.postMessage({__agentsys: 'plugin', kind, id, args}, '*');
-  });
-  addEventListener('message', event => {
-    if (event.source !== parent) return;
-    const message = event.data;
-    if (!message || message.__agentsys !== 'host') return;
-    if (message.kind === 'result' || message.kind === 'hook-result') {
-      const item = pending.get(message.id);
-      if (!item) return;
-      pending.delete(message.id);
-      message.error ? item.reject(new Error(message.error)) : item.resolve(message.value);
-      return;
-    }
-    if (message.kind === 'shutdown') {
-      try { controller.abort(new Error('The plugin stopped')); } catch {}
-      return;
-    }
-    if (message.kind === 'event' && message.name === 'change') {
-      for (const listener of changeListeners) { try { listener(...(message.args || [])); } catch (error) { console.error(error); } }
-      return;
-    }
-    if (message.kind === 'invoke') {
-      const handler = handlers.get(message.name);
-      const render = /^(?:page|home|settings|library|inspector|resource):/.test(String(message.name || ''));
-      Promise.resolve()
-        .then(() => (handler ? handler(...(message.args || [])) : undefined))
-        .then(value => {
-          if (render && value && typeof value === 'object' && typeof value.outerHTML === 'string') value = value.outerHTML;
-          const answer = render ? (value == null ? '' : String(value)) : value === undefined ? null : value;
-          parent.postMessage({__agentsys: 'plugin', kind: 'invoke-result', id: message.id, value: answer}, '*');
-        }, error => parent.postMessage({__agentsys: 'plugin', kind: 'invoke-result', id: message.id, error: error.message || String(error)}, '*'));
-      return;
-    }
-    if (message.kind === 'lifecycle') {
-      const name = String(message.name || '');
-      const hook = typeof exportsObject[name] === 'function' ? exportsObject[name] : name === 'deactivate' ? exportsObject.__activateDispose : null;
-      Promise.resolve()
-        .then(() => (hook ? hook(api, message.context || message.args || {}) : undefined))
-        .then(value => parent.postMessage({__agentsys: 'plugin', kind: 'hook-result', id: message.id, value: value === undefined ? null : value}, '*'))
-        .catch(error => parent.postMessage({__agentsys: 'plugin', kind: 'hook-result', id: message.id, error: error.message || String(error)}, '*'));
-    }
-  });
-  addEventListener('pagehide', () => {
-    // The frame is navigating away or being destroyed; the host must not keep a sandbox that is no longer this plugin.
-    try { parent.postMessage({__agentsys: 'plugin', kind: 'unloading'}, '*'); } catch {}
-  });
-  const request = (method, path, body, query) => send('request', [method, path, body, query]);
-  const resolveModule = (from, name) => {
-    let request = String(name || '');
-    let target;
-    if (request.startsWith('.')) {
-      const parts = from.split('/').slice(0, -1);
-      for (const part of request.split('/')) {
-        if (part === '.' || part === '') continue;
-        if (part === '..') { if (!parts.length) throw new Error('A module path leaves the package: ' + name); parts.pop(); }
-        else parts.push(part);
-      }
-      target = parts.join('/');
-    } else target = request;
-    if (!/\.(?:js|json)$/i.test(target)) target += '.js';
-    if (!Object.prototype.hasOwnProperty.call(plugin.files, target)) throw new Error('Module not found in the package: ' + name);
-    return target;
-  };
-  const loadModule = path => {
-    if (moduleCache.has(path)) return moduleCache.get(path).exports;
-    const source = path === plugin.main ? null : plugin.files[path];
-    const text = source === null ? plugin.source : source;
-    if (typeof text !== 'string') throw new Error('The package entry is missing: ' + path);
-    const module = {exports: {}};
-    moduleCache.set(path, module);
-    if (/\.json$/i.test(path)) {
-      try {
-        module.exports = JSON.parse(text);
-      } catch (error) {
-        moduleCache.delete(path);
-        throw new Error('Invalid JSON module ' + path + ': ' + error.message);
-      }
-      return module.exports;
-    }
-    const localRequire = name => loadModule(resolveModule(path, name));
-    try {
-      new Function('exports', 'module', 'require', 'api', 'console', text)(module.exports, module, localRequire, api, console);
-    } catch (error) {
-      moduleCache.delete(path);
-      throw error;
-    }
-    return module.exports;
-  };
-  const withOwner = spec => ({...(spec || {}), plugin: {id: plugin.id}});
-  const api = {
-    id: plugin.id, title: plugin.title, description: plugin.description, icon: plugin.icon,
-    version: plugin.version, api: plugin.api,
-    capabilities: plugin.capabilities || [],
-    manifest: {
-      id: plugin.id, name: plugin.title, version: plugin.version, api: plugin.api,
-      capabilities: plugin.capabilities || [], icon: plugin.icon,
-    },
-    asset: name => Object.prototype.hasOwnProperty.call(plugin.assets, name) ? plugin.assets[name] : '',
-    assets: () => ({...plugin.assets}),
-    signal: controller.signal,
-    log: (...args) => parent.postMessage({__agentsys: 'plugin', kind: 'log', args: args.map(String)}, '*'),
-    request: (method, path, body, query) => send('request', [method, path, body, query]),
-    storage: {
-      get: (key, fallback = null) => send('storage.get', [key, fallback]),
-      set: (key, value) => send('storage.set', [key, value]),
-      remove: key => send('storage.remove', [key]),
-    },
-    settings: {
-      get: () => send('settings.get', []),
-      set: value => send('settings.set', [value]),
-    },
-    commands: {
-      register(command, handler, meta = {}) {
-        const id = String(command);
-        handlers.set('command:' + id, handler);
-        return send('ui.addCommand', [{id, title: meta.title || id, icon: meta.icon, order: meta.order}]);
-      },
-      execute: (command, ...args) => send('commands.execute', [String(command), ...args]),
-    },
-    ui: {
-      addPage(spec = {}) {
-        if (typeof spec.render === 'function') handlers.set('page:' + spec.id, spec.render);
-        return send('ui.addPage', [{id: spec.id, title: spec.title, description: spec.description, icon: spec.icon, order: spec.order, nav: spec.nav, hasRender: typeof spec.render === 'function'}]);
-      },
-      addSidebarItem: spec => send('ui.addSidebarItem', [spec]),
-      addToolbarButton: spec => send('ui.addToolbarButton', [spec]),
-      addMenuItem: (menu, item) => send('ui.addMenuItem', [{...item, menu}]),
-      /** A context menu entry on the canvas selection (the same registry as addMenuItem('canvas:selection')). */
-      addContextMenu(item = {}) {
-        return send('ui.addMenuItem', [{...item, menu: 'canvas:selection'}]);
-      },
-      addHomeCard(spec = {}) {
-        if (typeof spec.render === 'function') handlers.set('home:' + spec.id, spec.render);
-        return send('ui.addHomeCard', [{id: spec.id, title: spec.title, icon: spec.icon, order: spec.order, hasRender: typeof spec.render === 'function'}]);
-      },
-      addSettingsSection(spec = {}) {
-        if (typeof spec.render === 'function') handlers.set('settings:' + spec.id, spec.render);
-        return send('ui.addSettingsSection', [{id: spec.id, title: spec.title, description: spec.description, order: spec.order, hasRender: typeof spec.render === 'function'}]);
-      },
-      addLibrarySection(spec = {}) {
-        if (typeof spec.render === 'function') handlers.set('library:' + spec.id, spec.render);
-        return send('ui.addLibrarySection', [{id: spec.id, title: spec.title, description: spec.description, icon: spec.icon, order: spec.order, nav: spec.nav, hasRender: typeof spec.render === 'function'}]);
-      },
-      addInspectorSection(spec = {}) {
-        if (typeof spec.render === 'function') handlers.set('inspector:' + spec.id, spec.render);
-        return send('ui.addInspectorSection', [{id: spec.id, title: spec.title, description: spec.description, order: spec.order, when: spec.when, hasRender: typeof spec.render === 'function'}]);
-      },
-      addResourceView(spec = {}) {
-        if (typeof spec.render === 'function') handlers.set('resource:' + spec.id, spec.render);
-        return send('ui.addResourceView', [{id: spec.id, title: spec.title, description: spec.description, collection: spec.collection, icon: spec.icon, order: spec.order, sidebar: spec.sidebar, hasRender: typeof spec.render === 'function'}]);
-      },
-      showDialog: spec => send('ui.showDialog', [spec]),
-      closeDialog: () => send('ui.closeDialog', []),
-      addStyles: css => send('ui.addStyles', [css]),
-      escape: value =>
-        String(value ?? '').replace(/[&<>"']/g, character => ({'&': '&amp;', '<': '&lt;', '>': '&gt;', '"': '&quot;', "'": '&#39;'})[character]),
-      notify: notification => send('notify', [notification]),
-      toast: (message, bad = false) => send('toast', [message, bad]),
-      navigate: path => send('navigate', [path]),
-      refresh: () => send('refresh', []),
-      pageHref: id => '/ext/' + encodeURIComponent(plugin.id) + '/' + encodeURIComponent(id),
-    },
-    library: {
-      list: () => request('GET', 'resources'),
-      get: id => request('GET', 'resources/' + encodeURIComponent(id)),
-      createNode: spec => request('POST', 'library/script-nodes', withOwner(spec)),
-      ensureNode: async spec => {
-        const list = await request('GET', 'resources');
-        const found = list.find(item => item.name === spec.name);
-        return found || request('POST', 'library/script-nodes', withOwner(spec));
-      },
-      updateNode: (id, spec) => request('POST', 'library/script-nodes', {...withOwner(spec), resource_id: id}),
-      deleteNode: id => request('DELETE', 'resources/' + encodeURIComponent(id)),
-    },
-    collections: {
-      list: () => request('GET', 'collections'),
-      define: (name, definition) => request('PUT', 'collections/' + encodeURIComponent(name), definition),
-      records: (name, query) => request('GET', 'collections/' + encodeURIComponent(name) + '/records', undefined, query),
-      create: (name, data, id) => request('POST', 'collections/' + encodeURIComponent(name) + '/records', {data, id}),
-      update: (name, id, data, version) =>
-        request('PUT', 'collections/' + encodeURIComponent(name) + '/records/' + encodeURIComponent(id), {data}, version === undefined ? undefined : {if_version: version}),
-      remove: (name, id) => request('DELETE', 'collections/' + encodeURIComponent(name) + '/records/' + encodeURIComponent(id)),
-    },
-    workflows: {
-      projects: () => request('GET', 'projects'),
-      createProject: name => request('POST', 'projects', {name}),
-      workflows: project => request('GET', 'projects/' + encodeURIComponent(project)),
-      createWorkflow: (project, name) => request('POST', 'projects/' + encodeURIComponent(project) + '/workflows', {name}),
-      placeNode: (project, workflow, resource, point) =>
-        request('POST', 'projects/' + encodeURIComponent(project) + '/custom-nodes/' + encodeURIComponent(resource), {point: point || {x: 0, y: 0}}, {workflow_id: workflow}),
-    },
-    net: {
-      fetch: spec => request('POST', 'net', spec),
-    },
-    secrets: {
-      /** Metadata only: a client plugin never receives a secret value. */
-      present: name => request('GET', 'secrets/' + encodeURIComponent(name)),
-    },
-    env: {info: () => send('env.info', [])},
-    onDidChange(listener) {
-      changeListeners.add(listener);
-      return () => changeListeners.delete(listener);
-    },
-    on(event, listener) {
-      if (event !== 'change') throw new Error('Unknown event: ' + event);
-      return api.onDidChange(listener);
-    },
-  };
-  let failure = null;
-  let dataVersion = plugin.lifecycle.dataVersion;
-  try {
-    exportsObject = loadModule(plugin.main);
-    if (typeof exportsObject.activate !== 'function') throw new Error('The plugin must export activate(api)');
-    const run = async () => {
-      const context = {...plugin.lifecycle};
-      if (context.hook === 'install' && typeof exportsObject.onInstall === 'function')
-        dataVersion = (await exportsObject.onInstall(api, context)) ?? dataVersion;
-      if (context.hook === 'update' && typeof exportsObject.onUpdate === 'function')
-        dataVersion = (await exportsObject.onUpdate(api, context)) ?? dataVersion;
-      if (context.hook === 'update' && typeof exportsObject.migrate === 'function')
-        dataVersion = (await exportsObject.migrate(api, context)) ?? dataVersion;
-      const dispose = await exportsObject.activate(api);
-      if (typeof dispose === 'function') exportsObject.__activateDispose = dispose;
-      parent.postMessage({__agentsys: 'plugin', kind: 'ready', ok: true, dataVersion}, '*');
-    };
-    run().catch(error => parent.postMessage({__agentsys: 'plugin', kind: 'ready', error: error.message || String(error)}, '*'));
-  } catch (error) {
-    parent.postMessage({__agentsys: 'plugin', kind: 'ready', error: error.message || String(error)}, '*');
-  }
-})();
-</script>`;
-  }
-
   /** One sandboxed iframe per plugin: no same-origin access, no direct DOM, storage or token. */
   class PluginSandbox {
     constructor(plugin, context = {}) {
       this.plugin = plugin;
-      this.context = context;
-      this.capabilities = typeof PluginCapabilities === 'undefined' ? [] : PluginCapabilities.forPlugin(plugin);
+      this.capabilities = PluginCapabilities.forPlugin(plugin);
       this.pending = new Map();
       this.serial = 0;
       this.dead = false;
@@ -340,7 +66,7 @@ const Extensions = (() => {
       this.frame.setAttribute('sandbox', 'allow-scripts');
       this.frame.setAttribute('aria-hidden', 'true');
       this.frame.style.cssText = 'position:fixed;width:1px;height:1px;left:-10000px;top:0;border:0;';
-      this.url = URL.createObjectURL(new Blob([sandboxDocument(plugin, context)], {type: 'text/html'}));
+      this.url = URL.createObjectURL(new Blob([PluginFrame.document(plugin, context)], {type: 'text/html'}));
       this.frame.src = this.url;
       // A second document load after the plugin is running means the frame navigated or crashed: stop it rather than
       // keeping a half-alive sandbox that no longer matches the installed package.
@@ -370,14 +96,7 @@ const Extensions = (() => {
           }
           return;
         }
-        if (data.kind === 'invoke-result') {
-          const pending = this.pending.get(data.id);
-          if (!pending) return;
-          this.pending.delete(data.id);
-          data.error ? pending.reject(new Error(data.error)) : pending.resolve(data.value);
-          return;
-        }
-        if (data.kind === 'hook-result') {
+        if (data.kind === 'invoke-result' || data.kind === 'hook-result') {
           const pending = this.pending.get(data.id);
           if (!pending) return;
           this.pending.delete(data.id);
@@ -476,7 +195,7 @@ const Extensions = (() => {
       };
       ensureRunning();
       const upper = String(method || 'GET').toUpperCase();
-      if (!this.token && typeof Environment.pluginToken === 'function') await acquire(false);
+      if (!this.token) await acquire(false);
       const send = () => {
         ensureRunning();
         return Environment.request(upper, path, {body, query, auth: this.token || undefined, signal: this.requests.signal});
@@ -497,14 +216,17 @@ const Extensions = (() => {
       const clean = String(path || '').replace(/^\/+/, '');
       if (clean.startsWith('auth/') || clean === 'auth')
         throw new Error('A client plugin cannot use authentication endpoints');
-      if (typeof PluginCapabilities !== 'undefined') {
-        const decision = PluginCapabilities.check(this.capabilities, String(method || 'GET').toUpperCase(), clean, body);
-        if (!decision.ok) throw new Error(decision.reason);
-      }
+      const decision = PluginCapabilities.check(this.capabilities, String(method || 'GET').toUpperCase(), clean, body);
+      if (!decision.ok) throw new Error(decision.reason);
       return this.sendRequest(String(method || 'GET').toUpperCase(), clean, body, query);
     }
     async receive(data) {
       const plugin = this.plugin;
+      const viewKinds = {
+        'ui.addPage': 'page', 'ui.addLibrarySection': 'library', 'ui.addHomeCard': 'home',
+        'ui.addSettingsSection': 'settings', 'ui.addInspectorSection': 'inspector', 'ui.addResourceView': 'resource',
+      };
+      if (Object.hasOwn(viewKinds, data.kind)) return views.add(viewKinds[data.kind], data.args?.[0] || {}, this);
       switch (data.kind) {
         case 'request': {
           const [method, path, body, query] = data.args || [];
@@ -518,76 +240,6 @@ const Extensions = (() => {
         case 'storage.remove':
           PluginStore.storage(plugin.id).remove(data.args?.[0]);
           return true;
-        case 'ui.addPage': {
-          const spec = data.args?.[0] || {};
-          checkId(spec.id, 'page id');
-          if (findPage(plugin.id, spec.id)) throw new Error(`The page "${spec.id}" is already registered`);
-          if (!spec.hasRender) throw new Error('A page needs a render(context) function');
-          pages.push({
-            plugin: plugin.id,
-            id: spec.id,
-            title: String(spec.title || spec.id).slice(0, 120),
-            description: String(spec.description || '').slice(0, 2000),
-            icon: spec.icon || plugin.icon || 'plug',
-            order: Number(spec.order) || 0,
-            render: async (root, context) => {
-              root.innerHTML = decorateHTML(
-                await this.invoke('page:' + spec.id, [JSON.parse(JSON.stringify(context || {}))]),
-                plugin.id
-              );
-            },
-          });
-          if (spec.nav !== false)
-            sidebarItems.push({
-              plugin: plugin.id,
-              id: 'nav:' + spec.id,
-              page: spec.id,
-              href: pageHref(plugin.id, spec.id),
-              title: String(spec.title || spec.id).slice(0, 120),
-              icon: spec.icon || plugin.icon || 'plug',
-              order: Number(spec.order) || 0,
-            });
-          return true;
-        }
-        case 'ui.addLibrarySection': {
-          const spec = data.args?.[0] || {};
-          checkId(spec.id, 'Library section id');
-          if (findPage(plugin.id, spec.id)) throw new Error(`The page "${spec.id}" is already registered`);
-          if (!spec.hasRender) throw new Error('A Library section needs a render() function');
-          pages.push({
-            plugin: plugin.id,
-            id: spec.id,
-            title: String(spec.title || spec.id).slice(0, 120),
-            description: String(spec.description || '').slice(0, 2000),
-            icon: spec.icon || 'database',
-            order: Number(spec.order) || 0,
-            section: 'library',
-            render: async (root, context) => {
-              root.innerHTML = decorateHTML(await this.invoke('library:' + spec.id, [JSON.parse(JSON.stringify(context || {}))]), plugin.id);
-            },
-          });
-          librarySections.push({
-            plugin: plugin.id,
-            id: spec.id,
-            title: String(spec.title || spec.id).slice(0, 120),
-            description: String(spec.description || '').slice(0, 2000),
-            icon: spec.icon || 'database',
-            order: Number(spec.order) || 0,
-            href: pageHref(plugin.id, spec.id),
-          });
-          if (spec.nav !== false)
-            sidebarItems.push({
-              plugin: plugin.id,
-              id: 'nav:' + spec.id,
-              page: spec.id,
-              href: pageHref(plugin.id, spec.id),
-              title: String(spec.title || spec.id).slice(0, 120),
-              icon: spec.icon || 'database',
-              order: Number(spec.order) || 0,
-              section: 'library',
-            });
-          return true;
-        }
         case 'ui.addSidebarItem': {
           const spec = data.args?.[0] || {};
           checkId(spec.id, 'sidebar item id');
@@ -650,113 +302,6 @@ const Extensions = (() => {
             command: spec.command,
             order: Number(spec.order) || 0,
           });
-          return true;
-        }
-        case 'ui.addHomeCard': {
-          const spec = data.args?.[0] || {};
-          checkId(spec.id, 'dashboard card id');
-          if (!spec.hasRender) throw new Error('A dashboard card needs a render() function');
-          homeCards.push({
-            plugin: plugin.id,
-            id: spec.id,
-            title: String(spec.title || plugin.title).slice(0, 120),
-            icon: spec.icon || plugin.icon || 'plug',
-            order: Number(spec.order) || 0,
-            render: async root => {
-              root.innerHTML = decorateHTML(await this.invoke('home:' + spec.id, []), plugin.id);
-            },
-          });
-          return true;
-        }
-        case 'ui.addSettingsSection': {
-          const spec = data.args?.[0] || {};
-          checkId(spec.id, 'settings section id');
-          if (!spec.hasRender) throw new Error('A settings section needs a render() function');
-          settingsSections.push({
-            plugin: plugin.id,
-            id: spec.id,
-            title: String(spec.title || plugin.title).slice(0, 120),
-            description: String(spec.description || '').slice(0, 500),
-            order: Number(spec.order) || 0,
-            render: async root => {
-              root.innerHTML = decorateHTML(await this.invoke('settings:' + spec.id, []), plugin.id);
-            },
-          });
-          return true;
-        }
-        case 'ui.addInspectorSection': {
-          const spec = data.args?.[0] || {};
-          checkId(spec.id, 'inspector section id');
-          if (!spec.hasRender) throw new Error('An inspector section needs a render() function');
-          const when = ['any', 'node', 'complex'].includes(spec.when) ? spec.when : 'any';
-          inspectorSections.push({
-            plugin: plugin.id,
-            id: spec.id,
-            title: String(spec.title || plugin.title).slice(0, 120),
-            description: String(spec.description || '').slice(0, 500),
-            order: Number(spec.order) || 0,
-            when,
-            render: async (root, context) => {
-              root.innerHTML = decorateHTML(await this.invoke('inspector:' + spec.id, [JSON.parse(JSON.stringify(context || {}))]), plugin.id);
-            },
-          });
-          return true;
-        }
-        case 'ui.addResourceView': {
-          const spec = data.args?.[0] || {};
-          checkId(spec.id, 'resource view id');
-          if (!spec.hasRender) throw new Error('A resource view needs a render() function');
-          if (!/^[a-z][a-z0-9-]{0,63}$/.test(String(spec.collection || '')))
-            throw new Error('A resource view needs a collection name');
-          const pageId = 'view-' + spec.id;
-          if (findPage(plugin.id, pageId)) throw new Error(`The resource view "${spec.id}" is already registered`);
-          const collection = String(spec.collection);
-          pages.push({
-            plugin: plugin.id,
-            id: pageId,
-            title: String(spec.title || collection).slice(0, 120),
-            description: String(spec.description || `Records of ${collection}`).slice(0, 2000),
-            icon: spec.icon || 'database',
-            order: Number(spec.order) || 0,
-            resourceView: spec.id,
-            render: async (root, context) => {
-              const answer = await this.checkedRequest('GET', `collections/${encodeURIComponent(collection)}/records`, undefined, {
-                limit: 200,
-              });
-              root.innerHTML = decorateHTML(
-                await this.invoke('resource:' + spec.id, [
-                  {
-                    collection,
-                    records: JSON.parse(JSON.stringify(answer?.records || [])),
-                    total: answer?.total || 0,
-                    page: JSON.parse(JSON.stringify(context || {})),
-                  },
-                ]),
-                plugin.id
-              );
-            },
-          });
-          resourceViews.push({
-            plugin: plugin.id,
-            id: spec.id,
-            title: String(spec.title || collection).slice(0, 120),
-            description: String(spec.description || '').slice(0, 2000),
-            collection,
-            icon: spec.icon || 'database',
-            order: Number(spec.order) || 0,
-            page: pageId,
-            href: pageHref(plugin.id, pageId),
-          });
-          if (spec.sidebar === true)
-            sidebarItems.push({
-              plugin: plugin.id,
-              id: 'nav:' + pageId,
-              page: pageId,
-              href: pageHref(plugin.id, pageId),
-              title: String(spec.title || collection).slice(0, 120),
-              icon: spec.icon || 'database',
-              order: Number(spec.order) || 0,
-            });
           return true;
         }
         case 'ui.showDialog':
@@ -903,7 +448,7 @@ const Extensions = (() => {
       this.requests.abort();
       clearTimeout(this.timer);
       // A disabled plugin's scoped token ends now, not when it happens to expire.
-      if (this.token && typeof Environment !== 'undefined' && typeof Environment.revokePluginToken === 'function')
+      if (this.token)
         Environment.revokePluginToken(this.token);
       this.token = null;
       window.removeEventListener('message', this.onMessage);
@@ -929,15 +474,10 @@ const Extensions = (() => {
   }
 
   function cleanupRegistrations(id) {
-    removeWhere(pages, p => p.plugin === id);
+    views.remove(id);
     removeWhere(sidebarItems, item => item.plugin === id);
     removeWhere(toolbarButtons, item => item.plugin === id);
     removeWhere(menuContributions, item => item.plugin === id);
-    removeWhere(homeCards, item => item.plugin === id);
-    removeWhere(settingsSections, item => item.plugin === id);
-    removeWhere(librarySections, item => item.plugin === id);
-    removeWhere(inspectorSections, item => item.plugin === id);
-    removeWhere(resourceViews, item => item.plugin === id);
     for (const key of [...commands.keys()]) if (commands.get(key).plugin === id) commands.delete(key);
     for (const node of styleNodes.get(id) || []) node.remove();
     styleNodes.delete(id);
@@ -949,7 +489,7 @@ const Extensions = (() => {
     const entry = loaded.get(id);
     if (entry) {
       try {
-        await entry.sandbox.stop(hook, context);
+        await entry.stop(hook, context);
       } catch (error) {
         console.error(`[plugins] ${id}: ${hook} failed:`, error);
       }
@@ -966,21 +506,21 @@ const Extensions = (() => {
       const ready = await sandbox.start();
       sandbox.onCrash = error => {
         errors.set(plugin.id, error.message || String(error));
-        failed.add(plugin.id);
+
         cleanupRegistrations(plugin.id);
         loaded.delete(plugin.id);
         renderAll();
       };
-      loaded.set(plugin.id, {plugin, sandbox});
+      loaded.set(plugin.id, sandbox);
       document.body.classList.add('plugin-' + cssId(plugin.id));
       errors.delete(plugin.id);
-      failed.delete(plugin.id);
-      if (typeof PluginStore !== 'undefined') PluginStore.markActivated(plugin.id, plugin.version, ready?.dataVersion);
+
+      PluginStore.markActivated(plugin.id, plugin.version, ready?.dataVersion);
       return true;
     } catch (error) {
       sandbox?.dispose();
       errors.set(plugin.id, error.message || String(error));
-      failed.add(plugin.id);
+
       console.error(`[plugins] ${plugin.id}: the interface could not start:`, error);
       if (typeof toast === 'function')
         toast(`The interface of ${plugin.title || plugin.id} could not start: ${error.message}`, true);
@@ -1013,7 +553,6 @@ const Extensions = (() => {
       const wanted = new Map(list.filter(p => p.enabled).map(p => [p.id, p]));
       for (const id of [...loaded.keys()]) if (!wanted.has(id)) await stopModule(id, 'deactivate');
       for (const id of [...errors.keys()]) if (!wanted.has(id)) errors.delete(id);
-      for (const id of [...failed]) if (!wanted.has(id)) failed.delete(id);
 
       // A dependency that was turned off (or removed) takes its dependants down with it, even if they are
       // already running: a plugin must not keep using a service that is no longer enabled.
@@ -1024,7 +563,7 @@ const Extensions = (() => {
           if (deps.ok) continue;
           await stopModule(plugin.id, 'deactivate');
           errors.set(plugin.id, deps.errors.map(item => item.message).join(' '));
-          failed.add(plugin.id);
+
         }
 
       let order = [...wanted.values()];
@@ -1034,17 +573,17 @@ const Extensions = (() => {
         for (const problem of sorted.errors) {
           if (errors.has(problem.id)) continue;
           errors.set(problem.id, problem.message);
-          failed.add(problem.id);
+
           console.error(`[plugins] ${problem.id}: ${problem.message}`);
         }
       }
       for (const plugin of order) {
-        if (loaded.has(plugin.id) || failed.has(plugin.id)) continue;
+        if (loaded.has(plugin.id) || errors.has(plugin.id)) continue;
         if (typeof PluginManifest !== 'undefined') {
           const deps = PluginManifest.checkDependencies(plugin, list, {requireEnabled: true});
           if (!deps.ok) {
             errors.set(plugin.id, deps.errors.map(item => item.message).join(' '));
-            failed.add(plugin.id);
+
             continue;
           }
         }
@@ -1060,7 +599,7 @@ const Extensions = (() => {
 
   async function reload(plugins) {
     if (loading) await loading;
-    failed.clear();
+
     errors.clear();
     for (const id of [...loaded.keys()]) await stopModule(id, 'deactivate');
     renderAll();
@@ -1082,7 +621,7 @@ const Extensions = (() => {
   // ----- lifecycle actions used by the Plugins page and tests -----
   async function install(value) {
     const id = value?.manifest?.id || value?.id;
-    const previous = id && typeof PluginStore !== 'undefined' ? PluginStore.record(id) : null;
+    const previous = id ? PluginStore.record(id) : null;
     const plugin = PluginStore.install(value);
     await reload();
     const problem = errors.get(plugin.id);
@@ -1118,7 +657,7 @@ const Extensions = (() => {
       PluginStore.clear(id);
       PluginStore.remove(id);
     }
-    failed.delete(id);
+
     errors.delete(id);
     renderAll();
     return true;
@@ -1127,7 +666,7 @@ const Extensions = (() => {
   async function disable(id) {
     const plugin = PluginStore.setEnabled(id, false);
     await stopModule(id, 'deactivate');
-    failed.delete(id);
+
     errors.delete(id);
     await sync();
     renderAll();
@@ -1136,7 +675,7 @@ const Extensions = (() => {
 
   async function enable(id) {
     const plugin = PluginStore.setEnabled(id, true);
-    failed.delete(id);
+
     errors.delete(id);
     await sync();
     if (errors.has(id)) throw new ApiError('plugin_activation_failed', errors.get(id), 500);
@@ -1144,7 +683,7 @@ const Extensions = (() => {
   }
 
   async function recover(id) {
-    failed.delete(id);
+
     errors.delete(id);
     await sync();
     return !errors.has(id);
@@ -1162,7 +701,7 @@ const Extensions = (() => {
     if (typeof PluginDeploy === 'undefined')
       throw new ApiError('internal_error', 'The deployment module is not loaded.', 500);
     const result = await PluginDeploy.deploy(record, {
-      request: (method, path, body, query) => entry.sandbox.checkedRequest(method, path, body, query),
+      request: (method, path, body, query) => entry.checkedRequest(method, path, body, query),
       state,
       environment: storage.environment,
       force,
@@ -1183,7 +722,7 @@ const Extensions = (() => {
   function renderSidebarItems() {
     const host = typeof document === 'undefined' ? null : document.getElementById('sidebar-extensions');
     if (!host) return;
-    const items = [...sidebarItems].sort(byOrder);
+    const items = [...sidebarItems, ...views.sidebar()].sort(byOrder);
     host.hidden = !items.length;
     host.innerHTML = items
       .map(
@@ -1206,110 +745,44 @@ const Extensions = (() => {
       .join('');
   }
 
+  function renderContribution(item, body, context) {
+    Promise.resolve().then(() => item.render(body, context)).catch(error => {
+      body.innerHTML = `<p class="form-error">${esc(error.message)}</p>`;
+      console.error(`[plugins] ${item.plugin}: ${item.kind} failed:`, error);
+    });
+  }
+
   function renderHome(host) {
     if (!host) return;
-    const cards = [...homeCards].sort(byOrder);
-    host.replaceChildren();
-    if (!cards.length) return;
-    const section = el('section', {class: 'ext-home'});
-    section.append(el('div', {class: 'section-head'}, el('h2', {}, 'Plugins')));
-    const grid = el('div', {class: 'cards'});
-    for (const item of cards) {
-      const body = el('div', {class: 'card-preview card-note'});
-      const article = el(
-        'article',
-        {class: 'card', 'data-ext-home': `${item.plugin}:${item.id}`},
-        el(
-          'div',
-          {class: 'card-main'},
-          el('header', {class: 'card-head'}, el('span', {class: 'head-icon', html: icon(item.icon)}), el('h3', {}, item.title)),
-          body
-        )
-      );
-      grid.append(article);
-      Promise.resolve()
-        .then(() => item.render(body))
-        .catch(error => {
-          body.innerHTML = `<p class="form-error">${esc(error.message)}</p>`;
-          console.error(`[plugins] ${item.plugin}: dashboard card failed:`, error);
-        });
-    }
-    section.append(grid);
-    host.append(section);
+    const cards = views.list('home');
+    host.innerHTML = cards.length
+      ? `<section class="ext-home"><div class="section-head"><h2>Plugins</h2></div><div class="cards">${cards.map(item =>
+        `<article class="card" data-ext-home="${esc(item.plugin + ':' + item.id)}"><div class="card-main"><header class="card-head"><span class="head-icon">${icon(item.icon)}</span><h3>${esc(item.title)}</h3></header><div class="card-preview card-note"></div></div></article>`
+      ).join('')}</div></section>` : '';
+    $$('[data-ext-home] .card-preview', host).forEach((body, i) => renderContribution(cards[i], body));
   }
 
-  /** Plugin settings sections, drawn under the application's own settings form. */
+  /** Settings and Inspector sections share rendering and failure handling. */
+  function renderSections(host, items, kind, context) {
+    host.innerHTML = items.map(item =>
+      `<section class="${kind === 'settings' ? 'plugin-settings' : 'inspector-plugin'}" data-ext-${kind}="${esc(item.plugin + ':' + item.id)}"><h2>${esc(item.title)}</h2>${kind === 'settings' && item.description ? `<p class="muted">${esc(item.description)}</p>` : ''}<div${kind === 'settings' ? ' class="plugin-settings-body"' : ''}></div></section>`
+    ).join('');
+    Array.from(host.children).forEach((section, i) => renderContribution(items[i], section.lastElementChild, context));
+  }
+
   function renderSettings(host) {
-    if (!host) return;
-    const sections = [...settingsSections].sort(byOrder);
-    host.replaceChildren();
-    if (!sections.length) return;
-    for (const item of sections) {
-      const section = el('section', {class: 'plugin-settings', 'data-ext-settings': `${item.plugin}:${item.id}`});
-      section.append(el('h2', {}, item.title));
-      if (item.description) section.append(el('p', {class: 'muted'}, item.description));
-      const body = el('div', {class: 'plugin-settings-body'});
-      section.append(body);
-      host.append(section);
-      Promise.resolve()
-        .then(() => item.render(body))
-        .catch(error => {
-          body.innerHTML = `<p class="form-error">${esc(error.message)}</p>`;
-          console.error(`[plugins] ${item.plugin}: settings section failed:`, error);
-        });
-    }
+    if (host) renderSections(host, views.list('settings'), 'settings');
   }
 
-  /** Plugin sections for the Inspector of the selected node. */
   function renderInspector(host, context = {}) {
     if (!host) return;
-    host.replaceChildren();
     const node = context.node || null;
     const kind = node?.kind === 'complex' ? 'complex' : node ? 'node' : '';
-    if (!kind) {
-      host.hidden = true;
-      return;
-    }
-    const sections = [...inspectorSections].sort(byOrder).filter(item => item.when === 'any' || item.when === kind);
-    if (!sections.length) {
-      host.hidden = true;
-      return;
-    }
-    host.hidden = false;
-    for (const item of sections) {
-      const section = el('section', {class: 'inspector-plugin', 'data-ext-inspector': `${item.plugin}:${item.id}`});
-      section.append(el('h2', {}, item.title));
-      const body = el('div', {});
-      section.append(body);
-      host.append(section);
-      Promise.resolve()
-        .then(() => item.render(body, {node, selection: context.selection || [], project: context.project, workflow: context.workflow}))
-        .catch(error => {
-          body.innerHTML = `<p class="form-error">${esc(error.message)}</p>`;
-          console.error(`[plugins] ${item.plugin}: inspector section failed:`, error);
-        });
-    }
-  }
-
-  /** The small DOM builder is kept for pages written by the application itself. */
-  function el(tag, props = {}, ...children) {
-    const node = document.createElement(tag);
-    for (const [key, value] of Object.entries(props || {})) {
-      if (value === undefined || value === null) continue;
-      if (key === 'class' || key === 'className') node.className = value;
-      else if (key === 'text') node.textContent = value;
-      else if (key === 'html') node.innerHTML = value;
-      else if (key === 'style' && typeof value === 'object') Object.assign(node.style, value);
-      else if (key === 'dataset') Object.assign(node.dataset, value);
-      else if (key.startsWith('on') && typeof value === 'function') node.addEventListener(key.slice(2).toLowerCase(), value);
-      else if (value === true) node.setAttribute(key, '');
-      else if (value !== false) node.setAttribute(key, String(value));
-    }
-    for (const child of children.flat(Infinity)) {
-      if (child === undefined || child === null || child === false) continue;
-      node.append(child instanceof Node ? child : String(child));
-    }
-    return node;
+    const sections = kind ? views.list('inspector').filter(item => item.when === 'any' || item.when === kind) : [];
+    host.hidden = !sections.length;
+    renderSections(host, sections, 'inspector', {
+      node, selection: context.selection || [], project: context.project, workflow: context.workflow,
+    });
   }
 
   function renderAll() {
@@ -1366,7 +839,7 @@ const Extensions = (() => {
     sectionTitle: section => (section.startsWith('ext:') ? pluginTitle(section.slice(4)) : 'Navigation'),
     sectionOf: route => (route?.page === 'ext' ? 'ext:' + route.plugin : null),
     destinations: () =>
-      pages.map(page => ({
+      views.pages().map(page => ({
         label: page.title,
         hint: `Plugin · ${pluginTitle(page.plugin)}`,
         href: pageHref(page.plugin, page.id),
@@ -1386,27 +859,27 @@ const Extensions = (() => {
     },
     hasMenu: spec => menuContributions.some(item => item.menu === spec),
     errorOf: id => errors.get(id) || '',
-    isFailed: id => failed.has(id),
-    apiOf: id => loaded.get(id)?.sandbox.api() || null,
+    isFailed: id => errors.has(id),
+    apiOf: id => loaded.get(id)?.api() || null,
     /** The Library sections client plugins registered, for the Library page and its navigation. */
-    librarySections: () => [...librarySections].sort(byOrder).map(item => ({...item})),
-    resourceViews: () => [...resourceViews].sort(byOrder).map(item => ({...item})),
-    settingsSections: () => [...settingsSections].sort(byOrder).map(item => ({...item})),
-    inspectorSections: () => [...inspectorSections].sort(byOrder).map(item => ({...item})),
+    librarySections: () => views.list('library'),
+    resourceViews: () => views.list('resource'),
+    settingsSections: () => views.list('settings').map(item => ({...item})),
+    inspectorSections: () => views.list('inspector').map(item => ({...item})),
     describe(id) {
       return {
         error: errors.get(id) || '',
-        failed: failed.has(id),
+        failed: errors.has(id),
         pages: pagesOf(id).map(page => ({id: page.id, title: page.title, icon: page.icon, href: pageHref(id, page.id)})),
-        sidebar: sidebarItems.filter(item => item.plugin === id).map(item => item.title),
+        sidebar: [...sidebarItems, ...views.sidebar()].filter(item => item.plugin === id).map(item => item.title),
         toolbar: toolbarButtons.filter(item => item.plugin === id).map(item => item.title),
         menu: menuContributions.filter(item => item.plugin === id).map(item => `${item.menu}: ${item.label}`),
-        home: homeCards.filter(item => item.plugin === id).map(item => item.title),
+        home: views.list('home', id).map(item => item.title),
         commands: [...commands.values()].filter(item => item.plugin === id).map(item => item.title),
-        settings: settingsSections.filter(item => item.plugin === id).map(item => item.title),
-        library: librarySections.filter(item => item.plugin === id).map(item => item.title),
-        inspector: inspectorSections.filter(item => item.plugin === id).map(item => item.title),
-        views: resourceViews.filter(item => item.plugin === id).map(item => item.title),
+        settings: views.list('settings', id).map(item => item.title),
+        library: views.list('library', id).map(item => item.title),
+        inspector: views.list('inspector', id).map(item => item.title),
+        views: views.list('resource', id).map(item => item.title),
         styles: (styleNodes.get(id) || []).length,
       };
     },

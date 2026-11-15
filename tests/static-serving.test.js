@@ -47,6 +47,7 @@ test('the combined server serves public files and none of its own code', async (
       ['/index.html', 'text/html'],
       ['/editor/js/app/helpers.js', 'text/javascript'],
       ['/shared/core.js', 'text/javascript'],
+      ['/js/model/graph.js', 'text/javascript'],
       ['/client-plugins/index.json', 'application/json'],
       ['/docs/architecture.md', 'text/markdown'],
     ]) {
@@ -70,6 +71,7 @@ test('server-only and non-public files are never served, whatever the path spell
       '/js/backend/routes-app.js',
       '/js/storage/db.js',
       '/js/model/executor.js',
+      ...['editor', 'snapshot', 'evaluate', 'schema', 'documents'].map(name => '/js/model/' + name + '.js'),
       '/legacy/server-plugin-host.js',
       '/data/projects.json',
       '/editor/server.js',

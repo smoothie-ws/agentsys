@@ -71,7 +71,7 @@ test('a backpressured event subscriber is disconnected instead of retaining an u
       const write = res.write.bind(res);
       let writes = 0;
       // Deliver ready normally, then simulate a subscriber whose outgoing buffer is full.
-      res.write = (...args) => ++writes === 1 ? write(...args) : false;
+      res.write = (...args) => ++writes <= 2 ? write(...args) : false;
     });
     const open = await stream(base);
     assert.equal((await diagnostics(base)).clients, 1);

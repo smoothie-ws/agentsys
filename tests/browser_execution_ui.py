@@ -106,7 +106,7 @@ async def audit(base):
         await page.wait_for_timeout(50)
         assert not await page.evaluate('W.running')
         await page.locator('#start').click()
-        await page.wait_for_function('W.executionReady && !W.executionCommand && !W.running')
+        await page.wait_for_function('W.executionReady && !W.executionCommand && !runActive()')
         assert await page.evaluate('W.executionStatus') == 'idle'
         print('PASS old-tab responses do not replace the current tab or consume its first Run click', flush=True)
         await page.evaluate('async () => {await api(`projects/${executionFixture.project}/execution`,{method:"DELETE",query:{workflow_id:executionFixture.workflow}});await go(`/p/${executionFixture.project}/w/${executionFixture.workflow}`);}')

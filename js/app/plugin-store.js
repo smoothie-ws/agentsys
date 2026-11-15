@@ -19,8 +19,8 @@ const PluginStore = (() => {
   })();
   const MAX_PLUGINS = 50;
   const ID = /^[A-Za-z0-9][A-Za-z0-9._-]{0,79}$/;
-  const Manifest = typeof PluginManifest === 'undefined' ? null : PluginManifest;
-  const Capabilities = typeof PluginCapabilities === 'undefined' ? null : PluginCapabilities;
+  const Manifest = PluginManifest;
+  const Capabilities = PluginCapabilities;
   const HOST_VERSION = '0.3.0';
   let loaded = null;
 
@@ -35,7 +35,7 @@ const PluginStore = (() => {
     for (const item of Array.isArray(list) ? list : []) {
       if (!item || !ID.test(item.id || '') || typeof item.source !== 'string') continue;
       try {
-        result.push(Manifest ? Manifest.migrateRecord(item) : item);
+        result.push(Manifest.migrateRecord(item));
       } catch {
         // A record this client cannot read no longer runs; keeping it would only fail on every reload.
       }
@@ -63,7 +63,7 @@ const PluginStore = (() => {
     main: item.main || 'plugin.js',
     files: item.files ? {...item.files} : {},
     assets: item.assets ? {...item.assets} : {},
-    capabilities: item.capabilities ? item.capabilities.slice() : Capabilities ? Capabilities.READ_ONLY.slice() : [],
+    capabilities: item.capabilities ? item.capabilities.slice() : Capabilities.READ_ONLY.slice(),
     origin: item.origin || 'installed',
     formatVersion: item.formatVersion || 1,
     author: item.author || '',
@@ -87,7 +87,6 @@ const PluginStore = (() => {
   });
 
   const capabilitiesOf = value => {
-    if (!Capabilities) return undefined;
     try {
       return Capabilities.normalize(value);
     } catch (error) {
@@ -97,7 +96,6 @@ const PluginStore = (() => {
 
   /** Validates a package and returns the record the store keeps. */
   const normalize = (value, {allowSource = true} = {}) => {
-    if (!Manifest) throw new ApiError('invalid_request', 'The plugin manifest module is not loaded.', 500);
     let record;
     try {
       record = Manifest.normalizePackage(value, {hostVersion: HOST_VERSION, apiVersion: Manifest.API_VERSION, allowSource});
@@ -279,7 +277,6 @@ const PluginStore = (() => {
     export(id) {
       const item = this.record(id);
       if (!item) throw new ApiError('not_found', 'Plugin not found', 404);
-      if (!Manifest) throw new ApiError('internal_error', 'The plugin manifest module is not loaded.', 500);
       const packet = Manifest.exportPackage(item);
       packet.exportedAt = new Date().toISOString();
       packet.exportedBy = 'AgentSys client ' + HOST_VERSION;

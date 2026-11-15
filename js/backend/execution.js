@@ -272,7 +272,7 @@ function ensureGraphHost(entry) {
  * the caller's workflow stops this one too.
  */
 function signalGraph(entry, roots, event = {}, caller = null) {
-  checkRoots(roots, Editor.nodeMap(runtimeDocument(entry)));
+  checkRoots(roots, Graph.nodeMap(runtimeDocument(entry)));
   entry.lastUsed = Date.now();
   const record = {cancelled: false},
     stopping = entry.stopping,

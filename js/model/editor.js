@@ -30,28 +30,6 @@ class Editor {
   snapshot(structure = false) {
     return buildSnapshot(this.project, this.workflow, this.doc, structure);
   }
-  static nodeMap(snapshot) {
-    return new Map(
-      [
-        ...snapshot.nodes,
-        ...snapshot.groups.map(g => ({...g, id: 'group:' + g.id, kind: 'group', inputs: [], outputs: []})),
-        ...snapshot.complex.map(c => ({...c, id: 'complex:' + c.id, kind: 'complex'})),
-      ].map(n => [n.id, n])
-    );
-  }
-  /** Follows Complex Node ports down to the node ports they are bound to: [[node ID, port ID], ...] (an unbound port stays on the wrapper; only an input is bound to several). */
-  static resolveAll(nodes, nodeId, portId, direction, seen = new Set()) {
-    try {
-      return resolvePort(nodes, nodeId, portId, direction, seen);
-    } catch (error) {
-      // Graph edits report invalid bindings as bad requests; the resolver itself is shared with the interpreter.
-      throw bad(error.message);
-    }
-  }
-  /** The first port a Complex Node port is bound to (the only one of an output). */
-  static resolve(nodes, nodeId, portId, direction) {
-    return Editor.resolveAll(nodes, nodeId, portId, direction)[0];
-  }
   /** The types of this document, resolved. */
   typeTable() {
     return new TypeTable(this.doc.types);
@@ -156,7 +134,7 @@ class Editor {
     if (!isObject(positions) || !Object.keys(positions).length || Object.keys(positions).length > 1000)
       throw bad('Provide 1 to 1000 node positions');
     const snap = this.snapshot(true),
-      nodes = Editor.nodeMap(snap);
+      nodes = Graph.nodeMap(snap);
     const pinnedMembers = new Set(snap.groups.filter(g => g.pinned).flatMap(g => g.all_members));
     for (const [nid, position] of Object.entries(positions)) {
       const node = nodes.get(nid);
@@ -441,7 +419,7 @@ class Editor {
     for (let again = true; again; ) {
       // Taking a wire away can change the type a Reroute point carries, so repeat until nothing is left to drop.
       snap = this.snapshot();
-      const nodes = Editor.nodeMap(snap),
+      const nodes = Graph.nodeMap(snap),
         types = new TypeTable(snap.types),
         stale = new Set();
       for (const e of snap.edges) {
@@ -799,7 +777,7 @@ class Editor {
 
   /** Drops interface bindings that no longer point to a fitting port inside their group (nodes or groups moved, a Custom node changed). */
   pruneBindings(snap = this.snapshot()) {
-    const nodes = Editor.nodeMap(snap),
+    const nodes = Graph.nodeMap(snap),
       types = new TypeTable(snap.types);
     for (const stored of this.doc.complex) {
       const cx = snap.complex.find(c => c.id === stored.id);
@@ -941,7 +919,7 @@ class Editor {
         if (!isObject(change)) throw bad('Invalid connection');
         if (!snap) {
           snap = this.snapshot();
-          nodes = Editor.nodeMap(snap);
+          nodes = Graph.nodeMap(snap);
         }
         const edges = removed.size ? snap.edges.filter(e => !removed.has(e.id)) : snap.edges;
         const source = nodes.get(change.source),
@@ -968,14 +946,14 @@ class Editor {
         const open = (node, port) => node.node_type === 'reroute' && isAny(port.type);
         if (!draft && !open(source, output) && !open(target, input) && !compatible(output.type, input.type, types))
           throw bad('Port types are incompatible');
-        const b = Editor.resolveAll(nodes, target.id, input.id, 'inputs').map(t => t.join('|'));
+        const b = Graph.resolveAll(nodes, target.id, input.id, 'inputs').map(t => t.join('|'));
         // A data input takes one connection: a new wire replaces the one that was there. A signal input takes any number, and
         // a signal may go in a circle, so signal wires are neither replaced nor looked at for cycles.
         const signal = isSignal(output.type) || isSignal(input.type);
         const replaced = signal
           ? []
           : edges.filter(e =>
-              Editor.resolveAll(nodes, e.target, e.target_port, 'inputs').some(t => b.includes(t.join('|')))
+              Graph.resolveAll(nodes, e.target, e.target_port, 'inputs').some(t => b.includes(t.join('|')))
             );
         if (
           signal &&
@@ -999,9 +977,9 @@ class Editor {
             ...edges.filter(e => !replaced.includes(e) && data(e)),
             {source: source.id, source_port: output.id, target: target.id, target_port: input.id},
           ]) {
-            const from = Editor.resolve(nodes, e.source, e.source_port, 'outputs')[0];
+            const from = Graph.resolve(nodes, e.source, e.source_port, 'outputs')[0];
             if (!adjacency.has(from)) adjacency.set(from, []);
-            for (const to of Editor.resolveAll(nodes, e.target, e.target_port, 'inputs'))
+            for (const to of Graph.resolveAll(nodes, e.target, e.target_port, 'inputs'))
               adjacency.get(from).push(to[0]);
           }
           ensureAcyclic(adjacency);

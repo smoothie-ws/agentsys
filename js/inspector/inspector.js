@@ -741,28 +741,7 @@ const Inspector = {
       wireCodeEditors(form);
     });
     form.onclick = event => {
-      const add = event.target.closest('[data-add]');
-      if (add) {
-        const dir = add.dataset.add,
-          list = $(`[data-direction=${dir}]`, form),
-          id = 'p' + Math.random().toString(36).slice(2, 7);
-        list.insertAdjacentHTML(
-          'beforeend',
-          portRow(
-            {
-              id,
-              name: slotName(
-                list,
-                dir === 'inputs' ? 'input' : 'output',
-                (config[dir] || []).map(p => p.name)
-              ),
-            },
-            false,
-            dir
-          )
-        );
-        this.pending.changed();
-      }
+      this.editPorts(event, dir => $(`[data-direction=${dir}]`, form), dir => (config[dir] || []).map(p => p.name));
       if (event.target.closest('[data-add-widget]')) {
         const list = $('[data-widget-rows]', form);
         list.insertAdjacentHTML('beforeend', widgetRowHTML({id: newWidgetId(list, 'text'), kind: 'text'}));
@@ -774,7 +753,6 @@ const Inspector = {
         removeWidget.closest('[data-widget-row]').remove();
         this.pending.changed();
       }
-      if (editPortRows(event.target)) this.pending.changed();
     };
     this.editing = form;
     this.pending = autoForm(
@@ -828,12 +806,29 @@ const Inspector = {
         await reload();
       }
     );
-    if (typeof Extensions !== 'undefined') {
-      const host = document.createElement('div');
-      host.className = 'inspector-extensions';
-      this.body().append(host);
-      Extensions.renderInspector(host, {node: {...node, kind: 'function'}, project: W.project, workflow: W.workflow, selection: [node.id]});
+    this.pluginSections({...node, kind: 'function'});
+  },
+
+  /** The same port editor is used for Custom nodes, placed extra slots and group interfaces. */
+  editPorts(event, listOf, reserved, group = false) {
+    const dir = event.target.closest('[data-add]')?.dataset.add;
+    if (dir) {
+      const list = listOf(dir);
+      list.insertAdjacentHTML('beforeend', portRow({
+        id: (group ? 'p' : 'x') + Math.random().toString(36).slice(2, 7),
+        name: slotName(list, dir === 'inputs' ? 'input' : 'output', reserved(dir)),
+      }, group, dir));
+      this.pending.changed();
     }
+    if (editPortRows(event.target)) this.pending.changed();
+  },
+
+  pluginSections(node) {
+    if (typeof Extensions === 'undefined') return;
+    const host = document.createElement('div');
+    host.className = 'inspector-extensions';
+    this.body().append(host);
+    Extensions.renderInspector(host, {node, project: W.project, workflow: W.workflow, selection: [node.id]});
   },
 
   plain(node) {
@@ -896,39 +891,13 @@ const Inspector = {
     );
     this.editing = null;
     this.pending = null;
-    if (typeof Extensions !== 'undefined') {
-      const host = document.createElement('div');
-      host.className = 'inspector-extensions';
-      this.body().append(host);
-      Extensions.renderInspector(host, {node: {...group, kind: 'complex', id: 'complex:' + group.id}, project: W.project, workflow: W.workflow, selection: ['complex:' + group.id]});
-    }
+    this.pluginSections({...group, kind: 'complex', id: 'complex:' + group.id});
     const form = $('#own-slots');
     if (!form) return;
     this.editing = form;
-    form.onclick = event => {
-      const add = event.target.closest('[data-add]')?.dataset.add;
-      if (add) {
-        const list = $(`#own-${add}`),
-          id = 'x' + Math.random().toString(36).slice(2, 7);
-        list.insertAdjacentHTML(
-          'beforeend',
-          portRow(
-            {
-              id,
-              name: slotName(
-                list,
-                add === 'inputs' ? 'input' : 'output',
-                cx.interface[add].map(p => p.name)
-              ),
-            },
-            false,
-            add
-          )
-        );
-        this.pending.changed();
-      }
-      if (editPortRows(event.target)) this.pending.changed();
-    };
+    form.onclick = event => this.editPorts(
+      event, dir => $(`#own-${dir}`, form), dir => cx.interface[dir].map(p => p.name)
+    );
     const read = dir =>
       $$(`#own-${dir} .port-row`, form)
         .map(readPortRow)
@@ -976,30 +945,7 @@ const Inspector = {
       form.dispatchEvent(new Event('change', {bubbles: true}));
     });
     form.onclick = event => {
-      const add = event.target.closest('[data-add]');
-      if (add) {
-        const id = 'p' + Math.random().toString(36).slice(2, 7),
-          list = $(`[data-direction=${add.dataset.add}]`, form);
-        list.insertAdjacentHTML(
-          'beforeend',
-          portRow(
-            {
-              id,
-              name: slotName(
-                list,
-                add.dataset.add === 'inputs' ? 'input' : 'output',
-                add.dataset.add === 'outputs'
-                  ? []
-                  : $$('[data-direction=inputs] [data-field=name]', form).map(i => i.value)
-              ),
-            },
-            true,
-            add.dataset.add
-          )
-        );
-        this.pending.changed();
-      }
-      if (editPortRows(event.target)) this.pending.changed();
+      this.editPorts(event, dir => $(`[data-direction=${dir}]`, form), () => [], true);
       const act = event.target.closest('[data-act]')?.dataset.act;
       if (act === 'ungroup') {
         W.selected = new Set(['frame:' + group.id]);

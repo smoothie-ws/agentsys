@@ -222,44 +222,44 @@ function createServer(options = {}) {
     };
   };
   // ----- change notifications (Server-Sent Events) -----
-  // Two streams exist: /api/events uses the typed envelope below; /__data/events stays for the legacy combined
-  // local browser store and keeps its original {keys, by} shape.
-  const clients = new Set(); // /__data/events (legacy)
-  const eventClients = new Map(); // res -> {heartbeat}
-  const writeEvent = (res, value) => {
+  // Both public encodings share one subscription owner. Legacy clients receive only {keys, by}.
+  const eventClients = new Map(); // response -> {legacy, heartbeat}
+  const apiClientCount = () => [...eventClients.values()].filter(entry => !entry.legacy).length;
+  function removeEventClient(res) {
+    clearInterval(eventClients.get(res)?.heartbeat);
+    eventClients.delete(res);
+  }
+  function writeEvent(res, text) {
     try {
-      if (res.destroyed || res.writableEnded) return false;
-      const accepted = res.write(`data: ${JSON.stringify(value)}\n\n`);
-      // Changes are invalidations, not a replay log. Reconnecting and reading the current state is safer
-      // than retaining an unbounded queue for a subscriber that stopped reading.
-      if (!accepted) res.destroy();
-      return accepted;
-    } catch {
-      return false;
-    }
-  };
+      if (!res.destroyed && !res.writableEnded && res.write(text)) return true;
+    } catch {}
+    // Events invalidate cached reads; reconnecting is preferable to retaining a slow reader's queue.
+    removeEventClient(res);
+    res.destroy();
+    return false;
+  }
+  function openEvents(req, res, legacy = false) {
+    res.writeHead(200, {
+      'Content-Type': 'text/event-stream', 'Cache-Control': 'no-store', Connection: 'keep-alive',
+      ...(legacy ? {} : {'X-Accel-Buffering': 'no', ...corsHeaders(req)}),
+    });
+    eventClients.set(res, {legacy, heartbeat: null});
+    req.on('close', () => removeEventClient(res));
+    if (!writeEvent(res, ': connected\n\n') || legacy) return;
+    if (!writeEvent(res, `data: ${JSON.stringify({type: 'ready', protocol: Protocol.PROTOCOL, server_time: new Date().toISOString()})}\n\n`)) return;
+    const heartbeat = setInterval(() => writeEvent(res, `: ping ${Date.now()}\n\n`), 20000);
+    heartbeat.unref?.();
+    eventClients.get(res).heartbeat = heartbeat;
+  }
   const broadcastEvent = value => {
     for (const [res, entry] of eventClients) {
-      if (!writeEvent(res, value)) {
-        clearInterval(entry.heartbeat);
-        eventClients.delete(res);
-      }
+      if (entry.legacy && value.type !== 'change') continue;
+      const payload = entry.legacy ? {keys: value.keys, by: value.by} : value;
+      writeEvent(res, `data: ${JSON.stringify(payload)}\n\n`);
     }
   };
   const broadcast = (keys, by = null) => {
-    if (!keys.length) return;
-    const text = `data: ${JSON.stringify({keys, by})}\n\n`;
-    for (const res of clients) {
-      try {
-        if (!res.write(text)) {
-          res.destroy();
-          clients.delete(res);
-        }
-      } catch {
-        clients.delete(res); // the page is gone
-      }
-    }
-    broadcastEvent({type: 'change', keys, by});
+    if (keys.length) broadcastEvent({type: 'change', keys, by});
   };
   const store = createFileStore(DATA);
   // ----- application backend with a transport-independent store -----
@@ -295,7 +295,7 @@ function createServer(options = {}) {
   let scanning = false,
     closing = false;
   const watcher = setInterval(() => {
-    if (scanning || (!clients.size && ++ticks % 5)) return;
+    if (scanning || (!eventClients.size && ++ticks % 5)) return;
     scanning = true;
     store.scan()
       .then(changed => {
@@ -318,13 +318,7 @@ function createServer(options = {}) {
       return sendJSON(res, 503, {error: 'Set AGENTSYS_TOKEN to access storage on a non-loopback address'});
     if (TOKEN && !tokenGiven(req)) return sendJSON(res, 401, {error: 'Storage requires a Bearer token'});
     const rest = url.pathname.slice('/__data'.length).replace(/^\//, '');
-    if (req.method === 'GET' && rest === 'events') {
-      res.writeHead(200, {'Content-Type': 'text/event-stream', 'Cache-Control': 'no-store', Connection: 'keep-alive'});
-      res.write(': connected\n\n');
-      clients.add(res);
-      req.on('close', () => clients.delete(res));
-      return;
-    }
+    if (req.method === 'GET' && rest === 'events') return openEvents(req, res, true);
     if (req.method === 'GET' && rest === '')
       return sendJSON(res, 200, {agentsys: true, dir: DATA, keys: store.keys()});
     if (req.method === 'GET') {
@@ -428,7 +422,7 @@ function createServer(options = {}) {
       storage: backend?.Backend.storage ?? {mode: 'unavailable', directory: ''},
       workers: backend?.workerStats ?? null,
       runtime: backend?.Backend.diagnostics?.() ?? null,
-      clients: eventClients.size,
+      clients: apiClientCount(),
       ...credentials.counts(),
       memory: (() => {
         const usage = process.memoryUsage();
@@ -600,36 +594,13 @@ function createServer(options = {}) {
         error: {code: 'permission_denied', message: 'A plugin token cannot read server events, diagnostics or the contract'},
       });
     if (req.method === 'GET' && rel === 'events') {
-      if (eventClients.size >= EVENT_LIMIT) {
+      if (apiClientCount() >= EVENT_LIMIT) {
         res.setHeader('Retry-After', '30');
         return sendJSON(res, 429, {
           error: {code: 'too_many_streams', message: `This server already holds ${EVENT_LIMIT} event streams.`},
         });
       }
-      res.writeHead(200, {
-        'Content-Type': 'text/event-stream',
-        'Cache-Control': 'no-store',
-        Connection: 'keep-alive',
-        'X-Accel-Buffering': 'no',
-        ...corsHeaders(req),
-      });
-      res.write(`: connected\n\n`);
-      res.write(`data: ${JSON.stringify({type: 'ready', protocol: Protocol.PROTOCOL, server_time: new Date().toISOString()})}\n\n`);
-      const heartbeat = setInterval(() => {
-        try {
-          res.write(`: ping ${Date.now()}\n\n`);
-        } catch {
-          clearInterval(heartbeat);
-          eventClients.delete(res);
-        }
-      }, 20000);
-      heartbeat.unref?.();
-      eventClients.set(res, {heartbeat});
-      req.on('close', () => {
-        clearInterval(heartbeat);
-        eventClients.delete(res);
-      });
-      return;
+      return openEvents(req, res);
     }
     if (req.method === 'GET' && rel === 'diagnostics') return sendJSON(res, 200, diagnostics());
     const {Backend} = backend;
@@ -778,15 +749,10 @@ function createServer(options = {}) {
       clearInterval(watcher);
       credentials.close();
       await backend?.Backend.shutdownExecutions();
-      for (const res of clients) res.end();
-      clients.clear();
-      for (const [res, entry] of eventClients) {
-        clearInterval(entry.heartbeat);
-        try {
-          res.end();
-        } catch {}
+      for (const res of eventClients.keys()) {
+        removeEventClient(res);
+        try { res.end(); } catch {}
       }
-      eventClients.clear();
 
       if (!ALLOW_SHARED_DATA) {
         try {

@@ -746,7 +746,7 @@ function visibleEdges() {
     const key = `${id}|${port}|${direction}`;
     if (resolved.has(key)) return resolved.get(key);
     try {
-      const result = Editor.resolveAll(W.nodeMap, id, port, direction).map(t => t.join('|'));
+      const result = Graph.resolveAll(W.nodeMap, id, port, direction).map(t => t.join('|'));
       resolved.set(key, result);
       return result;
     } catch {

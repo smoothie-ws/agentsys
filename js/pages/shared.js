@@ -249,7 +249,7 @@ document.addEventListener('keydown', async event => {
 });
 
 function previewSVG(graph) {
-  const map = Editor.nodeMap(graph),
+  const map = Graph.nodeMap(graph),
     groupsById = new Map(graph.groups.map(g => [g.id, g]));
   // Everything inside a collapsed Complex Node is drawn as that one node (the outermost one wins).
   const collapsed = graph.complex.filter(c => c.collapsed).sort((x, y) => x.depth - y.depth),
@@ -289,7 +289,7 @@ function previewSVG(graph) {
   const endpoint = (id, port, direction) => {
     let at = id;
     try {
-      at = Editor.resolve(map, id, port, direction)[0];
+      at = Graph.resolve(map, id, port, direction)[0];
     } catch {
       /* dangling port */
     }

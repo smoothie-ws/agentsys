@@ -15,38 +15,19 @@ async function applyCanvasEdits(operations, edit = editToken()) {
     });
 }
 
-/** A person used a widget: the node it belongs to gets the value (and its on_widget runs). */
-async function changeWidget(nodeId, widgetId, value) {
-  await api(`projects/${W.project}/widget-values`, {
+/** One value edit lifecycle for widgets and free input/output controls. The endpoint owns the event semantics. */
+async function changeNodeValue(endpoint, nodeId, fieldId, value) {
+  await api(`projects/${W.project}/${endpoint}`, {
     method: 'PUT',
-    body: wf({node_id: nodeId, values: {[widgetId]: value}}),
+    body: wf({node_id: nodeId, values: {[fieldId]: value}}),
     edit: editToken(),
   });
   W.results.delete(nodeId);
   await reload();
 }
-
-/** A person typed into the control of a free input: the node keeps the value as the default of that input. */
-async function changeInput(nodeId, portId, value) {
-  await api(`projects/${W.project}/input-values`, {
-    method: 'PUT',
-    body: wf({node_id: nodeId, values: {[portId]: value}}),
-    edit: editToken(),
-  });
-  W.results.delete(nodeId);
-  await reload();
-}
-
-/** A person typed into the control of an output: the node keeps the value, and it is what the output holds until the code sets another. */
-async function changeOutput(nodeId, portId, value) {
-  await api(`projects/${W.project}/output-values`, {
-    method: 'PUT',
-    body: wf({node_id: nodeId, values: {[portId]: value}}),
-    edit: editToken(),
-  });
-  W.results.delete(nodeId);
-  await reload();
-}
+const changeWidget = (...args) => changeNodeValue('widget-values', ...args);
+const changeInput = (...args) => changeNodeValue('input-values', ...args);
+const changeOutput = (...args) => changeNodeValue('output-values', ...args);
 
 /** A field of a widget changed (data-literal is the widget's ID), or of the control of a free input or output (its ID is in:<port> or out:<port>). */
 async function inlineChange(input, captured = input.type === 'checkbox' ? input.checked : input.value) {
