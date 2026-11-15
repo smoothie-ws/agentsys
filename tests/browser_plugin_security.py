@@ -175,7 +175,8 @@ async def main():
         wait_http(f'http://127.0.0.1:{client_port}/')
 
         async with async_playwright() as playwright:
-            browser = await playwright.chromium.launch(executable_path=EXE)
+            engine = os.environ.get('AGENTSYS_BROWSER', 'chromium')
+            browser = await getattr(playwright, engine).launch(executable_path=EXE if engine == 'chromium' else None)
             page = await browser.new_page(viewport={'width': 1280, 'height': 860})
             errors = []
             page.on('pageerror', lambda error: errors.append(str(error)))

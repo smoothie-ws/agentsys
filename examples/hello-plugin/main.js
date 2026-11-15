@@ -23,7 +23,7 @@ exports.activate = async api => {
       const environment = await api.env.info();
       return `<h2>Hello Agent</h2>
         <p class="muted">This page is drawn by a sandboxed plugin and runs against
-        <strong>${api.escape(environment.name)}</strong>.</p>
+        <strong>${api.ui.escape(environment.name)}</strong>.</p>
         <dl class="page-facts"><div><dt>Count</dt><dd>${count}</dd></div></dl>
         <button type="button" data-command="count">Count one more</button>`;
     },

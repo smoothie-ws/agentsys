@@ -2,7 +2,7 @@ name: test
 
 on:
   push:
-    branches: [main, 'platform/**', 'audit/**', 'hardening/**']
+    branches: [main, 'platform/**', 'audit/**', 'hardening/**', 'certification/**']
   pull_request:
   workflow_dispatch:
 
@@ -28,9 +28,15 @@ jobs:
       - run: npm test
 
   browser:
-    name: Browser suite (Playwright, Chromium)
+    name: Browser suite (Playwright, ${{ matrix.browser }})
     runs-on: ubuntu-latest
     timeout-minutes: 30
+    strategy:
+      fail-fast: false
+      matrix:
+        browser: [chromium, firefox, webkit]
+    env:
+      AGENTSYS_BROWSER: ${{ matrix.browser }}
     steps:
       - uses: actions/checkout@v4
       - uses: actions/setup-node@v4
@@ -39,16 +45,20 @@ jobs:
       - uses: actions/setup-python@v5
         with:
           python-version: '3.12'
-      - run: pip install playwright
+      - run: pip install playwright==1.57.0
       - run: python -m playwright install --with-deps chromium firefox webkit
       # The split end-to-end test, the plugin isolation test, the editor and the interface checks.
-      - run: python tests/browser_suite.py platform plugin_security editor ux
+      - run: python tests/browser_suite.py plugin_platform plugin_certification plugin_security
+      - if: matrix.browser == 'chromium'
+        run: python tests/browser_suite.py platform editor ux
       # The interface checks also run on the other two engines.
-      - run: python tests/browser_ux.py firefox
-      - run: python tests/browser_ux.py webkit
+      - if: matrix.browser != 'chromium'
+        run: python tests/browser_ux.py ${{ matrix.browser }}
       - if: always()
         uses: actions/upload-artifact@v4
         with:
-          name: screenshots
-          path: node_modules/.cache/ui-review
+          name: screenshots-${{ matrix.browser }}
+          path: |
+            node_modules/.cache/ui-review
+            node_modules/.cache/browser-tests
           if-no-files-found: ignore

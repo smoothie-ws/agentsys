@@ -402,7 +402,7 @@ async def main():
             }
             await page.evaluate('pkg => { PluginStore.install(pkg); return Extensions.reload(); }', broken)
             assert 'cannot start' in await page.evaluate("Extensions.errorOf('reference-recovery')")
-            await page.evaluate('pkg => Extensions.update("reference-recovery", pkg)', fixed)
+            await page.evaluate('pkg => Extensions.update("reference-recovery", pkg, {approveCapabilities: true})', fixed)
             assert await page.evaluate("Extensions.apiOf('reference-recovery') !== null")
             assert await page.evaluate("Extensions.errorOf('reference-recovery')") == ''
             await page.evaluate("Extensions.uninstall('reference-recovery')")

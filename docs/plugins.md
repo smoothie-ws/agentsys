@@ -29,7 +29,7 @@ exports.activate = async api => {
   api.ui.addPage({
     id: 'home',
     title: 'Hello',
-    render: async () => `<h2>Hello from a plugin</h2><p>${api.escape(api.id)}</p>`,
+    render: async () => `<h2>Hello from a plugin</h2><p>${api.ui.escape(api.id)}</p>`,
   });
 };
 ```
@@ -58,3 +58,9 @@ No server plugins are supported. Old server plugin folders are handled by `agent
 [migration.md](migration.md).
 
 The certification matrix and test evidence are in [PLUGIN-CERTIFICATION.md](../PLUGIN-CERTIFICATION.md).
+
+## Release candidate contract
+
+See [API 2 inventory, interaction map, identity and compatibility](plugin-rc-contract.md),
+[Integration Studio](../client-plugins/integration-studio/README.md) and
+[Graph Developer Tools](../client-plugins/graph-developer-tools/README.md).

@@ -14,7 +14,7 @@ api.ui.addPage({
   icon: 'chart',
   order: 10,
   nav: true,
-  render: async context => `<h2>Overview</h2><p>${api.escape(api.id)}</p>`,
+  render: async context => `<h2>Overview</h2><p>${api.ui.escape(api.id)}</p>`,
 });
 ```
 
@@ -90,7 +90,7 @@ api.ui.addInspectorSection({
   id: 'node-info',
   title: 'Node info',
   when: 'any', // or "node" or "complex"
-  render: ({node, selection, project, workflow}) => `<p>${api.escape(node?.name || 'nothing')}</p>`,
+  render: ({node, selection, project, workflow}) => `<p>${api.ui.escape(node?.name || 'nothing')}</p>`,
 });
 ```
 

@@ -13,7 +13,7 @@ api.ui.addLibrarySection({
   icon: 'library',
   render: async () => {
     const nodes = (await api.library.list()).filter(item => item.payload.plugin?.id === api.id);
-    return `<h2>Library Pack</h2><ul>${nodes.map(node => `<li>${api.escape(node.name)}</li>`).join('')}</ul>`;
+    return `<h2>Library Pack</h2><ul>${nodes.map(node => `<li>${api.ui.escape(node.name)}</li>`).join('')}</ul>`;
   },
 });
 ```

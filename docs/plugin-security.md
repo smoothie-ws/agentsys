@@ -134,3 +134,11 @@ media elements are removed. Static SVG shapes and packaged raster images remain 
 Inline styles and `addStyles` reject CSS escapes, comments and resource-loading constructs (including
 `image-set`), in addition to `url`, imports and expressions. This deliberately narrows CSS syntax to prevent
 obfuscated network loads. Plugin styles can still affect application presentation; install only trusted UI packages.
+
+## RC identity and ownership
+
+Scoped tokens are bound to the host-supplied plugin identity, verified again on the server.
+Unsupported or identity-unaware servers fail closed; there is no owner-session fallback.
+Library definitions are shared reads, but scoped mutation requires the verified owner.
+Collections and ordinary projects remain shared data under their family capabilities.
+See [the full RC contract](plugin-rc-contract.md) for storage URL binding, deployment safeguards and limits.

@@ -12,7 +12,7 @@ exports.activate = async api => {
   api.ui.addPage({
     id: 'home',
     title: 'Hello',
-    render: async () => `<h2>Hello</h2><p>${api.escape(api.id)}</p>`,
+    render: async () => `<h2>Hello</h2><p>${api.ui.escape(api.id)}</p>`,
   });
 };
 ```
