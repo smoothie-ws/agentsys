@@ -149,7 +149,8 @@ async function assertScriptPermission(context, method, path, body) {  const step
  */
 async function scopedNeeds(method, path, body = {}) {
   const needs = await permissionNeeds(method, path, body);
-  if (method !== 'GET' && /^projects\/lib-/.test(path)) needs.push('library.write');
+  if (method !== 'GET' && path.startsWith('projects/') && decodeURIComponent(path.split('/')[1] || '').startsWith('lib-'))
+    needs.push('library.write');
   const refined = [];
   for (const need of needs) {
     if (need !== 'system.admin') {
