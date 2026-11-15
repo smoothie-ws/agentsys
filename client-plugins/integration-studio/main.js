@@ -23,7 +23,7 @@ exports.activate = async api => {
   };
   await api.commands.register('edit', async id => {
     const record = (await list()).records.find(r => r.id === id), data = record?.data || {};
-    return api.ui.showDialog({title: 'HTTP connection', body: `<input name="id" type="hidden" value="${esc(record?.id || '')}">
+    return api.ui.showDialog({title: 'HTTP connection', body: `<input name="id" type="hidden" value="${esc(record?.id || '')}"><input name="version" type="hidden" value="${esc(record?.version || '')}">
       ${[['name', data.name || 'Local status'], ['endpoint', data.endpoint || 'http://127.0.0.1:8791/status'], ['parameters', JSON.stringify(data.parameters || {})], ['secretName', data.secretName || '']].map(([name, value]) => `<label class="field"><span>${esc(name)}</span><input name="${name}" value="${esc(value)}"></label>`).join('')}
       <label class="field"><span>Authorization</span><select name="auth"><option value="none" ${data.auth !== 'bearer' ? 'selected' : ''}>None</option><option value="bearer" ${data.auth === 'bearer' ? 'selected' : ''}>Server bearer secret</option></select></label>`,
       actions: [{label: 'Save', command: 'save', variant: 'primary'}]});
@@ -34,7 +34,9 @@ exports.activate = async api => {
     endpoint(data);
     if (data.auth === 'bearer' && !/^[A-Za-z0-9_-]+$/.test(data.secretName)) throw Error('Enter a server secret name.');
     const existing = (await list()).records.find(r => r.id === values.id);
-    const record = existing ? await api.collections.update(configs, existing.id, data, existing.version) : await api.collections.create(configs, data);
+    if (values.id && !existing) throw Error('The connection no longer exists. Reload the list before saving.');
+    if (existing && (!Number.isInteger(Number(values.version)) || Number(values.version) < 1)) throw Error('Reopen the connection before saving an edit.');
+    const record = existing ? await api.collections.update(configs, existing.id, data, Number(values.version)) : await api.collections.create(configs, data);
     await api.ui.refresh();
     return record;
   }, {title: 'Save connection'});

@@ -94,6 +94,12 @@ async def main():
             assert await page.evaluate("id => Extensions.execute('integration-studio:check', id)", record['id']) == 'HTTP 200'
             assert Endpoint.hits[-1]['authorization'] == 'Bearer synthetic-integration-secret-42'
             assert 'synthetic-integration-secret-42' not in await page.evaluate('JSON.stringify(PluginStore.records())')
+            stale = await page.evaluate("""async record => {
+              try { await Extensions.execute('integration-studio:save', {...record.data, parameters: JSON.stringify(record.data.parameters), id: record.id, version: record.version}); return 'unexpected save'; }
+              catch (error) { return error.message; }
+            }""", record)
+            assert 'version' in stale.lower() or 'changed' in stale.lower(), stale
+            assert http_json(base, 'GET', 'collections/integration-connections/records')['records'][0]['data']['status'] == 'HTTP 200'
             graph = await page.evaluate("Extensions.execute('integration-studio:build')")
             assert await page.evaluate("Extensions.execute('integration-studio:build')") == graph
             print('PASS Integration Studio: independent package, six Library stages, connection CRUD, check and idempotent build', flush=True)
