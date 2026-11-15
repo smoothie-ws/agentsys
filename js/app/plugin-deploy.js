@@ -97,7 +97,13 @@
         else if (!existing.payload.plugin.contentChecksum || checksum({...existing.payload, plugin: undefined}) !== existing.payload.plugin.contentChecksum) {
           action = 'conflict'; reason = 'Resource was edited after deployment.';
         } else if (compareVersions(existing.payload.plugin.version, record.version) > 0) { action = 'skip'; reason = 'A newer package deployed this resource.'; }
-        else action = existing.payload.plugin.version === record.version ? 'skip' : 'update';
+        else {
+          const wanted = {name: node.name, code: String(node.code || ''), inputs: Array.isArray(node.inputs) ? node.inputs : [],
+            outputs: Array.isArray(node.outputs) ? node.outputs : [], grants: Array.isArray(node.grants) ? node.grants : ['graph.read'],
+            description: String(node.description || '').slice(0, 2000), folder: String(node.folder || '').slice(0, 200),
+            icon: node.icon, plugin: undefined};
+          action = existing.payload.plugin.version === record.version && existing.payload.plugin.checksum === checksum(wanted) ? 'skip' : 'update';
+        }
       }
       actions.push({kind: 'library', name: node.name, action, reason});
     }

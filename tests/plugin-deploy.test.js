@@ -275,6 +275,8 @@ test('read-only preflight and deployment preserve a user-edited Library node', a
     assert.ok(before.actions.every(item => item.action === 'create'));
     assert.deepEqual(await one.request('GET', 'resources'), [], 'planning made no resources');
     const deployed = await Deploy.deploy(record, {request: one.request});
+    const changedPlan = await Deploy.plan(packageOf({code: 'node.display("same version, changed code");'}), {request: one.request});
+    assert.equal(changedPlan.actions.find(item => item.kind === 'library').action, 'update');
     const id = deployed.state.library['Runs alone'].id;
     const node = await one.request('GET', 'resources/' + id);
     await one.request('PUT', 'resources/' + id, {name: node.name, payload: {...node.payload, description: 'User annotation'}});
