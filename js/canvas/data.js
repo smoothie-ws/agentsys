@@ -74,7 +74,6 @@ async function loadWorkflowSnapshot(first, task) {
   for (const cx of snapshot.complex)
     W.nodes.set('complex:' + cx.id, {...cx, id: 'complex:' + cx.id, group_id: cx.id, kind: 'complex', label: cx.name});
   syncComplexStatus();
-  W.nodeMap = Graph.nodeMap(snapshot);
   W.types = new TypeTable(snapshot.types);
   paintTypes(snapshot.types);
   W.hidden = hiddenSets();

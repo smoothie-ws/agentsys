@@ -82,7 +82,8 @@ async def main():
             if BROWSER == 'firefox':
                 # Probe the browser independently of AgentSys. Some Windows headless Firefox builds suppress
                 # native unload dialogs even with user activation and a cancelling handler on an empty page.
-                probe = await browser.new_page()
+                probe_context = await browser.new_context()
+                probe = await probe_context.new_page()
                 await probe.route('http://unload.test/', lambda route: route.fulfill(
                     body='<button>Activate</button>', content_type='text/html'))
                 await probe.goto('http://unload.test/')
@@ -98,9 +99,14 @@ async def main():
                 async with probe.expect_event('close'):
                     await probe.close(run_before_unload=True)
                 native_beforeunload = 'beforeunload' in probe_dialogs
+                await probe_context.close()
                 if not native_beforeunload:
                     print('SKIP native unload prompt: this Firefox build also suppresses it on an independent empty page; app handler remains asserted', flush=True)
-            page = await browser.new_page(viewport={'width': 1440, 'height': 900})
+            # Browser.new_page owns a private context and Page.close closes that context immediately after
+            # requesting beforeunload. That can dispose the dialog before its async handler answers it.
+            # Keep context disposal separate from the user-close path we are testing.
+            context = await browser.new_context(viewport={'width': 1440, 'height': 900})
+            page = await context.new_page()
             errors = []
             page.on('pageerror', lambda error: errors.append(str(error)))
             await page.goto(f'http://127.0.0.1:{client_port}/')
@@ -259,9 +265,12 @@ async def main():
             # leaves without a dialog (tested by every other navigation above).
             await page.goto(f'http://127.0.0.1:{client_port}/#/settings')
             await page.wait_for_selector('#settings-form input[name=undo_steps]')
+            save_started = asyncio.Event()
+            release_save = asyncio.Event()
             async def delayed_save(route):
                 if route.request.method == 'PUT':
-                    await asyncio.sleep(2)
+                    save_started.set()
+                    await release_save.wait()
                 try:
                     await route.continue_()
                 except PlaywrightError:
@@ -273,6 +282,7 @@ async def main():
             # synthesize input; a real click models the user editing the form without weakening the assertion.
             await page.click('#settings-form input[name=undo_steps]')
             await page.fill('#settings-form input[name=undo_steps]', '41')
+            await asyncio.wait_for(save_started.wait(), timeout=10)
             dialogs = []
 
             async def on_dialog(dialog):
@@ -288,11 +298,15 @@ async def main():
                 return event.defaultPrevented;
             }"""), 'the real application handler must cancel unloading a dirty form'
             # Explicitly request the user-close path with beforeunload processing.
-            async with page.expect_event('close'):
-                await page.close(run_before_unload=True)
+            try:
+                async with page.expect_event('close'):
+                    await page.close(run_before_unload=True)
+            finally:
+                release_save.set()
             if native_beforeunload:
                 assert 'beforeunload' in dialogs, dialogs
-            page = await browser.new_page(viewport={'width': 390, 'height': 844})
+            page = await context.new_page()
+            await page.set_viewport_size({'width': 390, 'height': 844})
             page.on('pageerror', lambda error: errors.append(str(error)))
             await page.goto(f'http://127.0.0.1:{client_port}/#/settings')
             await page.wait_for_selector('#settings-form input[name=undo_steps]')

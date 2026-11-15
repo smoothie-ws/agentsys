@@ -63,10 +63,11 @@ for (const matches of blocks.values()) {
   }
 }
 let duplicateBytes = 0;
-for (const ranges of duplicateRanges.values()) {
+for (const [file, ranges] of duplicateRanges) {
   let end = -1;
   for (const range of ranges.sort((a, b) => a.start - b.start)) {
-    duplicateBytes += Math.max(0, range.end - Math.max(range.start, end));
+    const start = Math.max(range.start, end);
+    if (range.end > start) duplicateBytes += Buffer.byteLength(source.get(file).slice(start, range.end));
     end = Math.max(end, range.end);
   }
 }
