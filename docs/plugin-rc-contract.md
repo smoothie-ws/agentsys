@@ -89,8 +89,11 @@ resource IDs. Collections retain records; uninstall never removes server resourc
 
 Script-backed Library nodes receive a content fingerprint at deployment. User edits that change their payload
 cause a conflict at both preflight and server replacement. The fingerprint detects accidental changes; authorization
-comes from the scoped token identity. Legacy deployed nodes without a content baseline cannot offer the same edit
-detection until explicitly redeployed. Keep a backup or duplicate legacy edits before an upgrade.
+comes from the scoped token identity. Legacy deployed nodes without a content baseline refuse automatic replacement. After a backup, an owner can
+rename the legacy node and detach its plugin tag through the ordinary owner API, preserving its resource ID and
+existing workflow links. Deployment can then create a fresh package definition under the original name. Existing
+workflows keep using their old definition until the owner deliberately changes them; do not delete the old resource
+as an automatic migration step.
 
 An existing deployed workflow is preserved on package updates. Apply changed templates deliberately to a new
 workflow rather than rewriting a user's saved graph. The first template deployment can resume missing elements;

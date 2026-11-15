@@ -6,7 +6,7 @@ review its permissions, then deploy its six Library stages and two Collections t
 Open Integration Studio, add an HTTP connection and check it. The shipped manifest grants local `127.0.0.1` hosts
 and the server secret named `integration-demo`; change the manifest and explicitly approve the new permissions
 to use another host or secret. For bearer authentication, create the secret through the owner's server UI/API and
-enter only its name in the connection. Parameters are a JSON object of URL query values. No secret value is stored
+enter only its name in the connection. Parameters are a JSON object of URL query values. Editing retains the version read when the form opens; a concurrent change requires reopening the form. No secret value is stored
 by the plugin. Connections and results are shared server Collections, not private plugin storage.
 
 Build workflow uses the first saved connection. It creates an ordinary saved graph:
