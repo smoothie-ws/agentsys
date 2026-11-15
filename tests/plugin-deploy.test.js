@@ -287,6 +287,16 @@ test('read-only preflight and deployment preserve a user-edited Library node', a
     assert.ok(result.errors.some(error => error.code === 'resource_conflict'));
     assert.deepEqual(await one.request('GET', 'resources/' + id), edited);
     await assert.rejects(one.request('POST', 'library/script-nodes', {resource_id: id, name: node.name, code: 'node.display("overwrite");', plugin: {id: record.id}}), error => error.status === 409);
+    const legacy = JSON.parse(JSON.stringify(edited.payload));
+    delete legacy.plugin.contentChecksum;
+    await one.request('PUT', 'resources/' + id, {name: node.name, payload: legacy});
+    const beforeLegacy = await one.request('GET', 'resources/' + id);
+    const legacyPlan = await Deploy.plan(record, {request: one.request});
+    assert.equal(legacyPlan.conflicts.length, 1);
+    const legacyUpdate = await Deploy.deploy(record, {request: one.request, state: deployed.state});
+    assert.equal(legacyUpdate.ok, false, 'missing legacy baselines cannot be silently adopted');
+    await assert.rejects(one.request('POST', 'library/script-nodes', {resource_id: id, name: node.name, code: 'node.display("overwrite legacy");', plugin: {id: record.id}}), error => error.status === 409);
+    assert.deepEqual(await one.request('GET', 'resources/' + id), beforeLegacy);
   } finally { await one.close(); }
 });
 

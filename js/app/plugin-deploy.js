@@ -94,7 +94,7 @@
       let action = 'create', reason = '';
       if (existing) {
         if (existing.payload?.plugin?.id !== record.id) { action = 'conflict'; reason = 'Existing resource belongs to another owner.'; }
-        else if (existing.payload.plugin.contentChecksum && checksum({...existing.payload, plugin: undefined}) !== existing.payload.plugin.contentChecksum) {
+        else if (!existing.payload.plugin.contentChecksum || checksum({...existing.payload, plugin: undefined}) !== existing.payload.plugin.contentChecksum) {
           action = 'conflict'; reason = 'Resource was edited after deployment.';
         } else if (compareVersions(existing.payload.plugin.version, record.version) > 0) { action = 'skip'; reason = 'A newer package deployed this resource.'; }
         else action = existing.payload.plugin.version === record.version ? 'skip' : 'update';
@@ -212,6 +212,8 @@
           throw Object.assign(new Error(`“${existing.name}” belongs to the plugin "${existing.payload.plugin.id}"`), {
             code: 'resource_conflict',
           });
+        if (existing && !existing.payload?.plugin?.contentChecksum)
+          throw Object.assign(new Error(`“${existing.name}” has no deployment edit baseline; back it up and explicitly redeploy it.`), {code: 'resource_conflict'});
         if (existing?.payload?.plugin?.contentChecksum &&
             checksum({...existing.payload, plugin: undefined}) !== existing.payload.plugin.contentChecksum)
           throw Object.assign(new Error(`“${existing.name}” was edited after deployment; it was kept.`), {code: 'resource_conflict'});

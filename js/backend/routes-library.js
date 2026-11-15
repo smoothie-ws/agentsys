@@ -131,7 +131,9 @@ route(
       const claimed = c.body.plugin && isObject(c.body.plugin) ? String(c.body.plugin.id ?? '') : '';
       if (!owner || owner !== claimed)
         throw new ApiError('permission_denied', 'This Library node is not owned by that plugin; it was not changed.', 403);
-      if (existing.payload.plugin.contentChecksum && existing.payload.plugin.contentChecksum !== resourceContentChecksum(existing.payload))
+      if (!existing.payload.plugin.contentChecksum)
+        throw new ApiError('resource_conflict', 'This legacy Library node has no edit baseline. Back it up and explicitly redeploy it before updating.', 409);
+      if (existing.payload.plugin.contentChecksum !== resourceContentChecksum(existing.payload))
         throw new ApiError('resource_conflict', 'This Library node was edited after deployment; preserve or duplicate those edits before updating.', 409);
     }
     if (items.some(item => item.name === name && item.id !== resourceId)) throw bad('A node with that name already exists.');
