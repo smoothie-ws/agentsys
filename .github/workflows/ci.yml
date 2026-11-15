@@ -24,8 +24,9 @@ jobs:
       - uses: actions/setup-node@v4
         with:
           node-version: ${{ matrix.node }}
+      # Keep the latency/soak gates isolated from other test files' CPU and disk load. Assertions stay unchanged.
       # No dependencies: the project uses Node built-in modules only.
-      - run: npm test
+      - run: npm test -- --test-concurrency=1
 
   browser:
     name: Browser suite (Playwright, ${{ matrix.browser }})
