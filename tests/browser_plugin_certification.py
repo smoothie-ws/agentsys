@@ -49,7 +49,11 @@ async def main():
             })();""")
             page = await context.new_page()
             errors = []
-            page.on('pageerror', lambda error: errors.append(str(error)))
+            def page_error(error):
+                errors.append(str(error))
+                print('PAGE ERROR:', str(error), getattr(error, 'stack', ''), flush=True)
+            page.on('pageerror', page_error)
+            page.on('requestfailed', lambda request: print('REQUEST FAILED:', request.method, request.url, request.failure, flush=True))
             await page.goto(client_url)
             await page.wait_for_function("Environment.status().status === 'connected'")
             package = json.loads(next((ROOT / 'client-plugins' / 'integration-studio').glob('*.agentsys-plugin.json')).read_text())
@@ -61,9 +65,12 @@ async def main():
             await page.click('#modal button[value=ok]')
             await page.wait_for_function("Extensions.apiOf('integration-studio') !== null")
             # Simulate an older server: not even an authenticated owner cookie authorizes a plugin downgrade.
-            await page.route('**/api/auth/plugin-session', lambda route: route.fulfill(status=404, content_type='application/json', body='{"error":{"code":"not_found"}}'))
+            await page.route('**/api/auth/plugin-session', lambda route: route.fulfill(
+                status=404, content_type='application/json', body='{"error":{"code":"not_found"}}',
+                headers={'Access-Control-Allow-Origin': client_url, 'Access-Control-Allow-Credentials': 'true'}))
             denied = await page.evaluate("Extensions.deploy('integration-studio')")
             assert not denied['ok'], denied
+            assert all(error['code'] == 'plugin_tokens_unsupported' for error in denied['errors']), denied
             assert not any(resource.get('payload', {}).get('plugin', {}).get('id') == 'integration-studio'
                            for resource in http_json(base, 'GET', 'resources'))
             assert http_json(base, 'GET', 'collections') == []
@@ -138,6 +145,9 @@ async def main():
             await page.wait_for_function("document.querySelector('#ext-page-body')?.innerText.includes('No workflows')")
             await page.evaluate("Environment.setActive('local')")
             await page.wait_for_function("Environment.status().status === 'connected' && Extensions.apiOf('integration-studio') !== null")
+            await page.evaluate("go('/ext/graph-developer-tools/graphs')")
+            await page.wait_for_function("document.querySelector('#ext-page-body')?.innerText.includes('Fetch and store')")
+            await page.wait_for_function("Extensions.diagnostics().pendingRequests === 0 && Extensions.diagnostics().pendingCallbacks === 0")
             print('PASS environments: both products switch servers without leaking reports or connections; deployments use independent IDs', flush=True)
             await page.reload()
             await page.wait_for_function("Extensions.apiOf('graph-developer-tools') !== null && Environment.status().status === 'connected'")
