@@ -64,6 +64,22 @@ test('install, reinstall the same version and enable state', () => {
   assert.equal(store.get('lifecycle').enabled, false);
 });
 
+test('updates require explicit approval for writes, wider network access and named secrets', () => {
+  const {store} = storeWith();
+  store.install(pkg());
+  store.update('lifecycle', pkg({version: '1.1.0'}));
+  const capabilities = ['graph.read'];
+  for (const [version, capability] of [['2.0.0', 'graph.write'], ['2.1.0', 'net.fetch:api.example.com'], ['2.2.0', 'secrets.use:demo'], ['2.3.0', 'net.fetch:*']]) {
+    capabilities.push(capability);
+    const before = JSON.stringify(store.record('lifecycle'));
+    const update = pkg({version, capabilities: [...capabilities]});
+    assert.throws(() => store.update('lifecycle', update), error => error.code === 'plugin_permissions_required');
+    assert.equal(JSON.stringify(store.record('lifecycle')), before, 'declining leaves version, data and permissions intact');
+    store.update('lifecycle', update, {approveCapabilities: true});
+    assert.equal(store.get('lifecycle').version, version);
+  }
+});
+
 test('a new version must be newer unless a downgrade is explicit', () => {
   const {store} = storeWith();
   store.install(pkg({version: '2.0.0'}));
@@ -160,4 +176,21 @@ test('the host storage scope is not reachable with a plugin storage key', () => 
   assert.deepEqual(JSON.parse(JSON.stringify(store.hostStorage('lifecycle').get('__agentsys:deployment'))), {ok: true});
   assert.throws(() => store.storage('lifecycle').set('__agentsys:deployment', {}), /reserved/);
   assert.equal(store.storage('lifecycle').get('__agentsys:deployment'), null);
+});
+
+test('editing a saved server URL isolates plugin data and binds legacy storage before the edit', () => {
+  const {store, context, data} = storeWith();
+  let env = {id: 'saved', url: 'https://one.example'};
+  context.Environment = {active: () => env};
+  data.set('agentsys-plugin-lifecycle@saved:legacy', JSON.stringify({kept: true}));
+  store.bindEnvironment(env.id, env.url);
+  assert.equal(store.storage('lifecycle').get('legacy').kept, true);
+  store.storage('lifecycle').set('value', 'server one');
+  env = {...env, url: 'https://two.example'};
+  assert.equal(store.storage('lifecycle').get('value'), null);
+  assert.equal(store.storage('lifecycle').get('legacy'), null);
+  store.storage('lifecycle').set('value', 'server two');
+  env = {...env, url: 'https://one.example'};
+  assert.equal(store.storage('lifecycle').get('value'), 'server one');
+  assert.equal(store.storage('lifecycle').get('legacy').kept, true);
 });

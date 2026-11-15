@@ -116,9 +116,30 @@ const PluginStore = (() => {
     }
   };
   /** One storage scope per plugin and active environment. Reserved keys are host bookkeeping. */
+  function bindEnvironment(id, url) {
+    if (!id || !url) return;
+    // Bind the old id-only scope before an address can change. Existing data moves once, to its original server.
+    const key = 'agentsys-plugin-environment-bindings';
+    let bindings;
+    try { bindings = JSON.parse(localStorage.getItem(key) || '{}'); } catch { bindings = {}; }
+    if (!isObject(bindings)) bindings = {};
+    if (Object.hasOwn(bindings, id) && bindings[id] !== url) return;
+    bindings[id] = url;
+    localStorage.setItem(key, JSON.stringify(bindings));
+    const keys = Array.from({length: localStorage.length}, (_, index) => localStorage.key(index));
+    for (const old of keys) {
+      if (!old?.startsWith('agentsys-plugin-') || !old.includes('@' + id + ':')) continue;
+      const next = old.replace('@' + id + ':', '@' + id + '@' + encodeURIComponent(url) + ':');
+      if (localStorage.getItem(next) === null) localStorage.setItem(next, localStorage.getItem(old));
+      localStorage.removeItem(old);
+    }
+  }
+
   function storageFor(id, allowReserved) {
-    const server = typeof Environment !== 'undefined' ? Environment.active()?.id || 'none' : 'none';
-    const prefix = `agentsys-plugin-${id}@${server}:`;
+    const env = typeof Environment !== 'undefined' ? Environment.active() : null;
+    const server = env?.id || 'none';
+    bindEnvironment(server, env?.url);
+    const prefix = `agentsys-plugin-${id}@${server}${env?.url ? '@' + encodeURIComponent(env.url) : ''}:`;
     const safeKey = key => {
       const text = String(key).slice(0, 200);
       if (!allowReserved && text.startsWith('__agentsys:'))
@@ -202,7 +223,7 @@ const PluginStore = (() => {
      * Installs a new package or updates one in place. Dependencies and compatibility are checked before anything
      * is written. An update keeps the enabled state and the user data; activation is the host's next step.
      */
-    install(value, {allowDowngrade = false} = {}) {
+    install(value, {allowDowngrade = false, approveCapabilities = false} = {}) {
       read();
       const plugin = normalize(value);
       const index = loaded.findIndex(item => item.id === plugin.id);
@@ -213,6 +234,9 @@ const PluginStore = (() => {
       const now = Date.now();
       if (index >= 0) {
         const previous = loaded[index];
+        const added = plugin.capabilities.filter(capability => !Capabilities.allows(previous.capabilities, capability));
+        if (added.length && !approveCapabilities)
+          throw new ApiError('plugin_permissions_required', `This update requires approval for: ${added.join(', ')}.`, 409);
         if (!allowDowngrade && Manifest.compareVersions(plugin.version, previous.version) < 0)
           throw new ApiError(
             'invalid_request',
@@ -290,6 +314,7 @@ const PluginStore = (() => {
     hostStorage(id) {
       return storageFor(id, true);
     },
+    bindEnvironment,
     clear(id) {
       // Remove every environment scope of this plugin.
       const prefix = `agentsys-plugin-${id}`;

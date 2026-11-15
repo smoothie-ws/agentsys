@@ -28,7 +28,7 @@ const Environment = (() => {
   let reconnectAttempt = 0;
   let switchRevision = 0;
   let switching = 0; // a setActive() is between its start and its answer
-  // Scoped tokens handed to client plugins, per environment and capability set. They die with the generation.
+  // Scoped tokens held for client plugins, per identity, environment and capability set. They die with the generation.
   const pluginTokens = new Map();
   const pluginTokenRequests = new Map();
 
@@ -337,7 +337,7 @@ const Environment = (() => {
     stream = null;
   }
 
-  /** One scoped credential per sandbox owner, environment and capability set. Only 404 permits legacy mode. */
+  /** One scoped credential per sandbox owner, environment and capability set. Unsupported servers fail closed. */
   async function pluginToken(capabilities, {refresh = false, owner = 'host'} = {}) {
     const env = active || ensureDefaults();
     const gen = generation;
@@ -354,17 +354,20 @@ const Environment = (() => {
     const pending = (async () => {
       let answer;
       try {
-        answer = await request('POST', 'auth/plugin-session', {body: {capabilities: caps}, env});
+        answer = await request('POST', 'auth/plugin-session', {body: {capabilities: caps, plugin_id: owner}, env});
       } catch (error) {
         if (error.status !== 404 || gen !== generation) throw error;
-        pluginTokens.set(key, {token: null, expires: Date.now() + 5 * 60 * 1000, generation: gen});
-        return null;
+        throw new ApiError('plugin_tokens_unsupported', 'This server does not support scoped plugin tokens. Upgrade the server to use plugins.', 409);
       }
       if (gen !== generation) {
         revokeRemotely(answer?.token, env);
         throw new ApiError('stale_environment', 'The environment changed', 409);
       }
-      if (!answer?.token || !Number.isFinite(Number(answer.expires_in)))
+      if (answer?.plugin_id !== owner) {
+        revokeRemotely(answer?.token, env);
+        throw new ApiError('plugin_identity_unsupported', 'The server did not bind the token to this plugin. Upgrade the server.', 409);
+      }
+      if (typeof answer?.token !== 'string' || !answer.token.startsWith('pst_') || !Number.isFinite(Number(answer.expires_in)) || Number(answer.expires_in) <= 0)
         throw new ApiError('invalid_response', 'The server did not issue a valid plugin token', 502);
       pluginTokens.set(key, {
         token: answer.token,
@@ -571,6 +574,7 @@ const Environment = (() => {
       const clean = validate(env);
       const index = environments.findIndex(item => item.id === clean.id);
       if (index >= 0) {
+        if (typeof PluginStore !== 'undefined') PluginStore.bindEnvironment(clean.id, environments[index].url);
         tokenOf(clean.id, environments[index].url); // bind any legacy token before changing its URL
         environments[index] = clean;
       }

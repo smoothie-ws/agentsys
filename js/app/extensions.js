@@ -179,6 +179,11 @@ const Extensions = (() => {
     /** One API call on behalf of this plugin, checked against its capabilities, with the scoped token when the
      * server issues one and retried once after that token expires or the server restarts. */
     async sendRequest(method, path, body, query) {
+      this.inFlight = (this.inFlight || 0) + 1;
+      try { return await this.performRequest(method, path, body, query); }
+      finally { this.inFlight--; }
+    }
+    async performRequest(method, path, body, query) {
       const gen = Environment.generation();
       const ensureRunning = () => {
         if (this.dead || this.stopping) throw new Error('The plugin is not running.');
@@ -612,15 +617,15 @@ const Extensions = (() => {
   }
 
   // ----- lifecycle actions used by the Plugins page and tests -----
-  async function install(value) {
+  async function install(value, options) {
     const id = value?.manifest?.id || value?.id;
     const previous = id ? PluginStore.record(id) : null;
-    const plugin = PluginStore.install(value);
+    const plugin = PluginStore.install(value, options);
     await reload();
     const problem = errors.get(plugin.id);
     if (problem) {
       // A package that cannot start does not stay installed over a working one.
-      if (previous) PluginStore.install(previous, {allowDowngrade: true});
+      if (previous) PluginStore.install(previous, {allowDowngrade: true, approveCapabilities: true});
       else PluginStore.remove(plugin.id);
       await reload();
       throw new ApiError('plugin_activation_failed', `${plugin.title || plugin.id} could not start: ${problem}`, 500);
@@ -628,14 +633,14 @@ const Extensions = (() => {
     return plugin;
   }
 
-  async function update(id, value) {
+  async function update(id, value, options) {
     const previous = PluginStore.record(id);
     if (!previous) throw new ApiError('not_found', 'Plugin not found', 404);
-    const plugin = PluginStore.update(id, value);
+    const plugin = PluginStore.update(id, value, options);
     await reload();
     const problem = errors.get(id);
     if (problem) {
-      PluginStore.install(previous, {allowDowngrade: true});
+      PluginStore.install(previous, {allowDowngrade: true, approveCapabilities: true});
       await reload();
       throw new ApiError('plugin_update_failed', `${plugin.title || id} could not be updated: ${problem}`, 500);
     }
@@ -677,6 +682,14 @@ const Extensions = (() => {
   }
 
   /** Deploys the package's declared server resources through this plugin's checked capabilities. */
+  async function deploymentPlan(id) {
+    const entry = loaded.get(id);
+    if (!entry) throw new ApiError('plugin_not_running', 'Turn the plugin on before planning deployment.', 409);
+    return PluginDeploy.plan(PluginStore.record(id), {
+      request: (method, path, body, query) => entry.checkedRequest(method, path, body, query),
+    });
+  }
+
   async function deploy(id, {force = false} = {}) {
     const entry = loaded.get(id);
     if (!entry) throw new ApiError('plugin_not_running', 'Turn the plugin on before deploying its resources.', 409);
@@ -812,6 +825,7 @@ const Extensions = (() => {
     enable,
     recover,
     deploy,
+    deploymentPlan,
     deploymentOf,
     renderSidebar: renderSidebarItems,
     renderToolbar,
@@ -832,6 +846,15 @@ const Extensions = (() => {
         href: pageHref(page.plugin, page.id),
       })),
     commands: () => [...commands.values()].sort((a, b) => a.title.localeCompare(b.title)).map(publicCommand),
+    /** Host diagnostics for bounded lifecycle tests; no credentials or plugin data. Not exposed to iframes. */
+    diagnostics: () => ({
+      sandboxes: loaded.size,
+      pendingCallbacks: [...loaded.values()].reduce((sum, entry) => sum + entry.pending.size, 0),
+      pendingRequests: [...loaded.values()].reduce((sum, entry) => sum + (entry.inFlight || 0), 0),
+      commands: commands.size,
+      contributions: sidebarItems.length + toolbarButtons.length + menuContributions.length +
+        ['page', 'library', 'home', 'settings', 'inspector', 'resource'].reduce((sum, kind) => sum + views.list(kind).length, 0),
+    }),
     execute,
     /** Plugin entries for a named menu; the menu infrastructure adds them after the application's own items. */
     menuItems(spec, args = []) {

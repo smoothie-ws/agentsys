@@ -91,6 +91,7 @@
     if (top === 'search' || top === 'node-hooks' || top === 'project-defaults' || top === 'exchange')
       return {needs: [read ? 'graph.read' : 'graph.write']};
     if (top === 'projects') {
+      if (!read && parts[1]?.startsWith('lib-')) return {needs: ['graph.write', 'library.write']};
       if (parts.includes('execution')) return {needs: [read ? 'run.read' : 'run.start']};
       if (parts.includes('batch') || parts.length > 2) return {needs: [read ? 'graph.read' : 'graph.write']};
       return {needs: [read ? 'graph.read' : 'graph.write']};

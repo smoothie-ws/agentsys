@@ -99,4 +99,4 @@ for one owner joins one request; disabling a plugin aborts its pending API reque
 If issuance finishes after disposal, the token is revoked without sending the queued operation. Completed server
 side effects are not rolled back. A server switch rejects old work and revokes at the original URL, including
 when the saved environment has been removed. Expired tokens renew once as scoped tokens; an owner credential
-is never substituted. Only a 404 token endpoint enables compatibility with older host-only servers.
+is never substituted. A missing token endpoint or missing identity binding refuses the operation and asks for a server upgrade.

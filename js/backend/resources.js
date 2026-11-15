@@ -1,6 +1,17 @@
 // Library resources are Custom Nodes: validation of a saved node and of an icon.
 'use strict';
 
+// Accidental-edit fingerprint, not a package signature or an authorization decision.
+function resourceContentChecksum(payload) {
+  const canonical = value => Array.isArray(value) ? '[' + value.map(canonical).join(',') + ']' :
+    value && typeof value === 'object' ? '{' + Object.keys(value).sort().map(key => JSON.stringify(key) + ':' + canonical(value[key])).join(',') + '}' :
+      JSON.stringify(value === undefined ? null : value);
+  const text = canonical({...payload, plugin: undefined});
+  let hash = 0x811c9dc5;
+  for (let i = 0; i < text.length; i++) hash = Math.imul(hash ^ text.charCodeAt(i), 0x01000193) >>> 0;
+  return 'fnv1a-' + hash.toString(16).padStart(8, '0');
+}
+
 function validateIcon(value = '') {
   if (
     typeof value !== 'string' ||

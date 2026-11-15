@@ -464,6 +464,7 @@ function createServer(options = {}) {
       client_plugins: false,
       server_plugins: false,
       plugin_tokens: true,
+      plugin_identity: true,
       net_allowlist: NET_ALLOW.length > 0,
       net_block_private: NET_BLOCK_PRIVATE,
       tls: !!TLS,
@@ -486,7 +487,7 @@ function createServer(options = {}) {
       '/api/auth/plugin-session',
       'post',
       'Issue a short-lived token scoped to client plugin capabilities',
-      'Body: {"capabilities":["graph.read", …]}. The server enforces them on every call. ' + external
+      'Body: {"plugin_id":"my-plugin","capabilities":["graph.read", …]}. The server binds identity and enforces capabilities on every call. ' + external
     );
     add('/api/auth/plugin-session', 'delete', 'Revoke a scoped plugin token', 'Send the plugin token itself. ' + external);
     add('/api/events', 'get', 'Stream change and hook events (SSE)', 'Requires a token or session cookie. ' + external);
@@ -581,7 +582,7 @@ function createServer(options = {}) {
       } catch (error) {
         return sendJSON(res, error.status || 400, {error: {code: error.code || 'invalid_request', message: error.message}});
       }
-      return sendJSON(res, 200, issuePluginToken(capabilities));
+      return sendJSON(res, 200, issuePluginToken(capabilities, body.plugin_id ?? null));
     }
     // A token that was issued but is no longer valid is refused explicitly: it must not fall back to the cookie.
     const presented = pluginTokenOf(req);
@@ -634,6 +635,7 @@ function createServer(options = {}) {
     if (edit !== undefined && (typeof edit !== 'string' || edit.length > 100))
       throw Object.assign(new Error('Invalid edit token'), {status: 400, code: 'invalid_request'});
     const result = await Backend.request(req.method, rel, {
+      pluginIdentity: presented?.entry ? {id: presented.entry.pluginId} : null,
       body,
       query,
       edit: edit ?? null,

@@ -265,3 +265,57 @@ test('the deployment refuses to run without the plugin capabilities', async () =
     await one.close();
   }
 });
+
+test('read-only preflight and deployment preserve a user-edited Library node', async () => {
+  const one = await server();
+  try {
+    const record = packageOf();
+    const before = await Deploy.plan(record, {request: one.request});
+    assert.equal(before.atomic, false);
+    assert.ok(before.actions.every(item => item.action === 'create'));
+    assert.deepEqual(await one.request('GET', 'resources'), [], 'planning made no resources');
+    const deployed = await Deploy.deploy(record, {request: one.request});
+    const id = deployed.state.library['Runs alone'].id;
+    const node = await one.request('GET', 'resources/' + id);
+    await one.request('PUT', 'resources/' + id, {name: node.name, payload: {...node.payload, description: 'User annotation'}});
+    const edited = await one.request('GET', 'resources/' + id);
+    const plan = await Deploy.plan(record, {request: one.request});
+    assert.equal(plan.conflicts.length, 1);
+    assert.match(plan.conflicts[0].reason, /edited/);
+    const result = await Deploy.deploy(packageOf({version: '1.1.0', code: 'node.display("replacement");'}), {request: one.request, state: deployed.state});
+    assert.equal(result.ok, false);
+    assert.ok(result.errors.some(error => error.code === 'resource_conflict'));
+    assert.deepEqual(await one.request('GET', 'resources/' + id), edited);
+    await assert.rejects(one.request('POST', 'library/script-nodes', {resource_id: id, name: node.name, code: 'node.display("overwrite");', plugin: {id: record.id}}), error => error.status === 409);
+  } finally { await one.close(); }
+});
+
+test('partial deployment recovers without duplicates, and template updates preserve the saved graph', async () => {
+  const one = await server();
+  try {
+    const record = packageOf();
+    let interrupted = true;
+    const request = (method, route, body, query) => {
+      if (interrupted && method === 'POST' && route === 'library/script-nodes') {
+        interrupted = false;
+        throw Object.assign(new Error('connection lost'), {code: 'network_error'});
+      }
+      return one.request(method, route, body, query);
+    };
+    const partial = await Deploy.deploy(record, {request});
+    assert.equal(partial.ok, false);
+    const recovered = await Deploy.deploy(record, {request, state: partial.state});
+    assert.equal(recovered.ok, true, JSON.stringify(recovered.errors));
+    assert.equal((await one.request('GET', 'resources')).length, 1);
+    assert.equal((await one.request('GET', 'collections')).length, 1);
+    const workflow = recovered.state.workflows['Alone flow'];
+    const graph = await one.request('GET', `projects/${workflow.project_id}/workflow`, undefined, {workflow_id: workflow.workflow_id});
+    const changed = packageOf({version: '1.1.0'});
+    changed.contributes.workflows[0].nodes = [];
+    const update = await Deploy.deploy(changed, {request, state: recovered.state});
+    assert.ok(update.warnings.some(item => item.code === 'workflow_preserved'));
+    const after = await one.request('GET', `projects/${workflow.project_id}/workflow`, undefined, {workflow_id: workflow.workflow_id});
+    assert.deepEqual(after.edges, graph.edges);
+    assert.deepEqual(after.nodes.map(node => node.id), graph.nodes.map(node => node.id));
+  } finally { await one.close(); }
+});

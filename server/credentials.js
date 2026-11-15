@@ -92,7 +92,9 @@ function createCredentials(options, TOKEN) {
     for (const [hash, token] of PLUGIN_TOKENS) if (token.expires <= now) PLUGIN_TOKENS.delete(hash);
   }
   /** Issues a token limited to `capabilities`; at the limit it refuses instead of silently revoking a live token. */
-  function issuePluginToken(capabilities) {
+  function issuePluginToken(capabilities, pluginId = null) {
+    if (pluginId !== null && (typeof pluginId !== 'string' || !/^[A-Za-z0-9][A-Za-z0-9._-]{0,79}$/.test(pluginId)))
+      throw Object.assign(new Error('Invalid plugin identity'), {status: 400, code: 'invalid_request'});
     sweepPluginTokens();
     if (PLUGIN_TOKENS.size >= PLUGIN_LIMIT) {
       const error = new Error(
@@ -105,10 +107,11 @@ function createCredentials(options, TOKEN) {
     const token = PLUGIN_TOKEN_PREFIX + crypto.randomBytes(32).toString('base64url');
     PLUGIN_TOKENS.set(sessionHash(token), {
       caps: capabilities,
+      pluginId,
       expires: Date.now() + PLUGIN_TTL_MS,
       created: Date.now(),
     });
-    return {token, expires_in: Math.floor(PLUGIN_TTL_MS / 1000), capabilities};
+    return {token, expires_in: Math.floor(PLUGIN_TTL_MS / 1000), capabilities, plugin_id: pluginId};
   }
   /** Validated, de-duplicated capabilities for a plugin token; never administrative. */
   function pluginCapabilities(value) {

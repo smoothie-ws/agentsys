@@ -84,6 +84,20 @@ test('an expired scoped credential renews once with the same owner and never sen
   assert.deepEqual(owners, ['demo']);
 });
 
+for (const reason of ['plugin_token_invalid', 'plugin_token_expired']) {
+  test(`${reason} after revocation or restart cannot fall back when renewal is refused`, async () => {
+    const auth = [];
+    const host = sandbox({
+      generation: () => 1,
+      pluginToken: async () => { throw Object.assign(new Error('token service refused'), {status: 403}); },
+      request: async (method, route, options) => { auth.push(options.auth); throw Object.assign(new Error('invalid'), {code: reason}); },
+    });
+    host.token = 'pst_old';
+    await assert.rejects(host.sendRequest('POST', 'projects', {}), /token service refused/);
+    assert.deepEqual(auth, ['pst_old']);
+  });
+}
+
 test('a switch during token issuance cannot send the previous plugin operation to the new server', async () => {
   let release, generation = 1, calls = 0;
   const revoked = [];

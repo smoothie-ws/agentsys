@@ -24,11 +24,11 @@ async function withServer(options, work) {
   }
 }
 
-const mint = async (base, capabilities, headers = OWNER) => {
+const mint = async (base, capabilities, headers = OWNER, pluginId) => {
   const response = await fetch(base + '/api/auth/plugin-session', {
     method: 'POST',
     headers,
-    body: JSON.stringify({capabilities}),
+    body: JSON.stringify({capabilities, plugin_id: pluginId}),
   });
   const body = await response.json().catch(() => undefined);
   return {status: response.status, body};
@@ -39,6 +39,39 @@ const use = (base, token, method, route, body) =>
     headers: {'Content-Type': 'application/json', Authorization: 'Bearer ' + token, 'X-AgentSys': '1'},
     body: body === undefined ? undefined : JSON.stringify(body),
   });
+
+test('verified plugin identity prevents Library takeover through every mutation route', async () => {
+  await withServer({}, async ({base}) => {
+    const caps = ['library.read', 'library.write', 'graph.read', 'graph.write'];
+    const first = (await mint(base, caps, OWNER, 'first')).body.token;
+    const second = (await mint(base, caps, OWNER, 'second')).body.token;
+    const spec = {name: 'Owned', code: 'node.output.value = 1;', plugin: {id: 'first'}};
+    const created = await use(base, first, 'POST', 'library/script-nodes', spec);
+    assert.equal(created.status, 200);
+    const resource = await created.json();
+    assert.equal(resource.payload.plugin.id, 'first');
+    assert.equal((await use(base, second, 'GET', 'resources/' + resource.id)).status, 200, 'Library definitions are shared reads');
+    for (const [method, route, body] of [
+      ['POST', 'library/script-nodes', {...spec, resource_id: resource.id, code: 'node.output.value = 99;'}],
+      ['POST', 'library/script-nodes', {...spec, name: 'Forged new node'}],
+      ['PUT', 'resources/' + resource.id, {name: 'Taken', payload: {...resource.payload, plugin: {id: 'second'}}}],
+      ['DELETE', 'resources/' + resource.id],
+      ['POST', 'library/node-editor', {resource_id: resource.id}],
+      ['POST', 'library/custom-nodes/' + resource.id + '/move', {folder: ''}],
+      ['POST', 'library/node-folders', {action: 'delete', path: ''}],
+      ['PUT', 'projects/lib-' + resource.id + '/policy', {grants: ['graph.write']}],
+    ]) {
+      const response = await use(base, second, method, route, body);
+      assert.equal(response.status, 403, `${method} ${route}: ${await response.text()}`);
+    }
+    const unchanged = await (await use(base, first, 'GET', 'resources/' + resource.id)).json();
+    assert.deepEqual(unchanged, resource);
+    assert.equal((await use(base, first, 'POST', 'library/script-nodes', {...spec, resource_id: resource.id})).status, 200);
+    await use(base, first, 'DELETE', 'auth/plugin-session');
+    assert.equal((await use(base, first, 'GET', 'resources')).status, 401);
+    assert.equal((await use(base, second, 'GET', 'resources')).status, 200);
+  });
+});
 
 test('a token can only be issued by an authenticated caller and only with known capabilities', async () => {
   await withServer({}, async ({base}) => {

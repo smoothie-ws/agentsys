@@ -96,6 +96,39 @@ const plainServer = (request, tools) => {
   return {body: {}};
 };
 
+for (const failure of [401, 403, 429, 404, 'timeout', 'network']) {
+  test(`plugin token issuance fails closed: ${failure}`, async () => {
+    const {Environment, requests} = makeEnvironment(request => {
+      if (request.url.endsWith('/api/auth/plugin-session')) {
+        if (failure === 'timeout') throw Object.assign(new Error('timed out'), {name: 'TimeoutError'});
+        if (failure === 'network') throw new TypeError('connection lost');
+        return {status: failure, body: {error: {code: 'denied', message: 'denied'}}};
+      }
+      return plainServer(request);
+    });
+    Environment.save({id: 'local', name: 'Local', url: 'http://client.test', token: 'owner-token'});
+    await Environment.start();
+    await assert.rejects(Environment.pluginToken(['graph.write'], {owner: 'attacker'}));
+    assert.equal(requests.filter(r => r.method === 'POST' && r.url.endsWith('/api/projects')).length, 0);
+    await Environment.setActive('local', {reconnect: false});
+  });
+}
+
+test('an identity-unaware server token is revoked and never used', async () => {
+  const revoked = [];
+  const {Environment} = makeEnvironment(request => {
+    if (request.url.endsWith('/api/auth/plugin-session')) {
+      if (request.method === 'DELETE') { revoked.push(request.headers.Authorization); return {body: {revoked: true}}; }
+      return {body: {token: 'pst_unbound', expires_in: 3600}};
+    }
+    return plainServer(request);
+  });
+  await Environment.start();
+  await assert.rejects(Environment.pluginToken(['library.write'], {owner: 'first'}), error => error.code === 'plugin_identity_unsupported');
+  assert.deepEqual(revoked, ['Bearer pst_unbound']);
+  await Environment.setActive('local', {reconnect: false});
+});
+
 test('start() discovers the server, proves the session and opens one event stream', async () => {
   const {Environment, requests} = makeEnvironment(plainServer);
   assert.equal(await Environment.start(), true);
@@ -354,7 +387,7 @@ test('a plugin token is minted once per environment and capability set, and revo
         return {body: {revoked: true}};
       }
       mints++;
-      return {body: {token: 'pst_' + mints, expires_in: 3600, capabilities: ['graph.read']}};
+      return {body: {token: 'pst_' + mints, expires_in: 3600, plugin_id: JSON.parse(request.body).plugin_id, capabilities: ['graph.read']}};
     }
     return {body: []};
   });
@@ -375,7 +408,7 @@ test('a plugin token is minted once per environment and capability set, and revo
   await Environment.setActive(second.id, {reconnect: false});
 });
 
-test('a server without plugin tokens is remembered instead of asked on every plugin call', async () => {
+test('a server without plugin tokens refuses plugins without owner fallback', async () => {
   let posts = 0;
   const {Environment} = makeEnvironment(request => {
     if (request.url.includes(API)) return {body: meta};
@@ -388,9 +421,9 @@ test('a server without plugin tokens is remembered instead of asked on every plu
     return {body: []};
   });
   await Environment.start();
-  assert.equal(await Environment.pluginToken(['graph.read']), null);
-  assert.equal(await Environment.pluginToken(['graph.read']), null);
-  assert.equal(posts, 1, 'the missing route is remembered for a while');
+  await assert.rejects(Environment.pluginToken(['graph.read']), error => error.code === 'plugin_tokens_unsupported');
+  await assert.rejects(Environment.pluginToken(['graph.read']), error => error.code === 'plugin_tokens_unsupported');
+  assert.equal(posts, 2, 'no unscoped credential is cached');
   await Environment.setActive('local', {reconnect: false});
 });
 
@@ -427,7 +460,7 @@ test('concurrent token requests join per owner; equal grants do not share revoca
       }
       const id = ++mints;
       await new Promise(resolve => setTimeout(resolve, 10));
-      return {body: {token: 'pst_' + id, expires_in: 3600}};
+      return {body: {token: 'pst_' + id, expires_in: 3600, plugin_id: JSON.parse(request.body).plugin_id}};
     }
     return plainServer(request);
   });
@@ -443,7 +476,7 @@ test('concurrent token requests join per owner; equal grants do not share revoca
   await Environment.setActive('local', {reconnect: false});
 });
 
-test('token issuance failures fail closed and a missing route cache expires', async () => {
+test('token issuance failures fail closed on every attempt', async () => {
   let now = Date.now(), status = 404, mints = 0;
   const {Environment, context} = makeEnvironment(request => {
     if (request.url.endsWith('/api/auth/plugin-session')) {
@@ -455,13 +488,13 @@ test('token issuance failures fail closed and a missing route cache expires', as
   context.testNow = () => now;
   vm.runInContext('Date.now = testNow', context);
   await Environment.start();
-  assert.equal(await Environment.pluginToken([]), null);
-  assert.equal(await Environment.pluginToken([]), null);
-  assert.equal(mints, 1);
+  await assert.rejects(Environment.pluginToken([]), error => error.code === 'plugin_tokens_unsupported');
+  await assert.rejects(Environment.pluginToken([]), error => error.code === 'plugin_tokens_unsupported');
+  assert.equal(mints, 2);
   now += 6 * 60 * 1000;
   status = 403;
   await assert.rejects(Environment.pluginToken([]), error => error.status === 403);
-  assert.equal(mints, 2);
+  assert.equal(mints, 3);
   await Environment.setActive('local', {reconnect: false});
 });
 
@@ -517,7 +550,7 @@ test('removing a server revokes credentials only at the original URL', async () 
   const {Environment} = makeEnvironment(request => {
     if (request.url.endsWith('/api/auth/plugin-session')) {
       if (request.method === 'DELETE') { deletes.push(request.url); return {body: {revoked: true}}; }
-      return {body: {token: 'pst_private', expires_in: 3600}};
+      return {body: {token: 'pst_private', expires_in: 3600, plugin_id: JSON.parse(request.body).plugin_id}};
     }
     return plainServer(request);
   });

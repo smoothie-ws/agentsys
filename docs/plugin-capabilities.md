@@ -75,12 +75,11 @@ plugin's capabilities (`POST /api/auth/plugin-session`). The plugin's calls carr
 same capability rules to it, so the boundary does **not** rely on the host page being honest. The token:
 
 - is issued only to an authenticated caller;
-- lives minutes, not hours, and is renewed once after expiry;
+- expires after one hour by default (server configurable), and is renewed once after expiry;
 - is revoked immediately when the plugin is disabled, removed or the environment changes;
 - is never written to plugin storage and never exposed to the sandbox.
 
-An older server without the route answers 404; the host-side check is then the whole boundary, and the Plugins page
-documented this limit.
+Older servers without identity-bound scoped tokens refuse plugin operations. There is no owner-session fallback; upgrade the server to use plugins.
 
 ## Secrets
 
