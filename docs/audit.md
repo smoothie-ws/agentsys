@@ -1,3 +1,5 @@
+> Historical report. For the current implementation and verified results, see [MVP finalization](audits/mvp-finalization/REPORT.md).
+
 # Audit (platform cycle)
 
 Baseline: `main` at `7cca21e`, Node v20.11.0, Windows. `npm test` was **245 pass, 0 fail** (~9.5 s).

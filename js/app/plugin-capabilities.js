@@ -91,6 +91,10 @@
     if (top === 'search' || top === 'node-hooks' || top === 'project-defaults' || top === 'exchange')
       return {needs: [read ? 'graph.read' : 'graph.write']};
     if (top === 'projects') {
+      let projectId;
+      try { projectId = decodeURIComponent(parts[1] || ''); }
+      catch { return {denied: 'Invalid API path escape'}; }
+      if (!read && projectId.startsWith('lib-')) return {needs: ['graph.write', 'library.write']};
       if (parts.includes('execution')) return {needs: [read ? 'run.read' : 'run.start']};
       if (parts.includes('batch') || parts.length > 2) return {needs: [read ? 'graph.read' : 'graph.write']};
       return {needs: [read ? 'graph.read' : 'graph.write']};

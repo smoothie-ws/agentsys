@@ -1,5 +1,5 @@
-// The in-browser "server": route table, one request context (Call), undo history and Backend.request().
-// api() in app/helpers.js calls Backend.request(). Routes are added with route() in the routes-*.js files.
+// Server application service: route table, request contexts, serialized mutations and per-client undo history.
+// HTTP and checked Script calls both use Backend.request(); routes live in routes-*.js.
 'use strict';
 
 // ----- request plumbing -----
@@ -470,7 +470,7 @@ class Call {
 
 const Backend = {
   /** Resolves with the parsed result or throws an ApiError. */
-  async request(method, path, {body = {}, query = {}, edit = null, scriptContext = null, client = null} = {}) {
+  async request(method, path, {body = {}, query = {}, edit = null, scriptContext = null, client = null, pluginIdentity = null} = {}) {
     path = path.replace(/^\/+|\/+$/g, '');
     const found = ROUTES.find(r => r.methods.has(method) && r.regex.test(path));
     if (!found) {
@@ -505,6 +505,25 @@ const Backend = {
     if (found.unlocked) return found.handler(call, params);
     const result = await exclusive(async () => {
       running();
+      // Identity comes from the server's credential map, never from request JSON. Check inside the writer lock.
+      if (pluginIdentity && method !== 'GET') {
+        const refuseOwner = () => { throw new ApiError('permission_denied', 'This plugin may only change its own Library resources.', 403); };
+        const resources = await call.ctx.get('resources', []);
+        const resourceId = params.resource_id || body?.resource_id ||
+          (String(params.project_id || '').startsWith('lib-') ? params.project_id.slice(4) : null);
+        const existing = resourceId && resources.find(item => item.id === resourceId);
+        if (existing && (!pluginIdentity.id || existing.payload?.plugin?.id !== pluginIdentity.id)) refuseOwner();
+        if (path === 'library/node-folders') refuseOwner(); // bulk operations can affect several owners
+        if (path === 'library/script-nodes' || path === 'resources' || /^resources\//.test(path)) {
+          if (!pluginIdentity.id) refuseOwner();
+          const tag = path === 'library/script-nodes' ? body.plugin : body.payload?.plugin;
+          if (tag?.id && tag.id !== pluginIdentity.id) refuseOwner();
+          if (method !== 'DELETE') {
+            if (path === 'library/script-nodes') body.plugin = {...tag, id: pluginIdentity.id};
+            else if (body.payload) body.payload.plugin = {...tag, id: pluginIdentity.id};
+          }
+        }
+      }
       const result = await found.handler(call, params);
       if (method !== 'GET') await call.finish(found.pattern.split('/')[2] || found.pattern.split('/')[0]);
       // A read that found something to bring up to date (a copy of a Library node, a type) stores it.

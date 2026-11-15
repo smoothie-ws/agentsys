@@ -8,8 +8,6 @@
  * (see docs/engine.md). Nothing else is built into the engine.
  */
 const OPS = new Set(['script', 'on_run', 'on_read', 'on_placed', 'on_deleted', 'on_input_connected', 'on_widget']);
-/** The operations that fire a signal by themselves: the event nodes. */
-const EVENT_OPS = new Set(['on_run', 'on_read', 'on_placed', 'on_deleted', 'on_input_connected', 'on_widget']);
 /** The types of a Script's code (text typed in as code): the same IDs in every workflow and Library node, so they are one type everywhere. */
 const SCRIPT_TEXT_TYPE = '64428b9c654c2c2cfcb55742ea899ed8',
   SCRIPT_CODE_TYPE = 'a42dbde0c1e1090d6adf1640c2dda533';

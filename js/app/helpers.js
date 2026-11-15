@@ -58,8 +58,7 @@ const store = (() => {
       } catch {}
     }
   } catch {}
-  let timer = null,
-    pending = Promise.resolve();
+  let timer = null;
   const persist = () => {
     try {
       localStorage.setItem(KEY, JSON.stringify(values));
@@ -77,15 +76,12 @@ const store = (() => {
     set(key, value) {
       if (JSON.stringify(values[key]) !== JSON.stringify(value)) {
         values[key] = clone(value);
-        pending = pending.then(() => {
-          if (!timer)
-            timer = setTimeout(() => {
-              timer = null;
-              persist();
-            }, 0);
-        });
+        if (!timer) timer = setTimeout(() => {
+          timer = null;
+          persist();
+        }, 0);
       }
-      return pending;
+      return ready;
     },
     /** Exposed for tests and for the migration notice. */
     kind: 'localStorage',
@@ -112,7 +108,7 @@ async function api(path, {method = 'GET', body, query, edit, signal} = {}) {
     ...Object.fromEntries(Object.entries(query ?? {}).filter(([, value]) => value !== undefined && value !== null)),
   };
   return Environment.request(method, bare, {
-    body: body === undefined ? undefined : JSON.parse(JSON.stringify(body)),
+    body,
     query: params,
     edit,
     signal,

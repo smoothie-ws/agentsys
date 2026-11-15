@@ -54,6 +54,8 @@ exports.activate = async api => {
     api.ui.addSidebarItem({id: 'evil', title: 'Help', href: 'javascript:document.title="pwned"'}));
   await attempt('external-link', () =>
     api.ui.addSidebarItem({id: 'evil2', title: 'Docs', href: 'https://example.test/'}));
+  await attempt('css-escape', () => api.ui.addStyles('body{background:u\\72l(https://example.test/leak)}'));
+  await attempt('css-image-set', () => api.ui.addStyles('body{background:image-set("https://example.test/leak" 1x)}'));
   await attempt('read', () => api.request('GET', 'projects'));
   await api.storage.set('attempts', results);
 };
@@ -83,10 +85,11 @@ exports.activate = async api => {
   } catch (error) {
     results.secret = {ok: false, error: String((error && error.message) || error)};
   }
+  api.commands.register('own', () => api.storage.set('own-command', true));
   api.ui.addPage({
     id: 'report',
     title: 'Report',
-    render: () => '<h2>Report</h2><svg><script>document.title="pwned"<\/script></svg><p id="report-body">ok</p><a id="obfuscated" href="java&#10;script:document.title=\'pwned\'">click</a><style>body{background:url(https://example.test/x)}</style>',
+    render: () => '<h2>Report</h2><svg><script>document.title="pwned"<\/script></svg><p id="report-body">ok</p><button id="forged-command" data-ext-command="victim:mark" data-menu="project:fake">Foreign</button><button id="own-command" data-command="own">Own</button><template><img onerror="document.title=\'pwned\'"></template><a id="obfuscated" href="java&#10;script:document.title=\'pwned\'">click</a><style>body{background:url(https://example.test/x)}</style>',
   });
   await api.storage.set('attempts', results);
 };
@@ -172,7 +175,8 @@ async def main():
         wait_http(f'http://127.0.0.1:{client_port}/')
 
         async with async_playwright() as playwright:
-            browser = await playwright.chromium.launch(executable_path=EXE)
+            engine = os.environ.get('AGENTSYS_BROWSER', 'chromium')
+            browser = await getattr(playwright, engine).launch(executable_path=EXE if engine == 'chromium' else None)
             page = await browser.new_page(viewport={'width': 1280, 'height': 860})
             errors = []
             page.on('pageerror', lambda error: errors.append(str(error)))
@@ -191,7 +195,7 @@ async def main():
             results = await page.evaluate("PluginStore.storage('attacker').get('attempts')")
             assert results is not None, 'the plugin ran'
             assert results['read']['ok'] is True, results
-            for name in ['write', 'net', 'secret', 'auth', 'foreign-command', 'notification', 'direct-fetch', 'javascript-link', 'external-link']:
+            for name in ['write', 'net', 'secret', 'auth', 'foreign-command', 'notification', 'direct-fetch', 'javascript-link', 'external-link', 'css-escape', 'css-image-set']:
                 assert results[name]['ok'] is False, f'{name} must be refused: {results.get(name)}'
             assert results['direct-image']['value'] == 'image blocked', results['direct-image']
             assert 'capabilit' in results['write']['error'] or 'allowed' in results['write']['error'], results['write']
@@ -246,7 +250,7 @@ async def main():
             print('PASS notifications.write is granted explicitly and posts a real notification', flush=True)
 
             # Disabling the plugin stops its sandbox and revokes the scoped token it held, not just the UI.
-            held = await page.evaluate("Environment.pluginToken(['notifications.write'])")
+            held = await page.evaluate("Environment.pluginToken(['notifications.write'], {owner: 'notifier'})")
             assert held, 'the host had issued a token to the plugin'
             await page.evaluate("PluginStore.setEnabled('notifier', false); Extensions.reload()")
             await page.wait_for_timeout(400)
@@ -318,6 +322,23 @@ async def main():
             await page.click('#obfuscated')
             await page.wait_for_timeout(200)
             assert await page.title() != 'pwned'
+            assert await page.locator('#forged-command').get_attribute('data-ext-command') is None
+            assert await page.locator('#forged-command').get_attribute('data-menu') is None
+            await page.click('#forged-command')
+            assert await page.evaluate("PluginStore.storage('victim').get('marked')") is None
+            await page.click('#own-command')
+            await page.wait_for_function("PluginStore.storage('granted').get('own-command') === true")
+            assert await page.locator('#view template').count() == 0
+            passive = await page.evaluate(r"""() => Extensions.sanitize(
+              '<svg><image href="https://example.test/leak"/><animate attributeName="href" values="javascript:alert(1)"/></svg>' +
+              '<p style="background:u\\72l(https://example.test/leak)">text</p>' +
+              '<input type="image" src="https://example.test/input">' +
+              '<svg><feImage href="https://example.test/filter"/><rect fill="url(https://example.test/fill)"/></svg>' +
+              '<audio src="https://example.test/leak"></audio>')""")
+            assert '<image' not in passive and '<animate' not in passive and '<audio' not in passive, passive
+            assert 'style=' not in passive, passive
+            assert 'https://' not in passive, passive
+            print('PASS passive plugin HTML cannot dispatch host commands or load active content; own commands work', flush=True)
             print('PASS plugin page HTML is sanitized (no script, style, or obfuscated javascript: link)', flush=True)
 
             assert not errors, errors

@@ -249,7 +249,7 @@ document.addEventListener('keydown', async event => {
 });
 
 function previewSVG(graph) {
-  const map = Editor.nodeMap(graph),
+  const map = Graph.nodeMap(graph),
     groupsById = new Map(graph.groups.map(g => [g.id, g]));
   // Everything inside a collapsed Complex Node is drawn as that one node (the outermost one wins).
   const collapsed = graph.complex.filter(c => c.collapsed).sort((x, y) => x.depth - y.depth),
@@ -289,7 +289,7 @@ function previewSVG(graph) {
   const endpoint = (id, port, direction) => {
     let at = id;
     try {
-      at = Editor.resolve(map, id, port, direction)[0];
+      at = Graph.resolve(map, id, port, direction)[0];
     } catch {
       /* dangling port */
     }
@@ -303,12 +303,7 @@ function previewSVG(graph) {
       const a = positions.get(from),
         b = positions.get(to);
       if (!a || !b) return '';
-      const x1 = a.x + a.w,
-        y1 = a.y + 20,
-        x2 = b.x,
-        y2 = b.y + 20,
-        d = Math.max(40, Math.abs(x2 - x1) / 2);
-      return `<path d="M${x1} ${y1} C${x1 + d} ${y1} ${x2 - d} ${y2} ${x2} ${y2}"/>`;
+      return `<path d="${wirePath({x: a.x + a.w, y: a.y + 20}, {x: b.x, y: b.y + 20}, {wire_style: 'bezier', wire_curve: 50})}"/>`;
     })
     .join('');
   const frames = graph.groups

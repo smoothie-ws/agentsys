@@ -169,15 +169,27 @@ function installPluginDialog() {
     if (!file) return;
     try {
       const packet = JSON.parse(await file.text());
-      const plugin = await Extensions.install(packet);
-      await reloadPlugins();
-      $('#modal').close();
-      toast('Plugin installed in this browser.');
-      await go('/plugins/' + encodeURIComponent(plugin.id));
+      reviewPluginPackage(packet, file.name, async () => {
+        const plugin = await Extensions.install(packet, {approveCapabilities: true});
+        await reloadPlugins();
+        await go('/plugins/' + encodeURIComponent(plugin.id));
+      });
     } catch (error) {
       fail(error);
     }
   });
+}
+
+function reviewPluginPackage(packet, source, apply) {
+  const record = PluginManifest.normalizePackage(packet);
+  const previous = PluginStore.get(record.id);
+  const added = record.capabilities.filter(capability => !previous || !PluginCapabilities.allows(previous.capabilities, capability));
+  const dangerous = capability => /(?:\.write$|^run\.start$|^net\.fetch:|^secrets\.use:)/.test(capability);
+  dialog(previous ? 'Review plugin update' : 'Review plugin installation',
+    `<h3>${esc(record.title)} ${esc(record.version)}</h3><p>Author: ${esc(record.author || 'Not specified')}</p><p>Source: ${esc(source)}</p>
+      <p>Requested permissions:</p><ul>${record.capabilities.map(capability => `<li${dangerous(capability) ? ' class="form-error"' : ''}>${esc(capability)}${added.includes(capability) ? ' (new)' : ''}</li>`).join('')}</ul>
+      <p>Write permissions can change server data. Run, network and secret permissions can execute graphs and contact the named services. Cancel keeps the installed version and its permissions.</p>`,
+    async () => { await apply(); return true; }, previous ? 'Approve update' : 'Install');
 }
 
 function exportPlugin(id) {
@@ -202,11 +214,12 @@ function updatePluginDialog(plugin) {
       const packet = JSON.parse(await file.text());
       if ((packet.manifest?.id || packet.id) !== plugin.id)
         throw new Error(`This package is for ${packet.manifest?.id || packet.id}, not ${plugin.id}.`);
-      const updated = await Extensions.update(plugin.id, packet);
-      await reloadPlugins();
-      $('#modal').close();
-      toast(`Updated to ${updated.version}.`);
-      await render();
+      reviewPluginPackage(packet, file.name, async () => {
+        const updated = await Extensions.update(plugin.id, packet, {approveCapabilities: true});
+        await reloadPlugins();
+        toast(`Updated to ${updated.version}.`);
+        await render();
+      });
     } catch (error) {
       const output = $('[data-form-error]', $('#modal'));
       if (output) {
@@ -217,9 +230,17 @@ function updatePluginDialog(plugin) {
   });
 }
 
-async function deployPlugin(plugin) {
+async function deployPlugin(plugin, confirmed = false) {
   if (!plugin.enabled) {
     toast('Turn the plugin on before deploying its resources.', true);
+    return;
+  }
+  if (!confirmed) {
+    const plan = await Extensions.deploymentPlan(plugin.id);
+    dialog('Deployment plan', `<p>Active server: ${esc(Environment.active()?.name || '')}. Operations are saved separately; retrying resumes missing resources.</p>
+      <ul>${plan.actions.map(item => `<li>${esc(item.action)}: ${esc(item.kind)} ${esc(item.name)} ${esc(item.reason || '')}</li>`).join('')}</ul>
+      <p>Required permissions: ${esc(plan.permissions.join(', '))}</p><p class="form-error" data-form-error hidden></p>`,
+    async () => { await deployPlugin(plugin, true); return true; }, 'Deploy');
     return;
   }
   const result = await Extensions.deploy(plugin.id);
@@ -298,9 +319,10 @@ async function pluginPage(view, route) {
         source: form.elements.source.value,
         capabilities: readCapabilities(form),
       };
-      return Extensions.update(plugin.id, changed).then(() => {
+      return reviewPluginPackage(changed, 'Local editor', async () => {
+        await Extensions.update(plugin.id, changed, {approveCapabilities: true});
         toast('Plugin saved.');
-        return go('/plugins/' + encodeURIComponent(plugin.id), true);
+        await go('/plugins/' + encodeURIComponent(plugin.id), true);
       });
     } catch (error) {
       fail(error);

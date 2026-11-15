@@ -91,3 +91,12 @@ uninstall). `tests/browser_plugin_platform.py` covers install → update → dis
 recovery, uninstall → reinstall, dependency shutdown, eight enable/disable cycles, environment switches and a plugin
 frame that is gone after disable. `tests/browser_plugin_security.py` covers activation failure isolation and immediate
 token revocation.
+
+## Credential and request ownership
+
+Each sandbox owner receives a separate token even when another plugin has the same grants. Concurrent issuance
+for one owner joins one request; disabling a plugin aborts its pending API requests and revokes its credential.
+If issuance finishes after disposal, the token is revoked without sending the queued operation. Completed server
+side effects are not rolled back. A server switch rejects old work and revokes at the original URL, including
+when the saved environment has been removed. Expired tokens renew once as scoped tokens; an owner credential
+is never substituted. A missing token endpoint or missing identity binding refuses the operation and asks for a server upgrade.

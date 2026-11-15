@@ -106,3 +106,12 @@ workflow and the External Integration node.
 
 The reference tests use `browser_context` and per-run temporary folders; they do not rely on the developer's existing
 environment list.
+
+## Independent products and CI
+
+`python tests/browser_plugin_certification.py` exercises Integration Studio and Graph Developer Tools,
+permission review/cancel, export to a fresh client, bearer secrets, lifecycle metrics, headless execution
+and mobile reconnect. `browser_suite.py` includes both plugin platform and certification tests by default.
+CI runs plugin platform, certification and security scenarios on Chromium, Firefox and WebKit,
+plus Node 22/24 on Linux/Windows. Its logs are uploaded as artifacts. Remote run results must be
+checked separately from local results; see [the RC matrix](../PLUGIN-RELEASE-CANDIDATE.md).

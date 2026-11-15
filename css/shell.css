@@ -302,7 +302,7 @@ main {
   transition: none;
 }
 .subnav-head {
-  display: flex;
+  display: none;
   align-items: center;
   justify-content: space-between;
   flex: none;
@@ -973,8 +973,6 @@ main {
       color-mix(in srgb, var(--ok) 10%, var(--background))
     );
 }
-
-.subnav-head { display: none; }
 
 /* ----- Plugin contributions (js/app/extensions.js) -----
    The tools a client.js registers: toolbar buttons in the top strip, sidebar sections, dashboard cards. */

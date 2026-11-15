@@ -366,13 +366,3 @@ function buildSnapshot(project, workflow, doc, structure = false) {
   snapshot.diagnostics = structure ? [] : diagnostics(snapshot, schemaOf);
   return snapshot;
 }
-/** True when `group` sits somewhere below the group `ancestor`. */
-function isInside(byId, group, ancestor) {
-  const seen = new Set();
-  for (let g = byId.get(group.parent); g; g = byId.get(g.parent)) {
-    if (seen.has(g.id)) throw bad('Groups cannot contain cycles');
-    seen.add(g.id);
-    if (g.id === ancestor) return true;
-  }
-  return false;
-}

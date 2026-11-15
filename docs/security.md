@@ -80,15 +80,17 @@ The combined server and the standalone client serve only `index.html` and the `j
 and `client-plugins/` trees. Server code (`js/backend/`, `js/storage/db.js`, `js/model/executor.js`, `bin/`,
 `server/`, `legacy/`) is never served. A request path containing a colon, backslash or NUL is refused before the
 lookup: on NTFS, `file.js::$DATA` would otherwise read a file past the server-only pattern. Traversal, encoded
-separators, stream suffixes, Windows 8.3 aliases (`BACKEN~1`) and trailing dots/spaces are covered by
+separators, stream suffixes, Windows case variants, 8.3 aliases (`BACKEN~1`), trailing dots/spaces and public-looking symlinks are refused by
+the common `server/static-assets.js` resolver. Both the requested and real paths must be public. They are covered by
 `tests/static-serving.test.js` and `tests/server.test.js`.
 
 ## Script sandbox
 
 Scripts run in worker threads with frozen intrinsics, no direct filesystem or network access, and only the
 checked `agentsys()` API. Generated code is quarantined; writes from a Script cannot grant themselves library
-permissions. Stop aborts the signal, and late writes after Stop or deletion are rejected. These mechanisms were
-not rewritten in this cycle; their regression tests still pass.
+permissions. Stop aborts the signal, and late writes after Stop or deletion are rejected. Host callbacks return only primitives; exceptions are rebuilt in the Script realm. Timer argument conversion
+happens there as well, so a Node TypeError cannot expose its host Function constructor. This boundary has
+a real-Worker regression test in `tests/permissions.test.js`.
 
 ## Client plugin isolation
 
@@ -159,3 +161,33 @@ is the plugin's. See [plugins.md](plugins.md).
 - A plugin's `graph.write` (or `library.write`) is a real write to the user's data. Capabilities bound the
   plugin's reach; they do not make an untrusted plugin safe to install.
 - No multi-user roles, no per-user audit log. These are future work.
+
+## Finalization findings and operational scope
+
+Scoped-token 401 answers never trigger owner-session renewal or an owner-authenticated retry. A token issuance
+failure fails closed (except an explicitly unsupported/404 endpoint). Credentials are owned per sandbox, not
+shared by equal grants. The request lifecycle and revocation races are covered by `plugin-sandbox.test.js` and
+`environments.test.js`.
+
+Refused redirect/oversize HTTP responses are aborted in `finally`, including when only headers have arrived.
+Pinned response failures destroy both the input stream and decompressor. Malformed storage transactions are
+validated as a whole before any write; unrelated invalid filename escapes cannot disable startup or scanning.
+
+Use a supported Node LTS release; Node 20 is end-of-life according to the
+[Node release schedule](https://nodejs.org/en/about/previous-releases). The Worker/VM and capability checks are
+defence in depth, not an OS security container. Node explicitly states that
+[`node:vm` is not a security mechanism](https://nodejs.org/api/vm.html). Do not treat this single-operator MVP as
+safe hostile multi-tenant hosting: use a dedicated OS account/container/VM and restrict egress when running
+untrusted projects. The discovered host-exception escape is fixed, but tests do not prove absence of every V8/VM escape.
+
+Event streams disconnect a subscriber when `write()` reports backpressure; reconnection reloads current state
+rather than retaining an unbounded event queue. This is a transport resource rule, not an execution quota.
+With `--trust-proxy`, sign-in throttling uses the rightmost address appended by the last reverse proxy, never
+an untrusted prefix. Keep the backend inaccessible directly and sanitize forwarding headers at the last proxy
+when using multiple proxies. This option does not discover or authenticate proxy topology.
+
+Owner credentials are keyed by both saved environment id and normalized server URL in sessionStorage. Editing
+an address cannot forward either the old credential to the new server or a new credential to the old server
+while pending edits are saved. Token forms are blank; users must explicitly enter credentials for a new URL.
+Revocation is best-effort: a server-issued token whose response was lost before the host learned its value
+expires at the server TTL and remains subject to the existing token-map cap.

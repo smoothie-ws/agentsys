@@ -1,3 +1,5 @@
+> Historical report. For the current architecture, measurements and verified results, see [Architectural refactoring](docs/audits/architecture-refactoring/REPORT.md). The preceding hardening cycle is recorded in [MVP finalization](docs/audits/mvp-finalization/REPORT.md).
+
 # AgentSys platform refactoring — report
 
 Branch: `platform/server-client`, based on `main` at `7cca21e`.

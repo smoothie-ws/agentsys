@@ -107,6 +107,29 @@ test('a response over the limit is refused without buffering it all', async () =
   }
 });
 
+test('refusing headers also closes an unfinished redirect or oversized response body', async () => {
+  let closed = 0;
+  const target = http.createServer((req, res) => {
+    res.on('close', () => closed++);
+    res.writeHead(req.url === '/redirect' ? 302 : 200, req.url === '/redirect'
+      ? {Location: '/elsewhere'} : {'Content-Length': '3000000'});
+    res.write('unfinished'); // Deliberately keep the response open after fetch has received its headers.
+  });
+  const url = await listen(target);
+  try {
+    await withApi({}, async ({base}) => {
+      assert.equal((await net(base, {url: url + '/redirect'})).status, 403);
+      assert.equal((await net(base, {url: url + '/oversized'})).status, 400);
+      const deadline = Date.now() + 2000;
+      while (closed < 2 && Date.now() < deadline) await new Promise(resolve => setTimeout(resolve, 10));
+      assert.equal(closed, 2, 'both refused upstream responses were released before shutting down the API');
+    });
+  } finally {
+    target.closeAllConnections();
+    await new Promise(resolve => target.close(resolve));
+  }
+});
+
 test('a timeout and an abort both end the request', async () => {
   const target = localServer();
   const url = await listen(target);

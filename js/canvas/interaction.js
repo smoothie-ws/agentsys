@@ -640,7 +640,7 @@ function wireUnder(id) {
     const a = socketPoint(edge.source, 'out', edge.source_port),
       b = socketPoint(edge.target, 'in', edge.target_port);
     if (!a || !b || !insertPorts(node, edge)) continue;
-    const points = edgePoints(a, b);
+    const points = edgePoints(a, b, graphStyle);
     for (let i = 1; i < points.length; i++) {
       const [u, v] = [points[i - 1], points[i]],
         steps = Math.max(1, Math.ceil(Math.hypot(v.x - u.x, v.y - u.y) / 12));
@@ -916,7 +916,7 @@ function crossedEdges(a, b) {
     const p = socketPoint(edge.source, 'out', edge.source_port),
       q = socketPoint(edge.target, 'in', edge.target_port);
     if (!p || !q) continue;
-    const points = edgePoints(p, q);
+    const points = edgePoints(p, q, graphStyle);
     for (let i = 1; i < points.length; i++)
       if (segmentHitsRect(points[i - 1], points[i], rect)) {
         hits.push(edge.id);

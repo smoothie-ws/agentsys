@@ -75,6 +75,47 @@
     return 0;
   };
 
+  /** Read-only preview. Every mutation is checked again during deployment; this is not a transaction. */
+  async function plan(record, {request, force = false} = {}) {
+    const contributes = record.contributes || {}, actions = [], permissions = new Set();
+    const collections = (contributes.collections || []).length ? await request('GET', 'collections') : [];
+    const resources = (contributes.library || []).length ? await request('GET', 'resources') : [];
+    const projects = (contributes.workflows || []).length ? await request('GET', 'projects') : [];
+    for (const definition of contributes.collections || []) {
+      permissions.add('collections.read'); permissions.add('collections.write');
+      const existing = collections.find(item => item.name === definition.name);
+      const same = existing && checksum({title: existing.title, description: existing.description || '', schema: existing.schema}) ===
+        checksum({title: definition.title || definition.name, description: definition.description || '', schema: definition.schema || {type: 'object'}});
+      actions.push({kind: 'collection', name: definition.name, action: !existing ? 'create' : same || (!force && definition.strategy !== 'update') ? 'skip' : 'update'});
+    }
+    for (const node of contributes.library || []) {
+      permissions.add('library.read'); permissions.add('library.write');
+      const existing = resources.find(item => item.payload?.plugin?.id === record.id && item.payload.plugin.name === node.name) || resources.find(item => item.name === node.name);
+      let action = 'create', reason = '';
+      if (existing) {
+        if (existing.payload?.plugin?.id !== record.id) { action = 'conflict'; reason = 'Existing resource belongs to another owner.'; }
+        else if (!existing.payload.plugin.contentChecksum || checksum({...existing.payload, plugin: undefined}) !== existing.payload.plugin.contentChecksum) {
+          action = 'conflict'; reason = 'Resource was edited after deployment.';
+        } else if (compareVersions(existing.payload.plugin.version, record.version) > 0) { action = 'skip'; reason = 'A newer package deployed this resource.'; }
+        else {
+          const wanted = {name: node.name, code: String(node.code || ''), inputs: Array.isArray(node.inputs) ? node.inputs : [],
+            outputs: Array.isArray(node.outputs) ? node.outputs : [], grants: Array.isArray(node.grants) ? node.grants : ['graph.read'],
+            description: String(node.description || '').slice(0, 2000), folder: String(node.folder || '').slice(0, 200),
+            icon: node.icon, plugin: undefined};
+          action = existing.payload.plugin.version === record.version && existing.payload.plugin.checksum === checksum(wanted) ? 'skip' : 'update';
+        }
+      }
+      actions.push({kind: 'library', name: node.name, action, reason});
+    }
+    for (const template of contributes.workflows || []) {
+      permissions.add('graph.read'); permissions.add('graph.write');
+      const tag = `Deployed by the AgentSys plugin ${record.id} · ${template.name}`;
+      const existing = projects.find(item => item.description === tag || item.name === (template.project || `${record.title} templates`));
+      actions.push({kind: 'workflow', name: template.name, action: existing ? 'inspect' : 'create', reason: existing ? 'Existing workflow is preserved; only missing template elements may be created.' : ''});
+    }
+    return {actions, permissions: [...permissions], atomic: false, conflicts: actions.filter(item => item.action === 'conflict')};
+  }
+
   /**
    * Deploys (or re-deploys) one plugin's declared resources. Idempotent: the same version makes no duplicates, and
    * redeploying after a switch recreates only what the current server lacks. User edits to data are preserved.
@@ -177,6 +218,11 @@
           throw Object.assign(new Error(`“${existing.name}” belongs to the plugin "${existing.payload.plugin.id}"`), {
             code: 'resource_conflict',
           });
+        if (existing && !existing.payload?.plugin?.contentChecksum)
+          throw Object.assign(new Error(`“${existing.name}” has no deployment edit baseline; back it up and explicitly redeploy it.`), {code: 'resource_conflict'});
+        if (existing?.payload?.plugin?.contentChecksum &&
+            checksum({...existing.payload, plugin: undefined}) !== existing.payload.plugin.contentChecksum)
+          throw Object.assign(new Error(`“${existing.name}” was edited after deployment; it was kept.`), {code: 'resource_conflict'});
         // Another client may have deployed a newer version of this package. An older client must not silently
         // downgrade the node it finds; the newer definition stays and the older deployment reports why.
         if (existing?.payload?.plugin?.version && compareVersions(existing.payload.plugin.version, record.version) > 0) {
@@ -275,6 +321,12 @@
           }
         }
         const graph = await request('GET', `projects/${project.id}/workflow`, undefined, {workflow_id: workflow.id});
+        if (previous.workflow_id === workflow.id && previous.checksum) {
+          summary.skipped++;
+          if (previous.checksum !== checksum({nodes: template.nodes || [], run: template.run !== false}))
+            warnings.push(error('workflow_preserved', `Workflow "${key}" already exists; package changes were not applied to the user's graph.`, {kind: 'workflow', name: key}));
+          return;
+        }
         const placed = {};
         const siblings = (template.nodes || []).filter(node => node.library !== undefined);
         let offset = 0;
@@ -368,5 +420,5 @@
     return freshState(pluginId, environment);
   }
 
-  return {STATE_VERSION, canonical, checksum, freshState, readState, deploy, status, forget};
+  return {STATE_VERSION, canonical, checksum, freshState, readState, plan, deploy, status, forget};
 });

@@ -123,3 +123,22 @@ continue.
 - A remote endpoint that transforms a secret (for example, returns it base64-encoded or split) can defeat the
   literal-value scrubber. The plugin never receives the stored value, but an untrusted endpoint can leak a derived
   value; treat a permitted host as trusted for the secrets you send to it.
+
+## Passive content boundary
+
+Plugin HTML keeps `data-command` and `data-args` for its own command buttons; other `data-*` attributes are
+removed before insertion. In particular, a package cannot forge `data-ext-command` or host menu/action attributes.
+The host decorates a validated command with the owning plugin id. Templates, active SVG elements, MathML and
+media elements are removed. Static SVG shapes and packaged raster images remain supported.
+
+Inline styles and `addStyles` reject CSS escapes, comments and resource-loading constructs (including
+`image-set`), in addition to `url`, imports and expressions. This deliberately narrows CSS syntax to prevent
+obfuscated network loads. Plugin styles can still affect application presentation; install only trusted UI packages.
+
+## RC identity and ownership
+
+Scoped tokens are bound to the host-supplied plugin identity, verified again on the server.
+Unsupported or identity-unaware servers fail closed; there is no owner-session fallback.
+Library definitions are shared reads, but scoped mutation requires the verified owner.
+Collections and ordinary projects remain shared data under their family capabilities.
+See [the full RC contract](plugin-rc-contract.md) for storage URL binding, deployment safeguards and limits.

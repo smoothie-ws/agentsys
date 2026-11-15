@@ -19,8 +19,8 @@ const PluginStore = (() => {
   })();
   const MAX_PLUGINS = 50;
   const ID = /^[A-Za-z0-9][A-Za-z0-9._-]{0,79}$/;
-  const Manifest = typeof PluginManifest === 'undefined' ? null : PluginManifest;
-  const Capabilities = typeof PluginCapabilities === 'undefined' ? null : PluginCapabilities;
+  const Manifest = PluginManifest;
+  const Capabilities = PluginCapabilities;
   const HOST_VERSION = '0.3.0';
   let loaded = null;
 
@@ -35,7 +35,7 @@ const PluginStore = (() => {
     for (const item of Array.isArray(list) ? list : []) {
       if (!item || !ID.test(item.id || '') || typeof item.source !== 'string') continue;
       try {
-        result.push(Manifest ? Manifest.migrateRecord(item) : item);
+        result.push(Manifest.migrateRecord(item));
       } catch {
         // A record this client cannot read no longer runs; keeping it would only fail on every reload.
       }
@@ -63,7 +63,7 @@ const PluginStore = (() => {
     main: item.main || 'plugin.js',
     files: item.files ? {...item.files} : {},
     assets: item.assets ? {...item.assets} : {},
-    capabilities: item.capabilities ? item.capabilities.slice() : Capabilities ? Capabilities.READ_ONLY.slice() : [],
+    capabilities: item.capabilities ? item.capabilities.slice() : Capabilities.READ_ONLY.slice(),
     origin: item.origin || 'installed',
     formatVersion: item.formatVersion || 1,
     author: item.author || '',
@@ -87,7 +87,6 @@ const PluginStore = (() => {
   });
 
   const capabilitiesOf = value => {
-    if (!Capabilities) return undefined;
     try {
       return Capabilities.normalize(value);
     } catch (error) {
@@ -97,7 +96,6 @@ const PluginStore = (() => {
 
   /** Validates a package and returns the record the store keeps. */
   const normalize = (value, {allowSource = true} = {}) => {
-    if (!Manifest) throw new ApiError('invalid_request', 'The plugin manifest module is not loaded.', 500);
     let record;
     try {
       record = Manifest.normalizePackage(value, {hostVersion: HOST_VERSION, apiVersion: Manifest.API_VERSION, allowSource});
@@ -118,9 +116,30 @@ const PluginStore = (() => {
     }
   };
   /** One storage scope per plugin and active environment. Reserved keys are host bookkeeping. */
+  function bindEnvironment(id, url) {
+    if (!id || !url) return;
+    // Bind the old id-only scope before an address can change. Existing data moves once, to its original server.
+    const key = 'agentsys-plugin-environment-bindings';
+    let bindings;
+    try { bindings = JSON.parse(localStorage.getItem(key) || '{}'); } catch { bindings = {}; }
+    if (!isObject(bindings)) bindings = {};
+    if (Object.hasOwn(bindings, id) && bindings[id] !== url) return;
+    bindings[id] = url;
+    localStorage.setItem(key, JSON.stringify(bindings));
+    const keys = Array.from({length: localStorage.length}, (_, index) => localStorage.key(index));
+    for (const old of keys) {
+      if (!old?.startsWith('agentsys-plugin-') || !old.includes('@' + id + ':')) continue;
+      const next = old.replace('@' + id + ':', '@' + id + '@' + encodeURIComponent(url) + ':');
+      if (localStorage.getItem(next) === null) localStorage.setItem(next, localStorage.getItem(old));
+      localStorage.removeItem(old);
+    }
+  }
+
   function storageFor(id, allowReserved) {
-    const server = typeof Environment !== 'undefined' ? Environment.active()?.id || 'none' : 'none';
-    const prefix = `agentsys-plugin-${id}@${server}:`;
+    const env = typeof Environment !== 'undefined' ? Environment.active() : null;
+    const server = env?.id || 'none';
+    bindEnvironment(server, env?.url);
+    const prefix = `agentsys-plugin-${id}@${server}${env?.url ? '@' + encodeURIComponent(env.url) : ''}:`;
     const safeKey = key => {
       const text = String(key).slice(0, 200);
       if (!allowReserved && text.startsWith('__agentsys:'))
@@ -204,7 +223,7 @@ const PluginStore = (() => {
      * Installs a new package or updates one in place. Dependencies and compatibility are checked before anything
      * is written. An update keeps the enabled state and the user data; activation is the host's next step.
      */
-    install(value, {allowDowngrade = false} = {}) {
+    install(value, {allowDowngrade = false, approveCapabilities = false} = {}) {
       read();
       const plugin = normalize(value);
       const index = loaded.findIndex(item => item.id === plugin.id);
@@ -215,6 +234,9 @@ const PluginStore = (() => {
       const now = Date.now();
       if (index >= 0) {
         const previous = loaded[index];
+        const added = plugin.capabilities.filter(capability => !Capabilities.allows(previous.capabilities, capability));
+        if (added.length && !approveCapabilities)
+          throw new ApiError('plugin_permissions_required', `This update requires approval for: ${added.join(', ')}.`, 409);
         if (!allowDowngrade && Manifest.compareVersions(plugin.version, previous.version) < 0)
           throw new ApiError(
             'invalid_request',
@@ -279,7 +301,6 @@ const PluginStore = (() => {
     export(id) {
       const item = this.record(id);
       if (!item) throw new ApiError('not_found', 'Plugin not found', 404);
-      if (!Manifest) throw new ApiError('internal_error', 'The plugin manifest module is not loaded.', 500);
       const packet = Manifest.exportPackage(item);
       packet.exportedAt = new Date().toISOString();
       packet.exportedBy = 'AgentSys client ' + HOST_VERSION;
@@ -293,6 +314,7 @@ const PluginStore = (() => {
     hostStorage(id) {
       return storageFor(id, true);
     },
+    bindEnvironment,
     clear(id) {
       // Remove every environment scope of this plugin.
       const prefix = `agentsys-plugin-${id}`;

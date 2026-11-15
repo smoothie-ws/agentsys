@@ -23,11 +23,10 @@ const environmentStatusBadge = (state, envId) => {
 };
 
 function environmentForm(env = {}) {
-  const token = env.id ? Environment.tokenOf(env.id) : '';
   return `<form id="environment-form" class="stack">
     ${field('Name', `<input name="name" required maxlength="80" value="${esc(env.name || '')}" placeholder="Home server" autocomplete="off">`)}
     ${field('Server address', `<input name="url" required inputmode="url" value="${esc(env.url || displayServerURL())}" placeholder="https://agentsys.example.com" autocomplete="url"><span class="field-help">The base URL of an AgentSys Server. No path, no trailing slash needed.</span>`)}
-    ${field('Token', `<input name="token" type="password" value="${esc(token)}" autocomplete="off" spellcheck="false" placeholder="${env.id ? 'Leave empty to keep the saved token' : 'Only if the server requires one'}"><span class="field-help">Kept for this browser tab only. It is exchanged for an HttpOnly session cookie.</span>`)}
+    ${field('Token', `<input name="token" type="password" value="" autocomplete="off" spellcheck="false" placeholder="${env.id ? 'Leave empty to keep the saved token' : 'Only if the server requires one'}"><span class="field-help">Kept for this tab and server address. Enter a token again when the address changes.</span>`)}
     <p class="form-error" data-form-error hidden></p>
     <div class="button-row"><button type="submit" class="primary">${env.id ? 'Save changes' : 'Add server'}</button><button type="button" data-test>Test connection</button></div>
   </form>`;
@@ -136,9 +135,12 @@ function environmentActions(id) {
           `Remove the saved connection “${env.name}”? The server and its data are not touched.`,
           async () => {
             try {
+              if (Environment.active()?.id === env.id) {
+                const next = Environment.list().find(item => item.id !== env.id);
+                await Environment.setActive(next.id);
+                if (Environment.active()?.id === env.id) return;
+              }
               Environment.remove(env.id);
-              if (Environment.active()?.id === env.id)
-                await Environment.setActive(Environment.list()[0]?.id).catch(() => {});
               await go('/environments', true);
             } catch (error) {
               fail(error);

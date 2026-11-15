@@ -54,3 +54,8 @@ See the sections above for Run/Pause/Resume/Stop and [Permissions](permissions.m
 To invoke a signal input of a dynamically placed Custom Node, POST `{node_ids:[node_id],input_port:"in",wait:true}` to that existing execution route. The native interpreter resolves the interface binding, sends and joins a signal wave, then returns that invocation's normal outputs in `dispatch_outputs[node_id]`. No `input_port` preserves the existing Run/evaluation behavior. Library / Graph / Invoke Node wraps this call using implicit current project/workflow context. Placement and data wiring remain separate checked graph edits.
 
 `/api/openapi.json` is generated from the registered routes, their body examples, query fields and capability declarations. User-only `node-permissions/{node_id}` PUT authorizes a standalone Script without changing code or requiring Developer mode.
+
+The file-store adapter (`server/file-store.js`) owns redo recovery and sidecars. A malformed transaction is set
+aside before any of its keys are applied. An operational write failure during a valid redo can still leave a
+partially applied record under `.transaction.json.invalid`; inspect/repair it before assuming the backup is complete.
+A redo journal provides recoverable application commits, not database-grade filesystem/power-loss transactions.

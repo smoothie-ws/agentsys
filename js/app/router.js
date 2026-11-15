@@ -123,6 +123,8 @@ async function render() {
   closePopup();
   document.body.dataset.page = route.page;
   view.className = 'view-' + route.page;
+  view.setAttribute('aria-busy', 'true');
+  view.inert = true;
   try {
     await (PAGES[route.page] || showMissingPage)(view, route);
   } catch (error) {
@@ -145,6 +147,8 @@ async function render() {
     $('[data-retry]', view)?.addEventListener('click', () => render().catch(fail));
   }
   if (revision !== renderRevision) return;
+  view.removeAttribute('aria-busy');
+  view.inert = false;
   app.currentURL = routeURL();
   renderSidebar();
   Tabs.render(); // an editor has opened its own tab; a page has none, so no tab is the open one

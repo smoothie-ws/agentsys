@@ -22,7 +22,7 @@ const ASSET_TYPES = {
   '.webp': 'image/webp',
 };
 const text = (file, limit = 400000) => {
-  const value = fs.readFileSync(file, 'utf8');
+  const value = fs.readFileSync(file, 'utf8').replace(/\r\n?/g, '\n');
   if (value.length > limit) throw new Error(`${file} is larger than ${limit} characters`);
   return value;
 };

@@ -1,23 +1,5 @@
 // The current graph is indexed for port lookup. Nodes are interpreted on demand; the graph stays live.
 'use strict';
-/**
- * Follows Complex Node ports down to the node ports they are bound to: [[node ID, port ID], ...].
- * One unbound port stays on the wrapper; only an input may be bound to several ports. The editor
- * wraps its errors as ApiError; the interpreter uses the messages as they are. The Worker source
- * carries this function (js/backend/scripts.js), so it must not use anything outside its arguments.
- */
-function resolvePort(nodes, nodeId, portId, direction, seen = new Set()) {
-  const address = nodeId + '|' + portId;
-  if (seen.has(address)) throw Error('Cyclic interface binding');
-  const node = nodes.get(nodeId);
-  if (!node) throw Error('Node not found: ' + nodeId);
-  if (node.kind !== 'complex') return [[nodeId, portId]];
-  const item = node.interface[direction].find(p => p.id === portId);
-  if (!item) throw Error('Complex Node port not found: ' + portId);
-  return item.bound?.length
-    ? item.bound.flatMap(b => resolvePort(nodes, b.node_id, b.port_id, direction, new Set(seen).add(address)))
-    : [[nodeId, portId]];
-}
 function createGraphView(document, {context = {}} = {}) {
   const key = (node, port) => node + '|' + port;
   const isSignal = type => type === 'signal',
@@ -416,8 +398,6 @@ function createGraphView(document, {context = {}} = {}) {
   };
 }
 
-const IMAGE_DISPLAY = /^data:image\/(?:png|jpeg|gif|webp);base64,[A-Za-z0-9+/]*={0,2}$/;
-const DISPLAY_PARTS = '\u001e';
 function checkRoots(roots, nodes) {
   if (!Array.isArray(roots) || roots.some(id => typeof id !== 'string' || !nodes.has(id)))
     throw bad('node_ids must name nodes of this workflow');

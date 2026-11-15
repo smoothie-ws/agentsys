@@ -10,6 +10,36 @@ const {readSource} = require('../tools/plugin-pack');
 
 const ROOT = path.join(__dirname, '..', 'client-plugins', 'reference');
 const slugs = ['ui-showcase', 'library-pack', 'structured-data', 'external-integration', 'security-test'];
+
+for (const slug of ['integration-studio', 'graph-developer-tools']) {
+  test(`${slug} ships a reproducible standalone package using only package-local imports`, () => {
+    const directory = path.join(ROOT, '..', slug);
+    const record = Manifest.normalizePackage(readSource(directory));
+    const packet = JSON.parse(fs.readFileSync(path.join(directory, `${slug}-1.0.0.agentsys-plugin.json`), 'utf8'));
+    assert.equal(Manifest.fingerprint(record), packet.checksum);
+    assert.deepEqual(Manifest.exportPackage(Manifest.normalizePackage(packet)), Manifest.exportPackage(record));
+    for (const source of [record.source, ...Object.values(record.files)]) {
+      assert.doesNotMatch(source, /\bdocument\.|\bwindow\.|\blocalStorage\b|\bsessionStorage\b/);
+      for (const match of source.matchAll(/require\(['"]([^'"]+)['"]\)/g)) assert.match(match[1], /^\.\//);
+    }
+  });
+}
+
+test('source packaging is identical for LF and CRLF checkouts', () => {
+  const os = require('node:os');
+  const dir = fs.mkdtempSync(path.join(os.tmpdir(), 'agentsys-package-lines-'));
+  try {
+    fs.writeFileSync(path.join(dir, 'plugin.json'), JSON.stringify({id: 'line-test', name: 'Lines', version: '1.0.0', api: 2}));
+    const main = path.join(dir, 'main.js');
+    fs.writeFileSync(main, 'exports.activate = api => {\n  return undefined;\n};\n');
+    const lf = Manifest.exportPackage(Manifest.normalizePackage(readSource(dir)));
+    fs.writeFileSync(main, fs.readFileSync(main, 'utf8').replace(/\n/g, '\r\n'));
+    const crlf = Manifest.exportPackage(Manifest.normalizePackage(readSource(dir)));
+    assert.deepEqual(crlf, lf);
+  } finally {
+    fs.rmSync(dir, {recursive: true, force: true});
+  }
+});
 const expectedIds = [
   'reference-ui-showcase',
   'reference-library-pack',

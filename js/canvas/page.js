@@ -40,7 +40,6 @@ PAGES.workflow = async (view, route) => {
     groups: new Map(),
     complex: new Map(),
     hidden: {nodes: new Set(), groups: new Set(), folded: new Set(), holders: new Map()},
-    nodeMap: new Map(),
     elements: new Map(),
     pos: new Map(),
     sockets: new Map(),

@@ -26,6 +26,9 @@ shared/
 server/
   manifest.js        the fixed server script list (no index.html reading, no plugin discovery)
   api-server.js      createApiServer(): API-only composition
+  file-store.js      canonical files, sidecars, redo recovery, external-change fingerprints
+  credentials.js     per-server session/token maps, expiry and revocation
+  static-assets.js   public asset resolution and shared client headers (no execution/storage dependency)
   migrate.js         conservative server-plugin data migration
 client/ (static)   js/app, js/pages, js/canvas, js/inspector, js/model (editing only), css, index.html
 bin/
@@ -46,7 +49,7 @@ js/model/executor.js server-only interpreter
 - HTTP API under `/api`, versioned by `protocol` in `GET /api/meta` and the `X-Agentsys-Protocol` header.
 - Fixed feature set. **No server plugins**: no file below `data/plugins/` is executed or scanned by the
   server. User code runs only through the graph runtime (Script nodes in worker threads). The removed host and
-  routes are kept, unloaded, under `legacy/`.
+  routes are available in git history; executable legacy copies are no longer shipped.
 - Owns definitions, Library resources, generic collections, secrets, runtime and permissions.
 - Owns execution. Closing a browser, or all browsers, does not pause or stop a workflow.
 - Persists JSON below `--data`. JavaScript stacks, timers and pending external work do not survive a restart.
@@ -58,8 +61,10 @@ See [server.md](server.md).
 ## Client
 
 - Static files: HTML, CSS and browser JavaScript. There is no backend, storage layer or interpreter in it.
-- Loads `js/model/{schema,types,snapshot,documents,editor,evaluate}.js` for editing, validation and previews.
-  `js/model/executor.js`, `js/backend/**` and `js/storage/db.js` are never sent to a browser.
+- Loads `js/model/graph.js` for read-only snapshot lookup, binding resolution, event names and import defaults,
+  and `js/model/types.js` for presentation and wire compatibility. Graph mutations and snapshot construction
+  run only on the server. `schema`, `documents`, `editor`, `snapshot`, `evaluate` and `executor` are server-only
+  assets, as are `js/backend/**` and `js/storage/db.js`.
 - All server reads and writes go through one transport (`js/app/environments.js`). No component calls a fixed
   `/api` URL.
 - Keeps only client concerns locally: environments (URLs and names), per-tab tokens, UI state, layout and
@@ -106,8 +111,9 @@ Compatibility matters more than renaming routes.
   an HttpOnly `SameSite` session cookie, so EventSource-like streaming and reloads do not expose it to scripts.
 - Scripts still need both the enclosing instance grants and the project policy. `plugins.call` is accepted in
   old projects for compatibility but grants nothing now.
-- Client plugins are not a security principal: they call the same API as the user and are installed at the
-  user's risk. See [plugins.md](plugins.md) and [security.md](security.md).
+- Client plugins use distinct server-enforced scoped bearer tokens. Host checks and token checks both apply.
+  Only a server returning 404 for token issuance uses legacy host-only checks; other failures stop the call.
+  See [plugins.md](plugins.md) and [security.md](security.md).
 
 ## State ownership
 
@@ -135,6 +141,23 @@ flush edits to the old server, abort its requests, close its stream, clear per-s
 the new server. Responses from the old generation are rejected with `stale_environment`.
 
 ## Compatibility
+
+The refactoring responsibility/dependency inventory is in
+[the architectural worklog](audits/architecture-refactoring/WORKLOG.md). Ordered manifests still provide
+classic-script dependencies; the source graph is not an ES-module graph. Canvas and Inspector share the
+current page's `W` object. It contains presentation indexes and transient edits, not an executable graph or
+an independently authoritative backend model.
+
+Rendered plugin contributions have one owner (`PluginViews`): page, Library, resource, home, settings and
+Inspector registrations live in one list. Navigation and page/section lists are projections; disabling a plugin
+removes one owner's entries. `extensions.js` owns sandbox lifecycle, commands and explicit toolbar/menu links;
+`plugin-frame.js` supplies the isolated SDK program; `plugin-content.js` remains the sanitization boundary.
+Failures are recorded once in the host's error map. Scoped credentials remain owned by the environment
+transport and revoked when a sandbox is disposed or an environment generation ends.
+
+The HTTP server has one SSE subscriber map and cleanup path for both `/api/events` and legacy
+`/__data/events`. Their public encodings remain distinct. Backpressure ends a subscription, including during
+the handshake. The file watcher uses the actual subscriber count; both encodings observe external changes.
 
 Existing project data uses `agentsys.text/1` graph files and JSON keys; the engine and format were not
 rewritten. Existing Library nodes, including nodes created by the old AI plugin, remain ordinary graphs and

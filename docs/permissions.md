@@ -17,3 +17,7 @@ Checked HTTP requests use `agentsys('POST','net',{url,method,headers,body,timeou
 A project can narrow its own network egress in addition to the server allowlist. `PUT projects/{id}/policy` accepts `{allow:[…], net:{allow:["api.example.com"], deny_private:true}}`; `net.allow` is a list of host patterns (port included, `*` allowed), and `deny_private` refuses loopback/private/link-local destinations for that project's Scripts. Omitting `net` keeps the existing egress policy; `net:null` returns to the server's policy. The check is applied to the Script's checked `net` call, after the capability layers, and never weakens the server list.
 
 Scripts run in isolated Workers with networking, imports, worker creation, host messaging and Node globals hidden. Node execution uses a separate VM realm inside the Worker. The inline runner is a trusted test harness; security tests use actual Workers.
+
+The host bridge reconstructs its errors in the Script realm; a Node callback exception must not expose host
+constructors. This is tested with real Worker timer failures. See [Security](security.md) for the distinction
+between capability isolation and OS isolation, and the deployment requirements for untrusted workloads.

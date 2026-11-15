@@ -202,6 +202,9 @@ route(
         throw new ApiError('network_error', 'The network request failed: ' + (error?.message || error), 502);
       } finally {
         clearTimeout(timer);
+        // A refused redirect or declared oversized response may still be streaming. Release it as well as
+        // successful requests; clearing the timeout alone leaves the socket and body alive indefinitely.
+        controller.abort();
         executionSignal?.removeEventListener('abort', abort);
       }
     }

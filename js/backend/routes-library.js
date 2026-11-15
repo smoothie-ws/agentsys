@@ -131,6 +131,10 @@ route(
       const claimed = c.body.plugin && isObject(c.body.plugin) ? String(c.body.plugin.id ?? '') : '';
       if (!owner || owner !== claimed)
         throw new ApiError('permission_denied', 'This Library node is not owned by that plugin; it was not changed.', 403);
+      if (!existing.payload.plugin.contentChecksum)
+        throw new ApiError('resource_conflict', 'This legacy Library node has no edit baseline. Back it up and explicitly redeploy it before updating.', 409);
+      if (existing.payload.plugin.contentChecksum !== resourceContentChecksum(existing.payload))
+        throw new ApiError('resource_conflict', 'This Library node was edited after deployment; preserve or duplicate those edits before updating.', 409);
     }
     if (items.some(item => item.name === name && item.id !== resourceId)) throw bad('A node with that name already exists.');
     const payload = scriptNodePayload({
@@ -151,6 +155,7 @@ route(
         name: String(c.body.plugin.name ?? name).slice(0, 100),
         version: String(c.body.plugin.version ?? '').slice(0, 40),
         checksum: String(c.body.plugin.checksum ?? '').slice(0, 80),
+        contentChecksum: resourceContentChecksum(payload),
       };
     }
     const saved = saveResource(c, items, resourceId, name, payload);

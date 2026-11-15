@@ -96,6 +96,39 @@ const plainServer = (request, tools) => {
   return {body: {}};
 };
 
+for (const failure of [401, 403, 429, 404, 'timeout', 'network']) {
+  test(`plugin token issuance fails closed: ${failure}`, async () => {
+    const {Environment, requests} = makeEnvironment(request => {
+      if (request.url.endsWith('/api/auth/plugin-session')) {
+        if (failure === 'timeout') throw Object.assign(new Error('timed out'), {name: 'TimeoutError'});
+        if (failure === 'network') throw new TypeError('connection lost');
+        return {status: failure, body: {error: {code: 'denied', message: 'denied'}}};
+      }
+      return plainServer(request);
+    });
+    Environment.save({id: 'local', name: 'Local', url: 'http://client.test', token: 'owner-token'});
+    await Environment.start();
+    await assert.rejects(Environment.pluginToken(['graph.write'], {owner: 'attacker'}));
+    assert.equal(requests.filter(r => r.method === 'POST' && r.url.endsWith('/api/projects')).length, 0);
+    await Environment.setActive('local', {reconnect: false});
+  });
+}
+
+test('an identity-unaware server token is revoked and never used', async () => {
+  const revoked = [];
+  const {Environment} = makeEnvironment(request => {
+    if (request.url.endsWith('/api/auth/plugin-session')) {
+      if (request.method === 'DELETE') { revoked.push(request.headers.Authorization); return {body: {revoked: true}}; }
+      return {body: {token: 'pst_unbound', expires_in: 3600}};
+    }
+    return plainServer(request);
+  });
+  await Environment.start();
+  await assert.rejects(Environment.pluginToken(['library.write'], {owner: 'first'}), error => error.code === 'plugin_identity_unsupported');
+  assert.deepEqual(revoked, ['Bearer pst_unbound']);
+  await Environment.setActive('local', {reconnect: false});
+});
+
 test('start() discovers the server, proves the session and opens one event stream', async () => {
   const {Environment, requests} = makeEnvironment(plainServer);
   assert.equal(await Environment.start(), true);
@@ -130,7 +163,7 @@ test('a token stays in this tab, is sent as a bearer header and is exchanged for
   const saved = Environment.save({name: 'Remote', url: 'https://agentsys.example.com', token: 'good'});
   assert.equal(saved.id.startsWith('env-'), true);
   assert.equal(await Environment.setActive(saved.id), true);
-  assert.equal(sessionStorage.getItem('agentsys-token:' + saved.id), 'good');
+  assert.equal(sessionStorage.getItem('agentsys-token:' + saved.id + '@' + encodeURIComponent(saved.url)), 'good');
   assert.equal([...localStorage._data.keys()].some(key => key.startsWith('agentsys-token')), false, 'a token never reaches localStorage');
   const session = requests.find(request => request.url.includes('/api/auth/session'));
   assert.equal(session.method, 'POST');
@@ -163,6 +196,37 @@ test('a 401 renews the session once and repeats the same read', async () => {
   assert.equal(requests.filter(request => request.url.includes('/api/auth/session')).length >= 2, true);
   // A second failure would surface as unauthorized instead of looping.
   Environment.sessionStorage;
+});
+
+test('API renewal retries the original encoded body even if the caller mutates its object', async () => {
+  const sent = [];
+  let encodings = 0;
+  const body = {name: 'Original', nested: {value: 1}};
+  Object.defineProperty(body, 'toJSON', {value() {
+    encodings++;
+    return {name: this.name, nested: this.nested};
+  }});
+  const {Environment, context} = makeEnvironment((request, tools) => {
+    if (request.method === 'POST' && request.url.endsWith('/api/projects')) {
+      sent.push(request.body);
+      if (sent.length === 1) {
+        body.name = 'Changed later';
+        body.nested.value = 2;
+        return {status: 401, body: {error: {code: 'unauthorized', message: 'Renew the session'}}};
+      }
+      return {body: {id: 'p1'}};
+    }
+    return plainServer(request, tools);
+  });
+  const remote = Environment.save({name: 'Remote', url: 'https://server.test', token: 'owner-token'});
+  assert.equal(await Environment.setActive(remote.id), true);
+  context.document = {addEventListener() {}};
+  vm.runInContext(fs.readFileSync(path.join(ROOT, 'js/app/helpers.js'), 'utf8'), context);
+  const api = vm.runInContext('api', context);
+  assert.equal((await api('projects', {method: 'POST', body})).id, 'p1');
+  const original = JSON.stringify({name: 'Original', nested: {value: 1}});
+  assert.deepEqual(sent, [original, original]);
+  assert.equal(encodings, 1, 'body is encoded once for the entire request lifecycle');
 });
 
 test('a network failure is never retried, and a mutation is not repeated', async () => {
@@ -323,7 +387,7 @@ test('a plugin token is minted once per environment and capability set, and revo
         return {body: {revoked: true}};
       }
       mints++;
-      return {body: {token: 'pst_' + mints, expires_in: 3600, capabilities: ['graph.read']}};
+      return {body: {token: 'pst_' + mints, expires_in: 3600, plugin_id: JSON.parse(request.body).plugin_id, capabilities: ['graph.read']}};
     }
     return {body: []};
   });
@@ -344,7 +408,7 @@ test('a plugin token is minted once per environment and capability set, and revo
   await Environment.setActive(second.id, {reconnect: false});
 });
 
-test('a server without plugin tokens is remembered instead of asked on every plugin call', async () => {
+test('a server without plugin tokens refuses plugins without owner fallback', async () => {
   let posts = 0;
   const {Environment} = makeEnvironment(request => {
     if (request.url.includes(API)) return {body: meta};
@@ -357,8 +421,179 @@ test('a server without plugin tokens is remembered instead of asked on every plu
     return {body: []};
   });
   await Environment.start();
-  assert.equal(await Environment.pluginToken(['graph.read']), null);
-  assert.equal(await Environment.pluginToken(['graph.read']), null);
-  assert.equal(posts, 1, 'the missing route is remembered for a while');
+  await assert.rejects(Environment.pluginToken(['graph.read']), error => error.code === 'plugin_tokens_unsupported');
+  await assert.rejects(Environment.pluginToken(['graph.read']), error => error.code === 'plugin_tokens_unsupported');
+  assert.equal(posts, 2, 'no unscoped credential is cached');
   await Environment.setActive('local', {reconnect: false});
+});
+
+test('a scoped 401 preserves its error and never retries with the owner credential', async () => {
+  let writes = 0;
+  const {Environment, requests} = makeEnvironment(request => {
+    if (request.url.endsWith('/api/projects') && request.method === 'POST') {
+      writes++;
+      return request.headers.Authorization === 'Bearer expired-plugin'
+        ? {status: 401, body: {error: {code: 'plugin_token_expired', message: 'expired'}}}
+        : {body: {id: 'unauthorized-write'}};
+    }
+    return plainServer(request);
+  });
+  Environment.save({id: 'local', name: 'Local', url: 'http://client.test', token: 'owner-token'});
+  await Environment.start();
+  const before = requests.length;
+  await assert.rejects(Environment.request('POST', 'projects', {body: {}, auth: 'expired-plugin'}),
+    error => error.code === 'plugin_token_expired' && error.status === 401);
+  assert.equal(writes, 1);
+  assert.equal(requests.length, before + 1, 'no owner session renewal');
+  assert.equal(Environment.status().status, 'connected', 'plugin expiry does not sign the owner out');
+  await Environment.setActive('local', {reconnect: false});
+});
+
+test('concurrent token requests join per owner; equal grants do not share revocation', async () => {
+  let mints = 0;
+  const revoked = [];
+  const {Environment} = makeEnvironment(async request => {
+    if (request.url.endsWith('/api/auth/plugin-session')) {
+      if (request.method === 'DELETE') {
+        revoked.push(request.headers.Authorization);
+        return {body: {revoked: true}};
+      }
+      const id = ++mints;
+      await new Promise(resolve => setTimeout(resolve, 10));
+      return {body: {token: 'pst_' + id, expires_in: 3600, plugin_id: JSON.parse(request.body).plugin_id}};
+    }
+    return plainServer(request);
+  });
+  await Environment.start();
+  const tokens = await Promise.all(Array.from({length: 12}, () => Environment.pluginToken(['graph.read'], {owner: 'first'})));
+  assert.equal(new Set(tokens).size, 1);
+  assert.equal(mints, 1);
+  const second = await Environment.pluginToken(['graph.read'], {owner: 'second'});
+  assert.notEqual(second, tokens[0]);
+  Environment.revokePluginToken(tokens[0]);
+  assert.equal(await Environment.pluginToken(['graph.read'], {owner: 'second'}), second);
+  assert.deepEqual(revoked, ['Bearer pst_1']);
+  await Environment.setActive('local', {reconnect: false});
+});
+
+test('token issuance failures fail closed on every attempt', async () => {
+  let now = Date.now(), status = 404, mints = 0;
+  const {Environment, context} = makeEnvironment(request => {
+    if (request.url.endsWith('/api/auth/plugin-session')) {
+      mints++;
+      return {status, body: {error: {code: 'denied', message: 'denied'}}};
+    }
+    return plainServer(request);
+  });
+  context.testNow = () => now;
+  vm.runInContext('Date.now = testNow', context);
+  await Environment.start();
+  await assert.rejects(Environment.pluginToken([]), error => error.code === 'plugin_tokens_unsupported');
+  await assert.rejects(Environment.pluginToken([]), error => error.code === 'plugin_tokens_unsupported');
+  assert.equal(mints, 2);
+  now += 6 * 60 * 1000;
+  status = 403;
+  await assert.rejects(Environment.pluginToken([]), error => error.status === 403);
+  assert.equal(mints, 3);
+  await Environment.setActive('local', {reconnect: false});
+});
+
+test('sign out actually posts to the issuing server logout endpoint', async () => {
+  const {Environment, requests} = makeEnvironment(plainServer);
+  await Environment.start();
+  await Environment.signOut();
+  const logout = requests.filter(request => request.url.endsWith('/api/auth/logout'));
+  assert.equal(logout.length, 1);
+  assert.equal(logout[0].method, 'POST');
+  assert.equal(Environment.status().status, 'disconnected');
+});
+
+test('failed or declined edit flush prevents a server switch', async () => {
+  const {Environment} = makeEnvironment(plainServer);
+  await Environment.start();
+  const second = Environment.save({name: 'Second', url: 'http://second.test'});
+  const gen = Environment.generation();
+  const unsubscribe = Environment.onBeforeSwitch(() => { throw new Error('Unsaved edit'); });
+  await assert.rejects(Environment.setActive(second.id), /Unsaved edit/);
+  assert.equal(Environment.active().id, 'local');
+  assert.equal(Environment.generation(), gen);
+  unsubscribe();
+  const decline = Environment.onBeforeSwitch(() => false);
+  assert.equal(await Environment.setActive(second.id), false);
+  assert.equal(Environment.active().id, 'local');
+  decline();
+  await Environment.setActive('local', {reconnect: false});
+});
+
+test('the latest switch wins even when an earlier save hook finishes last', async () => {
+  const {Environment} = makeEnvironment(plainServer);
+  await Environment.start();
+  const second = Environment.save({name: 'Second', url: 'http://second.test'});
+  const third = Environment.save({name: 'Third', url: 'http://third.test'});
+  let release, first = true;
+  const unsubscribe = Environment.onBeforeSwitch(() => {
+    if (!first) return;
+    first = false;
+    return new Promise(resolve => { release = resolve; });
+  });
+  const old = Environment.setActive(second.id);
+  assert.equal(await Environment.setActive(third.id), true);
+  release();
+  assert.equal(await old, false);
+  assert.equal(Environment.active().id, third.id);
+  unsubscribe();
+  await Environment.setActive(third.id, {reconnect: false});
+});
+
+test('removing a server revokes credentials only at the original URL', async () => {
+  const deletes = [];
+  const {Environment} = makeEnvironment(request => {
+    if (request.url.endsWith('/api/auth/plugin-session')) {
+      if (request.method === 'DELETE') { deletes.push(request.url); return {body: {revoked: true}}; }
+      return {body: {token: 'pst_private', expires_in: 3600, plugin_id: JSON.parse(request.body).plugin_id}};
+    }
+    return plainServer(request);
+  });
+  await Environment.start();
+  const remote = Environment.save({name: 'Remote', url: 'http://remote.test'});
+  await Environment.setActive(remote.id);
+  await Environment.pluginToken(['graph.read']);
+  Environment.remove(remote.id);
+  await new Promise(resolve => setTimeout(resolve, 10));
+  assert.deepEqual(deletes, ['http://remote.test/api/auth/plugin-session']);
+  await Environment.setActive('local', {reconnect: false});
+});
+
+test('editing a server URL never forwards the old credential to the new endpoint', async () => {
+  const {Environment, requests, sessionStorage} = makeEnvironment(plainServer);
+  const env = Environment.save({name: 'Original', url: 'http://original.test', token: 'old-secret'});
+  await Environment.setActive(env.id);
+  // Simulate a tab opened by the previous release, whose credential had no URL in its key.
+  sessionStorage.removeItem('agentsys-token:' + env.id + '@' + encodeURIComponent(env.url));
+  sessionStorage.setItem('agentsys-token:' + env.id, 'old-secret');
+  Environment.save({...env, url: 'http://replacement.test'});
+  let flushed = 0;
+  Environment.onBeforeSwitch(() => { flushed++; });
+  assert.equal(await Environment.reconnect(), true);
+  assert.equal(flushed, 1, 'an edited endpoint reconnect runs the normal save guards');
+  assert.equal(Environment.active().url, 'http://replacement.test');
+  const replacement = requests.filter(request => request.url.startsWith('http://replacement.test/'));
+  assert.ok(replacement.length >= 2);
+  assert.equal(replacement.some(request => request.headers.Authorization || request.body?.includes('old-secret')), false);
+  await Environment.setActive(env.id, {reconnect: false});
+});
+
+test('a newly entered token cannot reach the still-active old URL while its edits are flushed', async () => {
+  const {Environment, requests} = makeEnvironment(plainServer);
+  const env = Environment.save({name: 'Original', url: 'http://original.test', token: 'old-secret'});
+  await Environment.setActive(env.id);
+  Environment.save({...env, url: 'http://replacement.test', token: 'new-secret'});
+  await Environment.request('GET', 'projects');
+  assert.equal(requests.at(-1).url, 'http://original.test/api/projects');
+  assert.equal(requests.at(-1).headers.Authorization, 'Bearer old-secret');
+  await Environment.reconnect();
+  await Environment.request('GET', 'projects');
+  assert.equal(requests.at(-1).url, 'http://replacement.test/api/projects');
+  assert.equal(requests.at(-1).headers.Authorization, 'Bearer new-secret');
+  await Environment.setActive(env.id, {reconnect: false});
 });

@@ -3,8 +3,10 @@
 - `shared/core.js`, `shared/protocol.js`: pure helpers and the server/client contract.
 - `js/storage/format.js`: the canonical text graph format (used by both sides).
 - `js/storage/db.js`: server-only key-value store and request `Context`.
-- `js/model`: graph documents, validation, editing, snapshots and live graph lookup. The client loads all of it
-  except `executor.js`.
+- `js/model/graph.js`: shared read-only snapshot lookup, binding resolution, event names and import defaults.
+- `js/model/types.js`: type definitions and compatibility, shared with client presentation.
+- The remaining `js/model` files are server-only: graph documents, validation, editing, snapshot construction,
+  execution views and the interpreter. The client submits edits through the API.
 - `js/model/executor.js`: the interpreter; server-only.
 - `js/backend/runtime.js`: request contexts, route registration, writer serialization, undo history and Library hooks.
 - `js/backend/execution.js`: workflow runtimes, durable JSON data and Run, Pause, Resume and Stop.
@@ -14,11 +16,19 @@
 - `js/app`, `js/pages`, `js/canvas`, `js/inspector`: client shell, pages and graph editor.
 - `js/app/environments.js`: the only API transport, environments and SSE.
 - `js/app/plugin-store.js`, `js/app/extensions.js`, `js/pages/plugins.js`: sandboxed client plugins and their host.
+- `js/app/plugin-frame.js`: isolated plugin SDK/module program; receives serialized configuration only.
+- `js/app/plugin-views.js`: one rendered-contribution registry; derives pages, navigation and section lists.
+- `js/canvas/geometry.js`: pure wire paths and hit-test samples, with appearance passed explicitly; also used
+  by page previews. Rendering and interaction no longer own separate preview curve calculations.
 - `server/manifest.js`: the fixed server script list. `index.html` is not a server manifest.
 - `server/api-server.js`, `bin/agentsys-server.js`: API-only server and CLI.
 - `bin/agentsys-client.js`, `bin/agentsys-local.js`: static client server and local two-process launcher.
 - `server/migrate.js`: conservative migration from the server-plugin era.
-- `legacy/`: the removed server plugin host and routes; reference only, never loaded.
+- `server/file-store.js`: canonical file mapping, sidecars, redo recovery and external-change detection.
+- `server/credentials.js`: per-server session/plugin credential ownership and expiry.
+- `server/static-assets.js`: one public-file boundary and header policy for both static launchers.
+- `js/app/plugin-content.js`: passive HTML, command attributes and resource-free CSS validation.
+- `legacy/README.md`: migration reference; executable old hosts/routes live only in git history.
 - `server.js`, `headless.js`: the combined local/test server and the Node backend loader.
 
 Client scripts are plain globals listed in `index.html`. Server scripts are plain globals listed in

@@ -12,123 +12,15 @@
 const http = require('http'),
   https = require('https'),
   fs = require('fs'),
-  path = require('path'),
-  crypto = require('crypto');
+  path = require('path');
 const {loadBackend} = require('./headless');
-const TextGraph = require('./js/storage/format');
+const {createFileStore, VALID_KEY} = require('./server/file-store');
 const Protocol = require('./shared/protocol');
-const {capabilityAllows, CAPABILITY} = require('./shared/core');
-const {SERVER_ONLY} = require('./server/manifest');
+const {capabilityAllows} = require('./shared/core');
+const {createCredentials, same} = require('./server/credentials');
+const {resolveAsset, TYPES, CLIENT_HEADERS} = require('./server/static-assets');
 
 const ROOT = __dirname;
-const TYPES = {
-  '.html': 'text/html; charset=utf-8',
-  '.js': 'text/javascript; charset=utf-8',
-  '.css': 'text/css; charset=utf-8',
-  '.json': 'application/json; charset=utf-8',
-  '.svg': 'image/svg+xml',
-  '.png': 'image/png',
-  '.ico': 'image/x-icon',
-  '.md': 'text/markdown; charset=utf-8',
-};
-
-// ----- storage layout: a key of the application <-> a file below data/ -----
-//   prefs -> settings.json        projects -> projects.json        meta -> meta.json
-//   resources -> library/resources.json        node_folders -> library/node_folders.json
-//   library_types -> library/types.json
-//   wf:<id> -> workflows/<id>.json             wf:lib-<id> -> library/editors/<id>.json
-//   anything else -> other/<key>.json
-const FIXED = {
-  prefs: 'settings.json',
-  projects: 'projects.json',
-  meta: 'meta.json',
-  resources: 'library/resources.json',
-  node_folders: 'library/node_folders.json',
-  library_types: 'library/types.json',
-};
-/** The sidecar script files a stored graph refers to (`{$script: 'scripts/x.js'}` values anywhere inside it). */
-const SCRIPT_PATH = /^scripts\/[A-Za-z0-9_-]+\.js$/;
-const scriptRefs = (value, out = []) => {
-  if (value && typeof value === 'object') {
-    if (typeof value.$script === 'string') out.push(value.$script);
-    for (const child of Object.values(value)) scriptRefs(child, out);
-  }
-  return out;
-};
-const VALID_KEY = /^(?!.*(?:^|\/)\.\.?($|\/))[A-Za-z0-9:._/-]{1,500}$/;
-const storagePath = key => key.split('/').map(encodeURIComponent).join('/');
-const fileOf = key => {
-  if (key.includes('/')) return storagePath(key) + '.json';
-  if (Object.hasOwn(FIXED, key)) return FIXED[key];
-  let m = /^wf:lib-(.+)$/.exec(key);
-  if (m) return `library/editors/${m[1]}.json`;
-  m = /^wf:(.+)$/.exec(key);
-  if (m) return `workflows/${m[1]}.json`;
-  return `other/${key.replace(/:/g, '__')}.json`;
-};
-const keyOf = file => {
-  const rel = file.split(path.sep).map(decodeURIComponent).join('/');
-  const sidecar = /^(.*)\.files\/(?:layout\.json|scripts\/[A-Za-z0-9_-]+\.js)$/.exec(rel);
-  if (sidecar) return keyOf(sidecar[1] + '.json');
-  if ((/^(secrets|plugins)\//.test(rel) && rel.endsWith('.json')) || /^workflows\/[^/]+\/.+\.json$/.test(rel))
-    return rel.slice(0, -5);
-  for (const [key, f] of Object.entries(FIXED)) if (f === rel) return key;
-  let m = /^library\/editors\/(.+)\.json$/.exec(rel);
-  if (m) return `wf:lib-${m[1]}`;
-  m = /^workflows\/(.+)\.json$/.exec(rel);
-  if (m) return `wf:${m[1]}`;
-  m = /^other\/(.+)\.json$/.exec(rel);
-  return m ? m[1].replace(/__/g, ':') : null;
-};
-
-function walk(dir, out = []) {
-  let entries = [];
-  try {
-    entries = fs.readdirSync(dir, {withFileTypes: true});
-  } catch {
-    return out;
-  }
-  for (const e of entries) {
-    const p = path.join(dir, e.name);
-    if (e.isDirectory()) walk(p, out);
-    else if (
-      (e.name.endsWith('.json') ||
-        (p.includes('.files' + path.sep + 'scripts' + path.sep) && e.name.endsWith('.js'))) &&
-      !e.name.includes('.tmp-')
-    )
-      out.push(p);
-  }
-  return out;
-}
-// Polling must yield to HTTP edits even when the retained history has many files.
-async function walkAsync(dir) {
-  let entries;
-  try {
-    entries = await fs.promises.readdir(dir, {withFileTypes: true});
-  } catch {
-    return [];
-  }
-  const children = await Promise.all(
-    entries.map(async entry => {
-      const file = path.join(dir, entry.name);
-      if (entry.isDirectory()) return walkAsync(file);
-      return !entry.name.includes('.tmp-') &&
-        (entry.name.endsWith('.json') ||
-          (file.includes('.files' + path.sep + 'scripts' + path.sep) && entry.name.endsWith('.js')))
-        ? [file]
-        : [];
-    })
-  );
-  return children.flat();
-}
-const stampOf = file => {
-  try {
-    const st = fs.statSync(file);
-    return `${st.mtimeMs}:${st.size}`;
-  } catch {
-    return null; // removed meanwhile
-  }
-};
 const send = (res, status, body, type = 'application/json; charset=utf-8') => {
   res.writeHead(status, {'Content-Type': type, 'Cache-Control': 'no-store'});
   res.end(body);
@@ -161,11 +53,7 @@ const readBody = (req, limit = 200e6) =>
     req.on('error', reject);
   });
 const LOOPBACK = new Set(['127.0.0.1', '::1', 'localhost', '[::1]']);
-const same = (a, b) => {
-  const x = Buffer.from(String(a)),
-    y = Buffer.from(String(b));
-  return x.length === y.length && crypto.timingSafeEqual(x, y);
-};
+
 
 /**
  * Creates the server. Nothing listens until `listen()`.
@@ -194,17 +82,8 @@ function createServer(options = {}) {
     ),
     TLS = options.tls || null,
     TRUST_PROXY = !!options.trustProxy || process.env.AGENTSYS_TRUST_PROXY === '1',
-    SESSIONS = new Map(),
-    SESSION_TTL_MS = Math.max(1000, Number(options.sessionTtlMs || 12 * 60 * 60 * 1000)),
-    SESSION_LIMIT = Math.max(1, Math.min(100000, Number(options.sessionLimit || 10000))),
     // One authenticated caller must not be able to hold an unbounded number of event streams open.
     EVENT_LIMIT = Math.max(1, Math.min(100000, Number(options.eventLimit || 1000))),
-    // Scoped tokens for client plugins: short-lived, limited to the capabilities the host asked for, and enforced
-    // by the server on every call (not only by the host page that issued them).
-    PLUGIN_TOKENS = new Map(),
-    PLUGIN_TOKEN_PREFIX = 'pst_',
-    PLUGIN_TTL_MS = Math.max(1000, Number(options.pluginSessionTtlMs || 60 * 60 * 1000)),
-    PLUGIN_LIMIT = Math.max(1, Math.min(10000, Number(options.pluginSessionLimit || 1000))),
     ALLOW_SHARED_DATA = options.allowSharedData === true || process.env.AGENTSYS_ALLOW_SHARED_DATA === '1',
     LOCK_FILE = path.join(DATA, '.server.lock'),
     // Optional server-wide egress allowlist for POST /api/net and a Script's net.fetch (a deployment control on
@@ -260,110 +139,8 @@ function createServer(options = {}) {
       }
     }
   }
-  const sessionHash = value => crypto.createHash('sha256').update(String(value)).digest('hex');
-  const cookies = req => {
-    const out = Object.create(null);
-    for (const part of String(req.headers.cookie || '').split(';')) {
-      const at = part.indexOf('=');
-      if (at < 0) continue;
-      // A malformed escape is an anonymous request, not a server error: anyone can craft a cookie header.
-      let value;
-      try {
-        value = decodeURIComponent(part.slice(at + 1).trim());
-      } catch {
-        continue;
-      }
-      out[part.slice(0, at).trim()] = value;
-    }
-    return out;
-  };
-  const sessionOf = req => {
-    const id = cookies(req)[Protocol.SESSION_COOKIE];
-    if (!id) return null;
-    const hash = sessionHash(id),
-      found = SESSIONS.get(hash);
-    if (!found) return null;
-    if (found.expires <= Date.now()) {
-      SESSIONS.delete(hash);
-      return null;
-    }
-    return found;
-  };
-  const newSession = () => {
-    // Expired sessions are dropped when a new one is made, and by the periodic sweep below: the map cannot grow
-    // without bound because a browser forgot its cookie.
-    sweepSessions();
-    const id = crypto.randomBytes(32).toString('base64url'),
-      hash = sessionHash(id);
-    SESSIONS.set(hash, {expires: Date.now() + SESSION_TTL_MS, created: Date.now()});
-    // A flood of sign-ins must not grow memory without limit: the oldest session goes first.
-    while (SESSIONS.size > SESSION_LIMIT) SESSIONS.delete(SESSIONS.keys().next().value);
-    return id;
-  };
-  function sweepSessions() {
-    const now = Date.now();
-    for (const [hash, session] of SESSIONS) if (session.expires <= now) SESSIONS.delete(hash);
-  }
-  const sessionSweep = setInterval(() => {
-    sweepSessions();
-    sweepPluginTokens();
-  }, 5 * 60 * 1000);
-  sessionSweep.unref();
-  // ----- scoped tokens for client plugins -----
-  /** Which plugin token (if any) this request presents: `{entry, hash}`, `{invalid: true, expired}` or null. */
-  const pluginTokenOf = req => {
-    const bearer = /^Bearer\s+(.+)$/i.exec(String(req.headers.authorization || ''))?.[1] || '';
-    // An operator token that happens to start with the plugin prefix is still the operator token.
-    if (TOKEN && same(bearer, TOKEN)) return null;
-    if (!bearer.startsWith(PLUGIN_TOKEN_PREFIX)) return null;
-    const hash = sessionHash(bearer),
-      found = PLUGIN_TOKENS.get(hash);
-    if (!found) return {invalid: true, expired: false};
-    if (found.expires <= Date.now()) {
-      PLUGIN_TOKENS.delete(hash);
-      return {invalid: true, expired: true};
-    }
-    return {entry: found, hash};
-  };
-  const pluginTokenProblem = presented =>
-    presented?.expired
-      ? {code: 'plugin_token_expired', message: 'The plugin token expired; ask the host for a new one.'}
-      : {code: 'plugin_token_invalid', message: 'The plugin token is not valid; ask the host for a new one.'};
-  function sweepPluginTokens() {
-    const now = Date.now();
-    for (const [hash, token] of PLUGIN_TOKENS) if (token.expires <= now) PLUGIN_TOKENS.delete(hash);
-  }
-  /** Issues a token limited to `capabilities`; at the limit it refuses instead of silently revoking a live token. */
-  function issuePluginToken(capabilities) {
-    sweepPluginTokens();
-    if (PLUGIN_TOKENS.size >= PLUGIN_LIMIT) {
-      const error = new Error(
-        `This server already holds ${PLUGIN_LIMIT} plugin tokens; revoke one (or disable a plugin) and try again.`
-      );
-      error.status = 429;
-      error.code = 'too_many_tokens';
-      throw error;
-    }
-    const token = PLUGIN_TOKEN_PREFIX + crypto.randomBytes(32).toString('base64url');
-    PLUGIN_TOKENS.set(sessionHash(token), {
-      caps: capabilities,
-      expires: Date.now() + PLUGIN_TTL_MS,
-      created: Date.now(),
-    });
-    return {token, expires_in: Math.floor(PLUGIN_TTL_MS / 1000), capabilities};
-  }
-  /** Validated, de-duplicated capabilities for a plugin token; never administrative. */
-  function pluginCapabilities(value) {
-    if (!Array.isArray(value) || value.length > 50)
-      throw Object.assign(new Error('capabilities must be a list of at most 50 values'), {status: 400, code: 'invalid_request'});
-    const caps = [];
-    for (const cap of value) {
-      if (typeof cap !== 'string' || !CAPABILITY.test(cap))
-        throw Object.assign(new Error(`Unknown capability: ${String(cap).slice(0, 80)}`), {status: 400, code: 'invalid_request'});
-      if (!caps.includes(cap)) caps.push(cap);
-    }
-    return caps;
-  }
+  const credentials = createCredentials(options, TOKEN);
+  const {sessionOf, newSession, pluginTokenOf, pluginTokenProblem, issuePluginToken, pluginCapabilities} = credentials;
   // Failed sign-ins per address, in a fixed window.
   const authFailures = new Map();
   function authEntry(key) {
@@ -390,13 +167,14 @@ function createServer(options = {}) {
   const originOf = req => String(req.headers.origin || '').replace(/\/+$/, '').toLowerCase();
   /**
    * The address a sign-in is counted against. Only a server explicitly started with --trust-proxy reads the
-   * forwarded list, and then only its first entry: otherwise every client of a proxy would share one counter.
+   * forwarded list. Trust the rightmost hop appended by the configured reverse proxy, not an attacker-supplied
+   * prefix preserved by nginx's proxy_add_x_forwarded_for. Multiple proxies require sanitizing at the last proxy.
    */
   const authAddress = req => {
     const direct = String(req.socket?.remoteAddress || 'unknown');
     if (!TRUST_PROXY) return direct;
     const forwarded = String(req.headers['x-forwarded-for'] || '')
-      .split(',')[0]
+      .split(',').at(-1)
       .trim();
     return forwarded || direct;
   };
@@ -443,284 +221,48 @@ function createServer(options = {}) {
       Vary: 'Origin',
     };
   };
-  const abs = key => path.join(DATA, ...fileOf(key).split('/'));
-  const stamps = entries => {
-    const grouped = new Map();
-    for (const [file, stamp] of entries) {
-      const relative = path.relative(DATA, file),
-        key = keyOf(relative);
-      if (!key || !stamp) continue;
-      if (!grouped.has(key)) grouped.set(key, []);
-      grouped.get(key).push(relative + ':' + stamp + ';');
-    }
-    return new Map([...grouped].map(([key, values]) => [key, values.sort().join('')]));
-  };
-  const snapshot = () => {
-    return stamps(walk(DATA).map(file => [file, stampOf(file)]));
-  };
-  const snapshotAsync = async () => {
-    const files = await walkAsync(DATA),
-      entries = [];
-    for (let i = 0; i < files.length; i += 128) {
-      entries.push(
-        ...(await Promise.all(
-          files.slice(i, i + 128).map(async file => {
-            try {
-              const stat = await fs.promises.stat(file);
-              return [file, `${stat.mtimeMs}:${stat.size}`];
-            } catch {
-              return [file, null];
-            }
-          })
-        ))
-      );
-    }
-    return stamps(entries);
-  };
-  let storageRevision = 0;
-  const changedAt = new Map();
-  let known = snapshot();
-  const recordCommit = ({set = {}, remove = []}) => {
-    const revision = ++storageRevision;
-    for (const key of Object.keys(set)) {
-      const file = abs(key),
-        sidecar = key === 'resources' || key.startsWith('wf:'),
-        files = [file, ...(sidecar ? walk(file.replace(/\.json$/, '.files')) : [])];
-      const stamp = stamps(files.map(p => [p, stampOf(p)])).get(key);
-      if (stamp) known.set(key, stamp);
-      else known.delete(key);
-      changedAt.set(key, revision);
-    }
-    for (const key of remove) {
-      known.delete(key);
-      changedAt.set(key, revision);
-    }
-  };
-  function readKey(key) {
-    let value;
-    try {
-      value = JSON.parse(fs.readFileSync(abs(key), 'utf8'));
-    } catch (error) {
-      if (error.code === 'ENOENT') return undefined;
-      throw error;
-    }
-    if (key === 'resources' || key.startsWith('wf:')) {
-      if (value.format !== TextGraph.FORMAT) throw new Error('Expected canonical graph files: ' + key);
-      const folder = abs(key).replace(/\.json$/, '.files');
-      const files = {
-        'graph.json': JSON.stringify(value),
-        'layout.json': fs.readFileSync(path.join(folder, 'layout.json'), 'utf8'),
-      };
-      const scripts = new Set(scriptRefs(value.value));
-      for (const name of scripts) {
-        if (!SCRIPT_PATH.test(name)) throw new Error('Invalid script path');
-        files[name] = fs.readFileSync(path.join(folder, ...name.split('/')), 'utf8');
-      }
-      value = TextGraph.decode({format: TextGraph.FORMAT, files});
-    }
-    return value;
-  }
-  const madeDirs = new Set(); // directories this process created or found: no mkdir per file written
-  function atomicText(file, text, mode) {
-    try {
-      const bytes = Buffer.byteLength(text);
-      const stat = fs.statSync(file);
-      // A size difference already proves a content difference; only an equal size needs the read to compare.
-      if (stat.size !== bytes) throw Object.assign(new Error('different'), {code: 'ENOENT'});
-      if (fs.readFileSync(file, 'utf8') === text) return;
-    } catch (error) {
-      if (error.code !== 'ENOENT') throw error;
-    }
-    const dir = path.dirname(file);
-    if (!madeDirs.has(dir)) {
-      fs.mkdirSync(dir, {recursive: true});
-      madeDirs.add(dir);
-    }
-    const tmp = `${file}.tmp-${process.pid}`;
-    fs.writeFileSync(tmp, text, mode ? {mode} : undefined);
-    // On Windows another program (antivirus, indexer, sync, editor) may hold the target for a moment, and rename then fails with
-    // EPERM/EBUSY/EACCES. Retry briefly; if the target stays locked, fail without replacing it with a partial write.
-    for (let attempt = 0; ; attempt++) {
-      try {
-        fs.renameSync(tmp, file);
-        // A rename keeps the temporary file's mode; a pre-existing file may have another one, so set it here too.
-        if (mode && process.platform !== 'win32') {
-          try {
-            fs.chmodSync(file, mode);
-          } catch {}
-        }
-        return;
-      } catch (error) {
-        if (!['EPERM', 'EBUSY', 'EACCES'].includes(error.code)) {
-          fs.rmSync(tmp, {force: true});
-          throw error;
-        }
-        if (attempt < 5) {
-          Atomics.wait(new Int32Array(new SharedArrayBuffer(4)), 0, 0, 50 * (attempt + 1));
-          continue;
-        }
-        fs.rmSync(tmp, {force: true});
-        throw error;
-      }
-    }
-  }
-
   // ----- change notifications (Server-Sent Events) -----
-  // Two streams exist: /api/events uses the typed envelope below; /__data/events stays for the legacy combined
-  // local browser store and keeps its original {keys, by} shape.
-  const clients = new Set(); // /__data/events (legacy)
-  const eventClients = new Map(); // res -> {heartbeat}
-  const writeEvent = (res, value) => {
+  // Both public encodings share one subscription owner. Legacy clients receive only {keys, by}.
+  const eventClients = new Map(); // response -> {legacy, heartbeat}
+  const apiClientCount = () => [...eventClients.values()].filter(entry => !entry.legacy).length;
+  function removeEventClient(res) {
+    clearInterval(eventClients.get(res)?.heartbeat);
+    eventClients.delete(res);
+  }
+  function writeEvent(res, text) {
     try {
-      res.write(`data: ${JSON.stringify(value)}\n\n`);
-      return true;
-    } catch {
-      return false;
-    }
-  };
+      if (!res.destroyed && !res.writableEnded && res.write(text)) return true;
+    } catch {}
+    // Events invalidate cached reads; reconnecting is preferable to retaining a slow reader's queue.
+    removeEventClient(res);
+    res.destroy();
+    return false;
+  }
+  function openEvents(req, res, legacy = false) {
+    res.writeHead(200, {
+      'Content-Type': 'text/event-stream', 'Cache-Control': 'no-store', Connection: 'keep-alive',
+      ...(legacy ? {} : {'X-Accel-Buffering': 'no', ...corsHeaders(req)}),
+    });
+    eventClients.set(res, {legacy, heartbeat: null});
+    req.on('close', () => removeEventClient(res));
+    if (!writeEvent(res, ': connected\n\n') || legacy) return;
+    if (!writeEvent(res, `data: ${JSON.stringify({type: 'ready', protocol: Protocol.PROTOCOL, server_time: new Date().toISOString()})}\n\n`)) return;
+    const heartbeat = setInterval(() => writeEvent(res, `: ping ${Date.now()}\n\n`), 20000);
+    heartbeat.unref?.();
+    eventClients.get(res).heartbeat = heartbeat;
+  }
   const broadcastEvent = value => {
     for (const [res, entry] of eventClients) {
-      if (!writeEvent(res, value)) {
-        clearInterval(entry.heartbeat);
-        eventClients.delete(res);
-      }
+      if (entry.legacy && value.type !== 'change') continue;
+      const payload = entry.legacy ? {keys: value.keys, by: value.by} : value;
+      writeEvent(res, `data: ${JSON.stringify(payload)}\n\n`);
     }
   };
   const broadcast = (keys, by = null) => {
-    if (!keys.length) return;
-    const text = `data: ${JSON.stringify({keys, by})}\n\n`;
-    for (const res of clients) {
-      try {
-        res.write(text);
-      } catch {
-        clients.delete(res); // the page is gone
-      }
-    }
-    broadcastEvent({type: 'change', keys, by});
+    if (keys.length) broadcastEvent({type: 'change', keys, by});
   };
-  const scriptRefsCache = new Map(); // key -> {stamp, names}: avoid reading a large unchanged graph on every save
-  function writeKey(key, value) {
-    const file = abs(key);
-    if (key === 'resources' || key.startsWith('wf:')) {
-      const packet = TextGraph.encode(value),
-        folder = file.replace(/\.json$/, '.files');
-      let previous = [];
-      try {
-        const stamp = stampOf(file),
-          cached = scriptRefsCache.get(key);
-        if (cached && stamp && cached.stamp === stamp) previous = cached.names;
-        else {
-          previous = scriptRefs(JSON.parse(fs.readFileSync(file, 'utf8')).value);
-          if (stamp) scriptRefsCache.set(key, {stamp, names: previous});
-        }
-      } catch (error) {
-        if (error.code !== 'ENOENT') throw error;
-      }
-      const next = [];
-      for (const [name, text] of Object.entries(packet.files))
-        if (name !== 'graph.json') atomicText(path.join(folder, ...name.split('/')), text);
-      atomicText(file, packet.files['graph.json']);
-      for (const name of previous)
-        if (!Object.hasOwn(packet.files, name) && SCRIPT_PATH.test(name)) {
-          try {
-            fs.unlinkSync(path.join(folder, ...name.split('/')));
-          } catch (error) {
-            if (error.code !== 'ENOENT') throw error;
-          }
-        }
-      for (const name of Object.keys(packet.files)) if (name !== 'graph.json') next.push(name);
-      scriptRefsCache.set(key, {stamp: stampOf(file), names: next});
-      return;
-    }
-    atomicText(file, JSON.stringify(value, null, 2) + '\n', key.startsWith('secrets/') ? 0o600 : undefined);
-  }
-  function removeKey(key) {
-    madeDirs.clear();
-    scriptRefsCache.delete(key);
-    const file = abs(key),
-      folder = file.replace(/\.json$/, '.files');
-    if (!path.resolve(folder).startsWith(path.resolve(DATA) + path.sep)) throw new Error('Unsafe storage path');
-    if (key === 'resources' || key.startsWith('wf:')) {
-      try {
-        const files = [
-          'layout.json',
-          ...scriptRefs(JSON.parse(fs.readFileSync(file, 'utf8')).value).filter(n => SCRIPT_PATH.test(n)),
-        ];
-        for (const name of files) {
-          try {
-            fs.unlinkSync(path.join(folder, ...name.split('/')));
-          } catch (error) {
-            if (error.code !== 'ENOENT') throw error;
-          }
-        }
-        for (const dir of [path.join(folder, 'scripts'), folder])
-          try {
-            fs.rmdirSync(dir);
-          } catch (error) {
-            if (!['ENOENT', 'ENOTEMPTY'].includes(error.code)) throw error;
-          }
-      } catch (error) {
-        if (error.code !== 'ENOENT') throw error;
-      }
-    }
-    try {
-      fs.unlinkSync(file);
-    } catch (error) {
-      if (error.code !== 'ENOENT') throw error;
-    }
-  }
-
-  // A redo record makes a multi-key commit recoverable before the backend can read it.
-  const transactionFile = path.join(DATA, '.transaction.json');
-  function applyTransaction({set = {}, remove = []}) {
-    for (const k of Object.keys(set)) writeKey(k, set[k]);
-    for (const k of remove) removeKey(k);
-    fs.unlinkSync(transactionFile);
-  }
-  /** Finishes a commit that was interrupted, once, without writing the record again. */
-  function replayTransaction() {
-    if (!fs.existsSync(transactionFile)) return;
-    let packet;
-    try {
-      packet = JSON.parse(fs.readFileSync(transactionFile, 'utf8'));
-      const keys = [...Object.keys(packet?.set ?? {}), ...(packet?.remove ?? [])];
-      if (!keys.every(k => VALID_KEY.test(k))) throw new Error('Invalid storage key');
-    } catch (error) {
-      // A record that cannot be read is not a source of truth: the data files are. Keep it for
-      // inspection and start normally instead of refusing to boot.
-      try {
-        fs.renameSync(transactionFile, transactionFile + '.invalid');
-      } catch {}
-      console.warn('[agentsys] ignored an unreadable .transaction.json: ' + error.message);
-      return;
-    }
-    try {
-      applyTransaction(packet);
-    } catch (error) {
-      // A key the folder cannot accept (for example a directory where a file belongs) must not stop every later
-      // start: keep the record for inspection and boot on the data files that did reach the disk.
-      try {
-        fs.renameSync(transactionFile, transactionFile + '.invalid');
-      } catch {}
-      console.warn('[agentsys] a redo record could not be applied: ' + error.message);
-    }
-  }
-  function commitKeys({set = {}, remove = []}) {
-    const keys = [...Object.keys(set), ...remove];
-    if (!keys.every(k => VALID_KEY.test(k))) throw new Error('Invalid storage key');
-    replayTransaction();
-    atomicText(transactionFile, JSON.stringify({set, remove}), 0o600);
-    const transactionFd = fs.openSync(transactionFile, 'r+');
-    try {
-      fs.fsyncSync(transactionFd);
-    } finally {
-      fs.closeSync(transactionFd);
-    }
-    applyTransaction({set, remove});
-  }
-  replayTransaction();
-  known = snapshot();
-  // ----- the backend: the same code the browser runs, with the data folder as its store -----
+  const store = createFileStore(DATA);
+  // ----- application backend with a transport-independent store -----
   let backend = null,
     backendError = null;
   try {
@@ -732,11 +274,10 @@ function createServer(options = {}) {
       store: {
         dir: DATA,
         get(key) {
-          return readKey(key);
+          return store.get(key);
         },
         commit({set, remove}) {
-          commitKeys({set, remove});
-          recordCommit({set, remove});
+          store.commit({set, remove});
           broadcast([...Object.keys(set), ...remove], 'api'); // open pages reload what the API changed
         },
       },
@@ -745,7 +286,7 @@ function createServer(options = {}) {
     backendError = error;
   }
   if (backend) backend.Backend.subscribeHooks(entry => broadcastEvent({type: 'hook', entry}));
-  // Server plugins do not exist in this architecture. The old host is kept under legacy/ only as a migration
+  // Server plugins do not exist in this architecture. The old host remains in git history as a migration
   // reference; it is never loaded and no file below data/plugins/ is executed by the server.
 
   // Files are watched by comparing stamps: a page open gets the news within a second, and the backend forgets what it
@@ -754,20 +295,11 @@ function createServer(options = {}) {
   let scanning = false,
     closing = false;
   const watcher = setInterval(() => {
-    if (scanning || (!clients.size && ++ticks % 5)) return;
+    if (scanning || (!eventClients.size && ++ticks % 5)) return;
     scanning = true;
-    const revision = storageRevision;
-    snapshotAsync()
-      .then(now => {
+    store.scan()
+      .then(changed => {
         if (closing) return;
-        const changed = [];
-        for (const key of new Set([...known.keys(), ...now.keys()])) {
-          // A commit during this asynchronous scan has a newer, complete fingerprint already.
-          if ((changedAt.get(key) ?? 0) > revision) continue;
-          if (known.get(key) !== now.get(key)) changed.push(key);
-          if (now.has(key)) known.set(key, now.get(key));
-          else known.delete(key);
-        }
         if (changed.length) backend?.DB.changed(changed);
         broadcast(changed);
       })
@@ -786,20 +318,14 @@ function createServer(options = {}) {
       return sendJSON(res, 503, {error: 'Set AGENTSYS_TOKEN to access storage on a non-loopback address'});
     if (TOKEN && !tokenGiven(req)) return sendJSON(res, 401, {error: 'Storage requires a Bearer token'});
     const rest = url.pathname.slice('/__data'.length).replace(/^\//, '');
-    if (req.method === 'GET' && rest === 'events') {
-      res.writeHead(200, {'Content-Type': 'text/event-stream', 'Cache-Control': 'no-store', Connection: 'keep-alive'});
-      res.write(': connected\n\n');
-      clients.add(res);
-      req.on('close', () => clients.delete(res));
-      return;
-    }
+    if (req.method === 'GET' && rest === 'events') return openEvents(req, res, true);
     if (req.method === 'GET' && rest === '')
-      return sendJSON(res, 200, {agentsys: true, dir: DATA, keys: [...snapshot().keys()]});
+      return sendJSON(res, 200, {agentsys: true, dir: DATA, keys: store.keys()});
     if (req.method === 'GET') {
       const key = decodeURIComponent(rest);
       if (!VALID_KEY.test(key)) return sendJSON(res, 400, {error: 'bad key'});
       try {
-        const value = readKey(key);
+        const value = store.get(key);
         return sendJSON(res, value === undefined ? 204 : 200, value);
       } catch (error) {
         return sendJSON(res, 500, {error: String(error.message)});
@@ -814,10 +340,9 @@ function createServer(options = {}) {
       if (typeof set !== 'object' || set === null || Array.isArray(set) || !Array.isArray(remove))
         return sendJSON(res, 400, {error: 'bad body'});
       const keys = [...Object.keys(set), ...remove];
-      if (!keys.every(k => VALID_KEY.test(k))) return sendJSON(res, 400, {error: 'bad key'});
-      commitKeys({set, remove});
+      if (!keys.every(k => typeof k === 'string' && VALID_KEY.test(k))) return sendJSON(res, 400, {error: 'bad key'});
+      store.commit({set, remove});
       // Only what this request touched can have changed, so the whole tree need not be walked again.
-      recordCommit({set, remove});
       backend?.DB.changed(keys); // the API's cache must not outlive what the page wrote
       broadcast(keys, String(req.headers['x-client'] || ''));
       return sendJSON(res, 200, {ok: true});
@@ -897,9 +422,8 @@ function createServer(options = {}) {
       storage: backend?.Backend.storage ?? {mode: 'unavailable', directory: ''},
       workers: backend?.workerStats ?? null,
       runtime: backend?.Backend.diagnostics?.() ?? null,
-      clients: eventClients.size,
-      sessions: SESSIONS.size,
-      plugin_sessions: PLUGIN_TOKENS.size,
+      clients: apiClientCount(),
+      ...credentials.counts(),
       memory: (() => {
         const usage = process.memoryUsage();
         const mb = value => Math.round((value / 1024 / 1024) * 10) / 10;
@@ -940,6 +464,7 @@ function createServer(options = {}) {
       client_plugins: false,
       server_plugins: false,
       plugin_tokens: true,
+      plugin_identity: true,
       net_allowlist: NET_ALLOW.length > 0,
       net_block_private: NET_BLOCK_PRIVATE,
       tls: !!TLS,
@@ -962,7 +487,7 @@ function createServer(options = {}) {
       '/api/auth/plugin-session',
       'post',
       'Issue a short-lived token scoped to client plugin capabilities',
-      'Body: {"capabilities":["graph.read", …]}. The server enforces them on every call. ' + external
+      'Body: {"plugin_id":"my-plugin","capabilities":["graph.read", …]}. The server binds identity and enforces capabilities on every call. ' + external
     );
     add('/api/auth/plugin-session', 'delete', 'Revoke a scoped plugin token', 'Send the plugin token itself. ' + external);
     add('/api/events', 'get', 'Stream change and hook events (SSE)', 'Requires a token or session cookie. ' + external);
@@ -1017,14 +542,13 @@ function createServer(options = {}) {
       res.setHeader(
         'Set-Cookie',
         `${Protocol.SESSION_COOKIE}=${encodeURIComponent(id)}; HttpOnly; SameSite=${sameSite}; Path=/; Max-Age=${Math.floor(
-          SESSION_TTL_MS / 1000
+          credentials.sessionTtlMs / 1000
         )}${secure ? '; Secure' : ''}`
       );
-      return sendJSON(res, 200, {ok: true, mode: TOKEN ? 'token' : 'loopback', expires_in: Math.floor(SESSION_TTL_MS / 1000)});
+      return sendJSON(res, 200, {ok: true, mode: TOKEN ? 'token' : 'loopback', expires_in: Math.floor(credentials.sessionTtlMs / 1000)});
     }
     if (rel === 'auth/logout' && ['POST', 'DELETE'].includes(req.method)) {
-      const id = cookies(req)[Protocol.SESSION_COOKIE];
-      if (id) SESSIONS.delete(sessionHash(id));
+      credentials.revokeSession(req);
       res.setHeader('Set-Cookie', `${Protocol.SESSION_COOKIE}=; HttpOnly; SameSite=Strict; Path=/; Max-Age=0`);
       return sendJSON(res, 200, {ok: true});
     }
@@ -1034,7 +558,7 @@ function createServer(options = {}) {
       const presented = pluginTokenOf(req);
       if (req.method === 'DELETE') {
         if (presented?.entry) {
-          PLUGIN_TOKENS.delete(presented.hash);
+          credentials.revokePlugin(presented.hash);
           return sendJSON(res, 200, {revoked: true});
         }
         return sendJSON(res, 401, {error: pluginTokenProblem(presented)});
@@ -1058,7 +582,7 @@ function createServer(options = {}) {
       } catch (error) {
         return sendJSON(res, error.status || 400, {error: {code: error.code || 'invalid_request', message: error.message}});
       }
-      return sendJSON(res, 200, issuePluginToken(capabilities));
+      return sendJSON(res, 200, issuePluginToken(capabilities, body.plugin_id ?? null));
     }
     // A token that was issued but is no longer valid is refused explicitly: it must not fall back to the cookie.
     const presented = pluginTokenOf(req);
@@ -1071,36 +595,13 @@ function createServer(options = {}) {
         error: {code: 'permission_denied', message: 'A plugin token cannot read server events, diagnostics or the contract'},
       });
     if (req.method === 'GET' && rel === 'events') {
-      if (eventClients.size >= EVENT_LIMIT) {
+      if (apiClientCount() >= EVENT_LIMIT) {
         res.setHeader('Retry-After', '30');
         return sendJSON(res, 429, {
           error: {code: 'too_many_streams', message: `This server already holds ${EVENT_LIMIT} event streams.`},
         });
       }
-      res.writeHead(200, {
-        'Content-Type': 'text/event-stream',
-        'Cache-Control': 'no-store',
-        Connection: 'keep-alive',
-        'X-Accel-Buffering': 'no',
-        ...corsHeaders(req),
-      });
-      res.write(`: connected\n\n`);
-      res.write(`data: ${JSON.stringify({type: 'ready', protocol: Protocol.PROTOCOL, server_time: new Date().toISOString()})}\n\n`);
-      const heartbeat = setInterval(() => {
-        try {
-          res.write(`: ping ${Date.now()}\n\n`);
-        } catch {
-          clearInterval(heartbeat);
-          eventClients.delete(res);
-        }
-      }, 20000);
-      heartbeat.unref?.();
-      eventClients.set(res, {heartbeat});
-      req.on('close', () => {
-        clearInterval(heartbeat);
-        eventClients.delete(res);
-      });
-      return;
+      return openEvents(req, res);
     }
     if (req.method === 'GET' && rel === 'diagnostics') return sendJSON(res, 200, diagnostics());
     const {Backend} = backend;
@@ -1134,6 +635,7 @@ function createServer(options = {}) {
     if (edit !== undefined && (typeof edit !== 'string' || edit.length > 100))
       throw Object.assign(new Error('Invalid edit token'), {status: 400, code: 'invalid_request'});
     const result = await Backend.request(req.method, rel, {
+      pluginIdentity: presented?.entry ? {id: presented.entry.pluginId} : null,
       body,
       query,
       edit: edit ?? null,
@@ -1148,38 +650,12 @@ function createServer(options = {}) {
   }
   async function handleStatic(req, res, url, editor = false) {
     if (!SERVE_CLIENT) return send(res, 404, 'This server does not host the client. Use the AgentSys Client.', 'text/plain');
-    let rel = decodeURIComponent(url.pathname);
-    // A colon opens a Windows drive or an NTFS alternate data stream (`file.js::$DATA`), and a backslash or NUL is
-    // never part of a served path. Refuse them before the file is looked up, so a stream suffix cannot slip past
-    // the server-only pattern below. Windows 8.3 aliases (`BACKEN~1`) are refused for the same reason: they would
-    // spell a server-only directory without matching its name.
-    if (/[:\\\0]/.test(rel) || (process.platform === 'win32' && /(?:^|[\\/])[^\\/]*~[0-9][^\\/]*(?:[\\/]|$)/.test(rel)))
-      return send(res, 404, 'Not found', 'text/plain');
-    const pageRoute = editor && (!path.extname(rel) || /^\/(?:p|library|ext)\//.test(rel));
-    if (rel.endsWith('/')) rel += 'index.html';
-    let file = path.join(ROOT, rel);
-    // Windows resolves directory names case-insensitively and ignores trailing dots/spaces.
-    const normalized = value =>
-      process.platform === 'win32' ? value.replace(/[. ]+(?=[\\/]|$)/g, '').toLowerCase() : value;
-    const inside = (target, directory) => {
-      const name = normalized(target),
-        root = normalized(directory);
-      return name === root || name.startsWith(root + path.sep);
-    };
-    if (
-      !file.startsWith(ROOT + path.sep) ||
-      inside(file, DATA) ||
-      inside(file, path.join(ROOT, 'data')) ||
-      /(^|[\\/])\.|node_modules|\0/.test(rel)
-    )
-      return send(res, 404, 'Not found', 'text/plain');
-    // A page of the editor (/editor/p/…, /editor/settings, /editor/plugins): no such file (a folder is not one), so the editor opens and shows it.
-    if (pageRoute && !(fs.statSync(file, {throwIfNoEntry: false})?.isFile() ?? false))
-      file = path.join(ROOT, 'index.html');
-    // Serve only public assets, never arbitrary files from the checkout and never server-only code.
-    const publicPath = path.relative(ROOT, file).split(path.sep).join('/');
-    if (!/^(?:index\.html$|(?:js|css|docs|shared|client-plugins)\/)/.test(publicPath) || SERVER_ONLY.test(publicPath))
-      return send(res, 404, 'Not found', 'text/plain');
+    const rel = decodeURIComponent(url.pathname);
+    const file = await resolveAsset(ROOT, rel.endsWith('/') ? rel + 'index.html' : rel, {
+      dataDir: DATA,
+      fallback: editor && (!path.extname(rel) || /^\/(?:p|library|ext)\//.test(rel)),
+    });
+    if (!file) return send(res, 404, 'Not found', 'text/plain');
     let data;
     try {
       data = await fs.promises.readFile(file);
@@ -1192,7 +668,7 @@ function createServer(options = {}) {
       let stored = {};
       if (!hostRefused(req) && (!TOKEN || tokenGiven(req)) && (loopbackBound || TOKEN)) {
         try {
-          stored = readKey('ui-state') || {};
+          stored = store.get('ui-state') || {};
         } catch {
           // A damaged preference file must not make the editor unavailable; the browser-local store starts empty.
           stored = {};
@@ -1219,13 +695,7 @@ function createServer(options = {}) {
     res.setHeader('Referrer-Policy', 'no-referrer');
     res.setHeader('X-Agentsys-Protocol', String(Protocol.PROTOCOL));
     if (SERVE_CLIENT) {
-      // The combined local server hosts the same interface as bin/agentsys-client.js and sends the same policy:
-      // the page cannot be framed, and only its own files, inline styles and the plugin blob frames may load.
-      res.setHeader('X-Frame-Options', 'DENY');
-      res.setHeader(
-        'Content-Security-Policy',
-        "default-src 'self'; script-src 'self' 'unsafe-eval' 'unsafe-inline' blob:; style-src 'self' 'unsafe-inline'; img-src 'self' data: blob:; connect-src 'self' http: https:; frame-src 'self' blob:; object-src 'none'; base-uri 'none'"
-      );
+      for (const [name, value] of Object.entries(CLIENT_HEADERS)) res.setHeader(name, value);
     }
     for (const [name, value] of Object.entries(corsHeaders(req))) res.setHeader(name, value);
     let run;
@@ -1279,16 +749,12 @@ function createServer(options = {}) {
     async close() {
       closing = true;
       clearInterval(watcher);
-      clearInterval(sessionSweep);
-      await backend?.Backend.shutdownExecutions();      for (const res of clients) res.end();
-      clients.clear();
-      for (const [res, entry] of eventClients) {
-        clearInterval(entry.heartbeat);
-        try {
-          res.end();
-        } catch {}
+      credentials.close();
+      await backend?.Backend.shutdownExecutions();
+      for (const res of eventClients.keys()) {
+        removeEventClient(res);
+        try { res.end(); } catch {}
       }
-      eventClients.clear();
 
       if (!ALLOW_SHARED_DATA) {
         try {

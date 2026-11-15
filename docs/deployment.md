@@ -1,5 +1,8 @@
 # Deployment
 
+Use a supported Node.js LTS release (22+, preferably 24). Node 20 is end-of-life; compatibility tests are not
+a substitute for security updates. See the [Node release schedule](https://nodejs.org/en/about/previous-releases).
+
 ## Local desktop
 
 ```sh
@@ -206,7 +209,7 @@ of them.
 
 ## Windows
 
-`start.bat` runs the combined local server. For a service, use Task Scheduler with `node bin/agentsys-server.js
+`start.bat` starts the separate server and static client through the local launcher. For a service, use Task Scheduler with `node bin/agentsys-server.js
 start --host 127.0.0.1 --port 8080 --data <folder>`, and keep the token in a user environment variable. Windows
 antivirus and indexers may briefly lock a file during a rename; the store retries the rename and fails without
 replacing the target with a partial write.

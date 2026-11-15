@@ -12,13 +12,13 @@ import time
 from pathlib import Path
 import urllib.request
 
-from playwright.async_api import async_playwright
+from playwright.async_api import async_playwright, Error as PlaywrightError
 
 ROOT = Path(__file__).resolve().parents[1]
 EXE = os.environ.get('PLAYWRIGHT_CHROMIUM_EXECUTABLE')
 BROWSER = sys.argv[1] if len(sys.argv) > 1 else 'chromium'
 SHOT_SUFFIX = '' if BROWSER == 'chromium' else '-' + BROWSER
-SHOTS = ROOT / 'docs' / 'audits' / 'platform-marathon' / 'screenshots'
+SHOTS = Path(os.environ.get('AGENTSYS_UI_ARTIFACTS', str(ROOT / 'node_modules' / '.cache' / 'ui-review')))
 
 
 def free_port():
@@ -78,7 +78,35 @@ async def main():
             browser = await getattr(playwright, BROWSER).launch(
                 **({'executable_path': EXE} if BROWSER == 'chromium' and EXE else {})
             )
-            page = await browser.new_page(viewport={'width': 1440, 'height': 900})
+            native_beforeunload = True
+            if BROWSER == 'firefox':
+                # Probe the browser independently of AgentSys. Some Windows headless Firefox builds suppress
+                # native unload dialogs even with user activation and a cancelling handler on an empty page.
+                probe_context = await browser.new_context()
+                probe = await probe_context.new_page()
+                await probe.route('http://unload.test/', lambda route: route.fulfill(
+                    body='<button>Activate</button>', content_type='text/html'))
+                await probe.goto('http://unload.test/')
+                await probe.click('button')
+                await probe.evaluate("addEventListener('beforeunload', e => { e.preventDefault(); e.returnValue = 'Unsaved'; })")
+                probe_dialogs = []
+
+                async def probe_dialog(dialog):
+                    probe_dialogs.append(dialog.type)
+                    await dialog.accept()
+
+                probe.on('dialog', probe_dialog)
+                async with probe.expect_event('close'):
+                    await probe.close(run_before_unload=True)
+                native_beforeunload = 'beforeunload' in probe_dialogs
+                await probe_context.close()
+                if not native_beforeunload:
+                    print('SKIP native unload prompt: this Firefox build also suppresses it on an independent empty page; app handler remains asserted', flush=True)
+            # Browser.new_page owns a private context and Page.close closes that context immediately after
+            # requesting beforeunload. That can dispose the dialog before its async handler answers it.
+            # Keep context disposal separate from the user-close path we are testing.
+            context = await browser.new_context(viewport={'width': 1440, 'height': 900})
+            page = await context.new_page()
             errors = []
             page.on('pageerror', lambda error: errors.append(str(error)))
             await page.goto(f'http://127.0.0.1:{client_port}/')
@@ -133,6 +161,21 @@ async def main():
                 unnamed.extend(f'{route}: {item}' for item in found['empty'])
             assert not unnamed, unnamed
             print('PASS every main page has one heading and no interactive control without a name', flush=True)
+
+            async def slow_projects(route):
+                await asyncio.sleep(0.3)
+                await route.continue_()
+
+            await page.route('**/api/projects', slow_projects)
+            await page.evaluate("void go('/projects')")
+            await page.wait_for_function("document.querySelector('#view').getAttribute('aria-busy') === 'true'")
+            assert await page.evaluate("document.querySelector('#view').inert")
+            await page.evaluate("go('/environments')")
+            await page.wait_for_timeout(450)
+            assert 'Servers' in await page.locator('#view h1').inner_text()
+            assert await page.evaluate("!document.querySelector('#view').inert && !document.querySelector('#view').hasAttribute('aria-busy')")
+            await page.unroute('**/api/projects', slow_projects)
+            print('PASS slow navigation exposes a busy state and cannot overwrite a newer page', flush=True)
 
             # A tablet width keeps the layout usable.
             await check_page(page, 'projects', 'Projects', 1024, 768)
@@ -222,7 +265,24 @@ async def main():
             # leaves without a dialog (tested by every other navigation above).
             await page.goto(f'http://127.0.0.1:{client_port}/#/settings')
             await page.wait_for_selector('#settings-form input[name=undo_steps]')
+            save_started = asyncio.Event()
+            release_save = asyncio.Event()
+            async def delayed_save(route):
+                if route.request.method == 'PUT':
+                    save_started.set()
+                    await release_save.wait()
+                try:
+                    await route.continue_()
+                except PlaywrightError:
+                    # A confirmed reload cancels the pending request, which is the condition under test.
+                    pass
+
+            await page.route('**/api/settings', delayed_save)
+            # Firefox requires sticky user activation before showing beforeunload. fill() alone may only
+            # synthesize input; a real click models the user editing the form without weakening the assertion.
+            await page.click('#settings-form input[name=undo_steps]')
             await page.fill('#settings-form input[name=undo_steps]', '41')
+            await asyncio.wait_for(save_started.wait(), timeout=10)
             dialogs = []
 
             async def on_dialog(dialog):
@@ -232,10 +292,25 @@ async def main():
             page.on('dialog', on_dialog)
             dirty = await page.evaluate("() => !!(app.pageSave && app.pageSave.element.isConnected && app.pageSave.isDirty())")
             assert dirty, 'the edited form reports unsaved changes'
-            await page.reload()
+            assert await page.evaluate("""() => {
+                const event = new Event('beforeunload', {cancelable: true});
+                window.dispatchEvent(event);
+                return event.defaultPrevented;
+            }"""), 'the real application handler must cancel unloading a dirty form'
+            # Explicitly request the user-close path with beforeunload processing.
+            try:
+                async with page.expect_event('close'):
+                    await page.close(run_before_unload=True)
+            finally:
+                release_save.set()
+            if native_beforeunload:
+                assert 'beforeunload' in dialogs, dialogs
+            page = await context.new_page()
+            await page.set_viewport_size({'width': 390, 'height': 844})
+            page.on('pageerror', lambda error: errors.append(str(error)))
+            await page.goto(f'http://127.0.0.1:{client_port}/#/settings')
             await page.wait_for_selector('#settings-form input[name=undo_steps]')
-            assert 'beforeunload' in dialogs, dialogs
-            print('PASS an unsaved settings change asks before the page is closed', flush=True)
+            print('PASS an unsaved settings change cancels unload' + (' and shows native confirmation' if native_beforeunload else ' (native prompt unsupported by this Firefox build)'), flush=True)
 
             # An API error is reported in words, not as a silent failure. Creating without a name makes
             # "Untitled1" on purpose; renaming to nothing is refused with a message about the name.

@@ -246,7 +246,10 @@ async def check(base):
         await page.screenshot(path=str(artifacts / 'canvas-connected-light.png'))
         for section in ['workflow', 'properties']:
             await page.locator('[data-side-tab='+section+']').click()
-            await page.wait_for_timeout(350)
+            await page.wait_for_function("""expected => {
+              const style=getComputedStyle(document.querySelector('.side-content'));
+              return parseFloat(style.borderTopRightRadius)===expected && parseFloat(style.borderBottomRightRadius)===21;
+            }""", arg=0 if section == 'workflow' else 21)
             corners = await page.locator('.side-content').evaluate("el=>{const s=getComputedStyle(el);return [parseFloat(s.borderTopRightRadius),parseFloat(s.borderBottomRightRadius)]}")
             assert corners[0] == (0 if section == 'workflow' else 21) and corners[1] == 21, (section, corners)
             await page.screenshot(path=str(artifacts / ('panel-'+section+'.png')))

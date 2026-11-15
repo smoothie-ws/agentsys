@@ -16,6 +16,37 @@ const clean = dir => fs.rmSync(dir, {recursive: true, force: true});
 const read = (dir, ...parts) => fs.readFileSync(path.join(dir, ...parts), 'utf8');
 const exists = (dir, ...parts) => fs.existsSync(path.join(dir, ...parts));
 
+test('an invalid percent escape in an unrelated filename cannot prevent startup or change scans', async () => {
+  const dir = tmp();
+  try {
+    fs.mkdirSync(path.join(dir, 'other'));
+    fs.writeFileSync(path.join(dir, 'other', 'broken%ZZ.json'), '{}');
+    const {createFileStore} = require('../server/file-store');
+    const store = createFileStore(dir);
+    store.commit({set: {projects: []}});
+    assert.deepEqual(store.get('projects'), []);
+    assert.deepEqual(await store.scan(), []);
+    const {app} = await boot(dir);
+    await app.close();
+  } finally { clean(dir); }
+});
+
+test('a malformed redo or commit is rejected in full before any key is written', async () => {
+  const {createFileStore} = require('../server/file-store');
+  for (const invalid of [null, [], {set: []}, {remove: 'projects'}, {set: {projects: ['bad']}, remove: [5]}]) {
+    const dir = tmp();
+    try {
+      const store = createFileStore(dir);
+      assert.throws(() => store.commit(invalid), /Invalid storage/);
+      assert.equal(store.get('projects'), undefined);
+      fs.writeFileSync(path.join(dir, '.transaction.json'), JSON.stringify(invalid));
+      const restored = createFileStore(dir);
+      assert.equal(restored.get('projects'), undefined);
+      assert.ok(exists(dir, '.transaction.json.invalid'));
+    } finally { clean(dir); }
+  }
+});
+
 const seedProjects = name => [{id: 'p1', name, workflows: [{id: 'w1', name: 'Flow'}]}];
 
 /** Boots a server on the folder and returns {app, call} where call goes through the API without HTTP. */

@@ -47,7 +47,7 @@ exports.activate = async api => {
   api.ui.addPage({
     id: 'home',
     title: 'Hello',
-    render: async () => `<h2>Hello</h2><p>${api.escape(api.id)}</p><button type="button" data-command="hello">Say hello</button>`,
+    render: async () => `<h2>Hello</h2><p>${api.ui.escape(api.id)}</p><button type="button" data-command="hello">Say hello</button>`,
   });
 };
 ```
@@ -156,3 +156,8 @@ data version if you migrate stored values. If the new version cannot start, the 
 | A node shows a permission error | Its `grants` and the project policy must both allow the capability |
 | A page is blank | The renderer threw; the error is in the console and the page body |
 | An image does not show | Assets must be PNG/JPEG/GIF/WebP and used with `api.asset` in an `<img>` |
+
+The [RC contract](plugin-rc-contract.md) lists the supported operations and intentional omissions.
+Updates adding capabilities require explicit permission approval. An older server without identity-bound
+plugin tokens must be upgraded. See the independent [Integration Studio](../client-plugins/integration-studio/README.md)
+and [Graph Developer Tools](../client-plugins/graph-developer-tools/README.md) examples.

@@ -7,18 +7,6 @@
 // bound to ports inside the group and is shown as one node. docs/architecture.md describes the data model.
 'use strict';
 
-const emptyDoc = () => ({
-  cursor: 0,
-  nodes: [],
-  layout: {},
-  style: {},
-  groups: [],
-  complex: [],
-  port_edges: [],
-  widgets: {},
-  types: [],
-  library_nodes: [],
-});
 const stateOf = doc => ({
   nodes: doc.nodes,
   layout: doc.layout,
