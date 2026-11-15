@@ -50,6 +50,10 @@ test('verified plugin identity prevents Library takeover through every mutation 
     assert.equal(created.status, 200);
     const resource = await created.json();
     assert.equal(resource.payload.plugin.id, 'first');
+    const graphOnly = (await mint(base, ['graph.write'], OWNER, 'first')).body.token;
+    const encoded = await use(base, graphOnly, 'PUT', 'projects/%6cib-' + resource.id + '/input-values', {});
+    assert.equal(encoded.status, 403);
+    assert.match((await encoded.json()).error.message, /library\.write/, 'encoded project IDs cannot bypass the Library capability');
     assert.equal((await use(base, second, 'GET', 'resources/' + resource.id)).status, 200, 'Library definitions are shared reads');
     for (const [method, route, body] of [
       ['POST', 'library/script-nodes', {...spec, resource_id: resource.id, code: 'node.output.value = 99;'}],

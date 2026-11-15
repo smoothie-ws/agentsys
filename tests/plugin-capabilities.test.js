@@ -37,6 +37,8 @@ test('an undeclared plugin is read-only and cannot write anything', () => {
 });
 
 test('a declared capability allows exactly its family of calls', () => {
+  assert.equal(allowed(['graph.write'], 'PUT', 'projects/%6cib-owned/input-values'), false);
+  assert.equal(allowed(WRITER, 'PUT', 'projects/%6cib-owned/input-values'), true);
   assert.equal(allowed(WRITER, 'POST', 'library/script-nodes'), true);
   assert.equal(allowed(WRITER, 'POST', 'projects'), true);
   assert.equal(allowed(['collections.write'], 'POST', 'collections/providers/records', {data: {}}), true);

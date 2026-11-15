@@ -133,7 +133,8 @@ async function assertScriptPermission(context, method, path, body) {  const step
   const permissions = step?.permissions ?? {chain: [[]]};
   const policy = (await DB.get('policy:' + context.project_id)) ?? {allow: ['graph.read']};
   let needs = await permissionNeeds(method, path, body);
-  if (method !== 'GET' && /^projects\/lib-/.test(path)) needs.push('library.write');
+  if (method !== 'GET' && path.startsWith('projects/') && decodeURIComponent(path.split('/')[1] || '').startsWith('lib-'))
+    needs.push('library.write');
   const usedSecrets = JSON.stringify(body).matchAll(/\{\{secret:([A-Za-z0-9_-]+)\}\}/g);
   needs = [...needs, ...[...usedSecrets].map(m => 'secrets.use:' + m[1])];
   const denied = needs.find(need => !allows(policy.allow ?? [], need) || !grantedBy(permissions, need));
