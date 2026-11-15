@@ -21,17 +21,21 @@ async def install(page, name):
 
 async def main():
     directory = tempfile.mkdtemp(prefix='agentsys-certification-')
-    server_port, client_port = free_port(), free_port()
+    second_directory = tempfile.mkdtemp(prefix='agentsys-certification-second-')
+    server_port, second_port, client_port = free_port(), free_port(), free_port()
     endpoint = http.server.ThreadingHTTPServer(('127.0.0.1', 0), Endpoint)
     threading.Thread(target=endpoint.serve_forever, daemon=True).start()
-    server = client = None
+    server = second_server = client = None
     try:
         server = start(['bin/agentsys-server.js', 'start', '--port', str(server_port), '--data', directory,
                         '--allowed-origin', f'http://127.0.0.1:{client_port}', '--quiet'])
         client = start(['bin/agentsys-client.js', '--port', str(client_port), '--server', f'http://127.0.0.1:{server_port}'])
+        second_server = start(['bin/agentsys-server.js', 'start', '--port', str(second_port), '--data', second_directory,
+                               '--allowed-origin', f'http://127.0.0.1:{client_port}', '--quiet'])
         base = f'http://127.0.0.1:{server_port}'
         client_url = f'http://127.0.0.1:{client_port}'
         wait_http(base + '/api/meta')
+        wait_http(f'http://127.0.0.1:{second_port}/api/meta')
         wait_http(client_url)
         async with async_playwright() as p:
             engine = os.environ.get('AGENTSYS_BROWSER', 'chromium')
@@ -120,6 +124,21 @@ async def main():
             await other_page.click('#modal button[value=cancel]')
             assert await other_page.evaluate("PluginStore.get('graph-developer-tools').version") == '1.0.0'
             await other.close()
+            await page.evaluate("url => Environment.save({id: 'second', name: 'Second', url})", f'http://127.0.0.1:{second_port}')
+            await page.evaluate("Environment.setActive('second')")
+            await page.wait_for_function("Environment.status().status === 'connected' && Extensions.apiOf('integration-studio') !== null")
+            assert await page.evaluate("PluginStore.storage('graph-developer-tools').get('report:local')") is None
+            second_deploy = await page.evaluate("Extensions.deploy('integration-studio')")
+            assert second_deploy['ok'], second_deploy
+            assert http_json(f'http://127.0.0.1:{second_port}', 'GET', 'collections/integration-connections/records')['total'] == 0
+            first_ids = {r['id'] for r in http_json(base, 'GET', 'resources') if r['payload'].get('plugin', {}).get('id') == 'integration-studio'}
+            second_ids = {r['id'] for r in http_json(f'http://127.0.0.1:{second_port}', 'GET', 'resources') if r['payload'].get('plugin', {}).get('id') == 'integration-studio'}
+            assert len(first_ids) == len(second_ids) == 6 and not first_ids.intersection(second_ids)
+            await page.evaluate("go('/ext/graph-developer-tools/graphs')")
+            await page.wait_for_function("document.querySelector('#ext-page-body')?.innerText.includes('No workflows')")
+            await page.evaluate("Environment.setActive('local')")
+            await page.wait_for_function("Environment.status().status === 'connected' && Extensions.apiOf('integration-studio') !== null")
+            print('PASS environments: both products switch servers without leaking reports or connections; deployments use independent IDs', flush=True)
             await page.reload()
             await page.wait_for_function("Extensions.apiOf('graph-developer-tools') !== null && Environment.status().status === 'connected'")
             await page.evaluate("go('/ext/integration-studio/connections')")
@@ -179,7 +198,7 @@ async def main():
             print('PASS reconnect: current server result displayed by restored client at mobile width', flush=True)
             await browser.close()
     finally:
-        for process in [client, server]:
+        for process in [client, server, second_server]:
             if process and process.poll() is None:
                 process.terminate()
                 try:
@@ -190,6 +209,7 @@ async def main():
         endpoint.shutdown()
         endpoint.server_close()
         shutil.rmtree(directory, ignore_errors=True)
+        shutil.rmtree(second_directory, ignore_errors=True)
 
 
 if __name__ == '__main__':
