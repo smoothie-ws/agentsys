@@ -4,16 +4,25 @@ No product source imports. Output artifacts and logs are retained for review.
 """
 from pathlib import Path
 import json, os, re, shutil, subprocess, tempfile, threading, queue, time, urllib.request, urllib.error
+from http.server import BaseHTTPRequestHandler, ThreadingHTTPServer
 from concurrent.futures import ThreadPoolExecutor
 from playwright.sync_api import sync_playwright
 
 ROOT = Path(__file__).resolve().parents[1]
 NODE = os.environ.get('AGENTSYS_NODE') or shutil.which('node')
-NPM = Path(NODE).parent / 'node_modules/npm/bin/npm-cli.js'
+from integration_common import npm_cli
+NPM = npm_cli(NODE)
 WORK = Path(tempfile.mkdtemp(prefix='agentsys-artifacts-'))
 TOKEN = 'artifact-test-token'
 processes = []
 results = {'work': str(WORK), 'checks': []}
+class IntegrationEndpoint(BaseHTTPRequestHandler):
+    def do_GET(self):
+        body=json.dumps({'ok':True,'path':'/artifact-integration'}).encode()
+        self.send_response(200); self.send_header('Content-Type','application/json'); self.end_headers(); self.wfile.write(body)
+    def log_message(self, *_): pass
+endpoint=ThreadingHTTPServer(('127.0.0.1',0),IntegrationEndpoint)
+threading.Thread(target=endpoint.serve_forever,daemon=True).start()
 
 def check(name, condition):
     assert condition, name
@@ -65,7 +74,8 @@ try:
     client_process, origin = start(client, 'client', ['serve', '--port', '0'])
     server_process, base = start(server, 'server', ['start', '--port', '0', '--data', str(WORK / 'data'), '--token', TOKEN, '--allowed-origin', origin])
     status, meta, _ = call(base, 'GET', 'meta')
-    check('discovery reports independent API and application versions', status == 200 and meta['version'] == '0.4.0' and meta['api_version'] == '2.0')
+    expected_version=json.loads((server/'package.json').read_text())['version']
+    check('discovery reports independent API and application versions', status == 200 and meta['version'] == expected_version and meta['api_version'] == '2.0')
     status, project, _ = call(base, 'POST', 'projects', {'name': 'Artifact-only project'})
     check('project created through public HTTP', status == 200 and bool(project['id']))
     status, workflow, _ = call(base, 'GET', 'projects/' + project['id'] + '/workflow')
@@ -133,6 +143,13 @@ try:
           const detail = await api('projects/' + project.id);
           return {project: project.id, workflow: detail.workflows.find(w => w.name === 'Library Pack demo').id};
         }''')
+        page.evaluate('''async endpoint => {
+          await Extensions.execute('integration-studio:save', {name:'Artifact endpoint',endpoint,parameters:'{}',auth:'none',secretName:''});
+        }''', 'http://127.0.0.1:' + str(endpoint.server_port))
+        studio_graph = page.evaluate("Extensions.execute('integration-studio:build')")
+        check('Integration Studio creates a persistent six-stage workflow through Host API', bool(studio_graph['project']) and bool(studio_graph['workflow']))
+        status, _, _ = call(base,'PUT','projects/'+studio_graph['project']+'/policy',{'allow':['graph.read','collections.read','collections.write','net.fetch:127.0.0.1:*','secrets.use:integration-demo']})
+        check('owner explicitly grants workflow execution policy',status==200)
         first_id = page.evaluate('Environment.active().id')
         second_id = page.evaluate('''async url => {
           const env = Environment.save({name: 'Independent second server', url, token: 'second-artifact-token'});
@@ -143,6 +160,17 @@ try:
         check('switching environments does not mix server projects', project['id'] not in json.dumps(second_projects))
         check('each environment keeps its own bearer credential', page.evaluate('id => Environment.tokenOf(id)', first_id) == TOKEN and page.evaluate('id => Environment.tokenOf(id)', second_id) == 'second-artifact-token')
         check('switching back reconnects to original server', page.evaluate('id => Environment.setActive(id)', first_id) is True)
+        incompatible_archive=os.environ.get('AGENTSYS_INCOMPATIBLE_SERVER_ARTIFACT')
+        if incompatible_archive:
+            incompatible_prefix=WORK/'incompatible'; incompatible_prefix.mkdir()
+            subprocess.run([NODE,str(NPM),'install','--prefix',str(incompatible_prefix),'--ignore-scripts','--no-audit','--no-fund',incompatible_archive],check=True,capture_output=True)
+            _, incompatible_url=start(incompatible_prefix/'node_modules/agentsys-server','server',['start','--port','0','--data',str(WORK/'incompatible-data'),'--token',TOKEN,'--allowed-origin',origin])
+            state=page.evaluate('''async ({url,token}) => {
+              const env=Environment.save({name:'Incompatible API',url,token});
+              await Environment.setActive(env.id); return Environment.status();
+            }''',{'url':incompatible_url,'token':TOKEN})
+            check('incompatible API major produces an explanatory connection state',state['status']=='incompatible' and bool(state['detail']))
+            check('client recovers after refusing incompatible server',page.evaluate('id => Environment.setActive(id)',first_id) is True)
         page.screenshot(path=str(WORK / 'connected.png'), full_page=True)
         check('browser has no uncaught JavaScript errors', not errors)
         browser.close()
@@ -150,6 +178,10 @@ try:
     status, execution, _ = call(base, 'POST', 'projects/' + graph_ids['project'] + '/execution?workflow_id=' + graph_ids['workflow'], {'wait': True})
     check('published Library workflow executes after all clients disconnect', status == 200 and execution['dispatch_status'] == 'completed')
     check('headless execution produces saved Library-node output', 'Hello, world!' in ''.join((execution.get('displays') or {}).values()))
+    status, studio_run, _ = call(base, 'POST', 'projects/' + studio_graph['project'] + '/execution?workflow_id=' + studio_graph['workflow'], {'wait':True})
+    check('Integration Studio workflow executes without a client or plugin host',status==200 and studio_run['dispatch_status']=='completed')
+    status, records, _ = call(base,'GET','collections/integration-results/records')
+    check('autonomous workflow stores the expected HTTP transformation',status==200 and any(r['data']['result'].get('path')=='/artifact-integration' and r['data']['result'].get('ok') for r in records['records']))
     # Persisted data must survive a process restart with no client connected.
     server_process.terminate(); server_process.wait(timeout=10)
     server_process, restarted = start(server, 'server', ['start', '--port', '0', '--data', str(WORK / 'data'), '--token', TOKEN, '--allowed-origin', origin])
@@ -160,10 +192,16 @@ except Exception as error:
     results['status'] = 'failed'; results['error'] = str(error)
     raise
 finally:
+    endpoint.shutdown(); endpoint.server_close()
     for proc in processes:
         if proc.poll() is None:
             proc.terminate()
             try: proc.wait(timeout=10)
             except subprocess.TimeoutExpired: proc.kill(); proc.wait()
     (WORK / 'results.json').write_text(json.dumps(results, indent=2), encoding='utf-8')
+    evidence=ROOT/'integration-results'/('artifact-'+os.environ.get('AGENTSYS_BROWSER','chromium'))
+    evidence.mkdir(parents=True,exist_ok=True)
+    for artifact in WORK.iterdir():
+        if artifact.is_file() and artifact.suffix in ['.json','.png','.log']:
+            shutil.copy2(artifact,evidence/artifact.name)
     print('Evidence: ' + str(WORK), flush=True)

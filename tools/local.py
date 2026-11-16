@@ -10,7 +10,8 @@ parser.add_argument('--server-port',type=int,default=8080)
 parser.add_argument('--client-port',type=int,default=8081)
 parser.add_argument('--data',type=Path,default=root/'.local/data')
 args=parser.parse_args()
-node=shutil.which('node'); npm=Path(node).parent/'node_modules/npm/bin/npm-cli.js'
+from integration_common import npm_cli
+node=shutil.which('node'); npm=npm_cli(node)
 children=[]
 try:
     for product,archive in [('server',args.server_artifact),('client',args.client_artifact)]:

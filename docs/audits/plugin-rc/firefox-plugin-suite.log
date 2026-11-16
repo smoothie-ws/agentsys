@@ -1,5 +1,0 @@
-Logs: C:\Users\kibot\AppData\Local\Temp\agentsys-browser-suite-r_1ykdsk
-PASS plugin_platform (37.5s)
-PASS plugin_certification (14.3s)
-PASS plugin_security (10.3s)
-3/3 passed; failures: []

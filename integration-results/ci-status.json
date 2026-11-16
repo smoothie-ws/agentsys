@@ -1,79 +1,175 @@
 {
   "server": [
     {
-      "id": 43827180962,
-      "sha": "153cb59394c07d4491c1b2445cb559464ca7cab0",
-      "status": "in_progress",
-      "conclusion": null,
-      "url": "https://github.com/smoothie-ws/agentsys-server/actions/runs/43827180962",
+      "id": 43828755752,
+      "sha": "ab606cd700aba2477a778b5410b237d796b60754",
+      "status": "completed",
+      "conclusion": "success",
+      "url": "https://github.com/smoothie-ws/agentsys-server/actions/runs/43828755752",
       "jobs": [
+        {
+          "name": "test (ubuntu-latest, 24)",
+          "status": "completed",
+          "conclusion": "success",
+          "id": 133168688776
+        },
+        {
+          "name": "container",
+          "status": "completed",
+          "conclusion": "success",
+          "id": 133168689059
+        },
+        {
+          "name": "test (windows-latest, 22)",
+          "status": "completed",
+          "conclusion": "success",
+          "id": 133168689080
+        },
         {
           "name": "test (ubuntu-latest, 22)",
           "status": "completed",
           "conclusion": "success",
-          "id": 133163684235
+          "id": 133168689123
         },
         {
           "name": "test (windows-latest, 24)",
-          "status": "in_progress",
-          "conclusion": null,
-          "id": 133163684433
+          "status": "completed",
+          "conclusion": "success",
+          "id": 133168689187
+        }
+      ]
+    },
+    {
+      "id": 43828562243,
+      "sha": "91fab9d787166381518c36d923d0eeebf838114a",
+      "status": "completed",
+      "conclusion": "failure",
+      "url": "https://github.com/smoothie-ws/agentsys-server/actions/runs/43828562243",
+      "jobs": [
+        {
+          "name": "test (ubuntu-latest, 24)",
+          "status": "completed",
+          "conclusion": "success",
+          "id": 133168071112
+        },
+        {
+          "name": "test (windows-latest, 22)",
+          "status": "completed",
+          "conclusion": "success",
+          "id": 133168071249
         },
         {
           "name": "container",
           "status": "completed",
           "conclusion": "failure",
-          "id": 133163684493
-        },
-        {
-          "name": "test (windows-latest, 22)",
-          "status": "in_progress",
-          "conclusion": null,
-          "id": 133163684528
-        },
-        {
-          "name": "test (ubuntu-latest, 24)",
-          "status": "completed",
-          "conclusion": "success",
-          "id": 133163684601
-        }
-      ]
-    },
-    {
-      "id": 43826846853,
-      "sha": "b82038f09f17cb7f6a166a90c72b54845f4f12e0",
-      "status": "completed",
-      "conclusion": "success",
-      "url": "https://github.com/smoothie-ws/agentsys-server/actions/runs/43826846853",
-      "jobs": [
-        {
-          "name": "test (windows-latest, 22)",
-          "status": "completed",
-          "conclusion": "success",
-          "id": 133162603451
+          "id": 133168071313
         },
         {
           "name": "test (ubuntu-latest, 22)",
           "status": "completed",
           "conclusion": "success",
-          "id": 133162603600
-        },
-        {
-          "name": "test (ubuntu-latest, 24)",
-          "status": "completed",
-          "conclusion": "success",
-          "id": 133162603696
+          "id": 133168071358
         },
         {
           "name": "test (windows-latest, 24)",
           "status": "completed",
           "conclusion": "success",
-          "id": 133162603732
+          "id": 133168071443
+        }
+      ]
+    },
+    {
+      "id": 43827472217,
+      "sha": "ef2b7d4feb6e2112a6cf235488f0f45d343a204f",
+      "status": "completed",
+      "conclusion": "success",
+      "url": "https://github.com/smoothie-ws/agentsys-server/actions/runs/43827472217",
+      "jobs": [
+        {
+          "name": "container",
+          "status": "completed",
+          "conclusion": "success",
+          "id": 133164610920
+        },
+        {
+          "name": "test (windows-latest, 22)",
+          "status": "completed",
+          "conclusion": "success",
+          "id": 133164611135
+        },
+        {
+          "name": "test (ubuntu-latest, 24)",
+          "status": "completed",
+          "conclusion": "success",
+          "id": 133164611214
+        },
+        {
+          "name": "test (windows-latest, 24)",
+          "status": "completed",
+          "conclusion": "success",
+          "id": 133164611296
+        },
+        {
+          "name": "test (ubuntu-latest, 22)",
+          "status": "completed",
+          "conclusion": "success",
+          "id": 133164611339
         }
       ]
     }
   ],
   "client": [
+    {
+      "id": 43828767493,
+      "sha": "60682c35a73dcc9a5371e14fa1449e2f7d8fbebd",
+      "status": "completed",
+      "conclusion": "success",
+      "url": "https://github.com/smoothie-ws/agentsys-client/actions/runs/43828767493",
+      "jobs": [
+        {
+          "name": "browser (firefox)",
+          "status": "completed",
+          "conclusion": "success",
+          "id": 133168728140
+        },
+        {
+          "name": "test (ubuntu-latest, 22)",
+          "status": "completed",
+          "conclusion": "success",
+          "id": 133168728414
+        },
+        {
+          "name": "test (windows-latest, 24)",
+          "status": "completed",
+          "conclusion": "success",
+          "id": 133168728427
+        },
+        {
+          "name": "browser (webkit)",
+          "status": "completed",
+          "conclusion": "success",
+          "id": 133168728440
+        },
+        {
+          "name": "test (ubuntu-latest, 24)",
+          "status": "completed",
+          "conclusion": "success",
+          "id": 133168728514
+        },
+        {
+          "name": "browser (chromium)",
+          "status": "completed",
+          "conclusion": "success",
+          "id": 133168728560
+        },
+        {
+          "name": "test (windows-latest, 22)",
+          "status": "completed",
+          "conclusion": "success",
+          "id": 133168728807
+        }
+      ]
+    },
     {
       "id": 43826888365,
       "sha": "94308d176fb54cdcd6f6fef4f9b900f882d97275",

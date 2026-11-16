@@ -1,0 +1,46 @@
+name: Independent artifact integration
+on: [push, pull_request, workflow_dispatch]
+permissions:
+  contents: read
+jobs:
+  artifacts:
+    strategy:
+      fail-fast: false
+      matrix:
+        browser: [chromium, firefox, webkit]
+    runs-on: ubuntu-24.04
+    env:
+      AGENTSYS_BROWSER: ${{ matrix.browser }}
+      AGENTSYS_SERVER_ARTIFACT: ${{ github.workspace }}/.products/server/agentsys-server-0.4.0.tgz
+      AGENTSYS_CLIENT_ARTIFACT: ${{ github.workspace }}/.products/client/agentsys-client-0.7.0.tgz
+    steps:
+      - uses: actions/checkout@v4
+      - uses: actions/checkout@v4
+        with:
+          repository: smoothie-ws/agentsys-server
+          ref: d92a2a71a06231a7b49a16328bdf04d162696437
+          path: .products/server
+      - uses: actions/checkout@v4
+        with:
+          repository: smoothie-ws/agentsys-client
+          ref: 60682c3
+          path: .products/client
+      - uses: actions/setup-node@v4
+        with:
+          node-version: 24
+      - uses: actions/setup-python@v5
+        with:
+          python-version: '3.12'
+      - run: pip install playwright==1.57.0
+      - run: python -m playwright install --with-deps ${{ matrix.browser }}
+      - run: npm pack
+        working-directory: .products/server
+      - run: npm pack
+        working-directory: .products/client
+      - run: node --test tests/integration-boundary.test.js
+      - run: python tools/artifact-smoke.py
+      - if: always()
+        uses: actions/upload-artifact@v4
+        with:
+          name: integration-${{ matrix.browser }}
+          path: integration-results/

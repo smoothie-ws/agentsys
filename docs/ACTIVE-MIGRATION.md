@@ -113,3 +113,37 @@ major and full Integration Studio execution scenarios, performance baseline,
 release artifact verification, artifact-only integration CI, final conversion of
 original tree to integration-only (products already safe in own committed remotes),
 and requirement-by-requirement completion audit. Keep goal active.
+
+## Integration-only conversion and final-scenario update
+
+Original checkout is now on refactor/product-separation and contains no product
+source tree. 381 tracked monolith files were removed with Git history intact;
+user data, node_modules and other untracked files were not removed. README and
+start.bat now launch independent artifacts. tests/integration-boundary.test.js
+passes and prevents reintroduction of active product trees or a combined package.
+The integration CI checks out pinned product commits solely to produce tarballs;
+its E2E runner installs them in separate prefixes and has no source imports.
+
+Full Integration Studio scenario passed: install/deploy, create a six-stage graph
+via sandbox Host API, explicitly grant owner execution policy, close all clients,
+execute HTTP/transform/store workflow on the server and verify saved records.
+Evidence: integration-results/studio-e2e.json. Independent synthetic patch-update
+matrix passed client-only, server-only and both updates; each run also launched a
+separate incompatible-major server artifact, observed explanatory rejection and
+recovered by switching back. Matrix evidence: independent-updates.json and its
+retained per-run directories. These synthetic versions were not published releases.
+
+Performance evidence: performance.json. One-host descriptive measurements only,
+no statistically significant speedup claim. Baseline source installation 10.19 MB;
+server npm installation 0.79 MB; client npm installation 0.96 MB. Baseline had no
+independent client dist. Browser JS bytes roughly unchanged (661266 -> 661887).
+SSE remained connected across one 21-second heartbeat interval on both versions.
+
+Server-only container CI passed at ab606cd (run 43828755752), including meaningful
+workflow execution and persisted result verification after docker restart.
+Client 60682c3 CI run 43828767493 passed all seven jobs. Canonical API contract now
+includes its own discovery path (72 paths); server latest d92a2a7 CI is pending.
+Integration branch has not yet been pushed or merged. No releases tagged yet.
+Remaining work: verify integration CI and newest product CI, release artifacts
+and SDK integrity, integration default branch transition without force/history
+loss, inspect all original requirements in a final audit, address any omissions.

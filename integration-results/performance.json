@@ -1,0 +1,38 @@
+{
+  "baseline_commit": "5f916bf24bea3a10a0566c68992f1eacb79a999a",
+  "node": "v20.17.0",
+  "method": "One cold process startup per product, 40 warm API reads, Chromium heap snapshot and one heartbeat interval. Descriptive, not statistically significant. Installation sizes exclude Node/browser runtimes. Baseline installation is the tracked monolithic source distribution, including its tests/tools. No standalone client distribution existed before separation; initial HTML/CSS/JS bytes are reported separately and must not be compared to the full after-distribution.",
+  "measurements": {
+    "before": {
+      "server_installation_bytes": 10188705,
+      "client_installation_bytes": 10188705,
+      "client_public_bytes": null,
+      "browser_javascript_bytes": 661266,
+      "server_startup_ms": 419.87,
+      "static_cli_startup_ms": 157.45,
+      "browser_connected_ms": 254.2,
+      "server_rss_bytes": 42000384,
+      "static_cli_rss_bytes": 36208640,
+      "browser_js_heap_bytes": 2891348,
+      "api_p50_ms": 2.405,
+      "api_p95_ms": 22.094,
+      "sse_connected_after_21_seconds": true,
+      "initial_html_css_javascript_bytes": 836475
+    },
+    "after": {
+      "server_installation_bytes": 792034,
+      "client_installation_bytes": 959883,
+      "client_public_bytes": 946163,
+      "browser_javascript_bytes": 661887,
+      "server_startup_ms": 267.66,
+      "static_cli_startup_ms": 141.04,
+      "browser_connected_ms": 247.01,
+      "server_rss_bytes": 42340352,
+      "static_cli_rss_bytes": 36294656,
+      "browser_js_heap_bytes": 2894381,
+      "api_p50_ms": 2.26,
+      "api_p95_ms": 21.74,
+      "sse_connected_after_21_seconds": true
+    }
+  }
+}
