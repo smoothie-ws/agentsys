@@ -8,7 +8,7 @@ from concurrent.futures import ThreadPoolExecutor
 from playwright.sync_api import sync_playwright
 
 ROOT = Path(__file__).resolve().parents[1]
-NODE = shutil.which('node')
+NODE = os.environ.get('AGENTSYS_NODE') or shutil.which('node')
 NPM = Path(NODE).parent / 'node_modules/npm/bin/npm-cli.js'
 WORK = Path(tempfile.mkdtemp(prefix='agentsys-artifacts-'))
 TOKEN = 'artifact-test-token'
@@ -23,7 +23,7 @@ def check(name, condition):
 def install(product, version):
     destination = WORK / product
     destination.mkdir()
-    archive = ROOT.parent / ('agentsys-' + product) / f'agentsys-{product}-{version}.tgz'
+    archive = Path(os.environ.get('AGENTSYS_' + product.upper() + '_ARTIFACT') or ROOT.parent / ('agentsys-' + product) / f'agentsys-{product}-{version}.tgz')
     subprocess.run([NODE, str(NPM), 'install', '--prefix', str(destination), '--ignore-scripts', '--no-audit', '--no-fund', str(archive)], check=True, capture_output=True, text=True)
     package = destination / 'node_modules' / ('agentsys-' + product)
     check(product + ' installed independently', package.is_dir())

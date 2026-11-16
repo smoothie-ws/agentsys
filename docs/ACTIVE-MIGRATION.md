@@ -80,3 +80,36 @@ Integration Studio workflow F in full, performance comparison, independent brows
 CI/release ZIP/SDK artifact validation, actual GitHub remotes/CI if available,
 local artifact launcher, integration-only tree conversion, complete final audit.
 Migration helper scripts are historical one-time records; do not rerun them.
+
+## Remote CI and delivery update
+
+Both remotes now exist, same visibility as original source:
+https://github.com/smoothie-ws/agentsys-server
+https://github.com/smoothie-ws/agentsys-client
+Main branches pushed without force. Server at ef2b7d4; client at 94308d1.
+Independent GitHub CI succeeded for server b82038f (run 43826846853) and client
+94308d1 (run 43826888365): Node 22/24 Linux/Windows; all three client browser jobs.
+Local Node 24 also passed server 344+1 skip and client 104 tests.
+OpenAPI 3.1 passes openapi-spec-validator. Added named entity/auth/discovery schemas.
+
+Independent tag-triggered release pipelines produce npm artifacts, static ZIP and
+SDK tarball for client, API ZIP and Docker image archive for server. No release
+has been tagged/published yet. Server Docker build succeeded remotely; initial
+container readiness check hit a startup connection reset. The bounded readiness
+retry now handles resets; ef2b7d4 CI is pending and MUST be checked.
+
+Added independent static browser/config tests and client pretest/prepack builds.
+Added tools/local.py artifact-only two-process launcher; local smoke succeeded,
+log in integration-results/local-launcher.log. Root COMPATIBILITY.md and
+INTEGRATION-TESTS.md added. Artifact runner supports explicit artifact paths and
+Node executable overrides for CI. Current CI evidence is ci-status.json; it is a
+snapshot, not proof of the newest server commit until refreshed.
+
+Pending npm Node22 download session 30266 may still exist; remote Node22 evidence
+already passed, so local download is not required. Do not restart on timeout.
+
+Next: validate latest container CI, strengthen independent-update/incompatible
+major and full Integration Studio execution scenarios, performance baseline,
+release artifact verification, artifact-only integration CI, final conversion of
+original tree to integration-only (products already safe in own committed remotes),
+and requirement-by-requirement completion audit. Keep goal active.
