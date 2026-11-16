@@ -1,15 +1,16 @@
 # Testing
 
 Architectural measurements and regression results are recorded in
-[the refactoring report](audits/architecture-refactoring/REPORT.md). Reproduce with:
+[the finalization report](architecture-finalization/VERIFICATION.md). Reproduce with:
 
 ```sh
-node tools/source-metrics.js --ref ba4bca8
+node tools/source-metrics.js --ref 6d9d623
 node tools/source-metrics.js
-node --expose-internals tools/architecture-metrics.js --ref ba4bca8
+node --expose-internals tools/architecture-metrics.js --ref 6d9d623
 node --expose-internals tools/architecture-metrics.js
 python tools/client-bench.py --samples 5 --nodes 200 --output client-performance.json
 node --expose-gc tools/stress.js --json
+node tools/platform-bench.js --samples 5
 ```
 
 `architecture-metrics.js` uses Node's bundled Acorn parser via `--expose-internals`, for development analysis
@@ -36,16 +37,15 @@ npm test
 
 Uses only Node built-in modules. Each test builds an independent in-memory backend or a temporary data folder.
 Coverage includes graph editing, types, wires, nested nodes, signals, reads, loops, execution controls,
-permissions, Data and Graph nodes, durable JSON, the HTTP server, collections, migration, the client transport,
+permissions, Data and Graph nodes, durable JSON, the HTTP server, collections, the client transport,
 architectural boundaries, the plugin capability layer, concurrency and resource bounds. Recent result:
-**435 tests, 434 pass, 0 fail, 1 skipped** on Windows (Node 20 compatibility and Node 24 LTS). The skip is the POSIX file-mode check on Windows.
+**446 tests, 445 pass, 0 fail, 1 skipped** on local Windows Node 20 compatibility. The skip is the POSIX file-mode check on Windows. Supported Node 22/24 and browser results are recorded separately in Verification.
 
 Useful focused runs:
 
 ```sh
 node --test tests/platform.test.js       # the split: API-only server, sessions, CORS, SSE, collections
 node --test tests/execution.test.js      # the graph engine and its controls
-node --test tests/migration.test.js      # backup, preserved data, provider and secret move
 node --test tests/server.test.js         # the HTTP server and the data folder
 node --test tests/architecture.test.js   # forbidden imports and browser APIs in the server half
 node --test tests/environments.test.js   # the client transport, in a Node vm
@@ -62,7 +62,7 @@ node --test tests/deployment.test.js tests/tls.test.js tests/soak.test.js
 
 `tests/platform.test.js` checks the platform split itself: no server plugin route, no client/server script
 cross-loading, `/api/meta`, sessions, CSRF/CORS, SSE, generic collections and a client plugin creating a
-runnable Library node. `tests/migration.test.js` checks the backup, preserved data and provider/secret move.
+runnable Library node. Storage-integrity and backup suites cover current-data preservation and recovery.
 
 Round 3 added: `network-policy.test.js` (local HTTP servers, allowlists, redirects, limits, abort, IPv6,
 private DNS pinning, project egress), `lifecycle.test.js` (streams, sessions, port release), `format-property`
@@ -136,8 +136,8 @@ a short version of the soak (8 s) with the same thresholds; the tool is for long
 node tools/smoke.js --mobile
 ```
 
-This older tool opens pages through the Chrome DevTools protocol and saves screenshots. It targets the combined
-`server.js` editor and is not part of the split architecture test.
+This tool opens pages through the Chrome DevTools protocol and saves screenshots. It starts independent API
+and static Client processes with empty disposable data. For an existing Client, pass `--url` and its API's `--server`.
 
 `node tools/bench.js` measures graph reads, runtime reads, a Script loop, commits, idle runtimes and Library type
 lookups against a fresh in-memory backend. Use `--json` for before/after numbers. The historical baseline and

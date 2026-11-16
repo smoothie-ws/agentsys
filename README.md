@@ -78,7 +78,7 @@ npm test
 python tests/browser_suite.py
 ```
 
-The Node suite covers the engine, editing, permissions, storage, API, migration and the plugin manifest, lifecycle,
+The Node suite covers the engine, editing, permissions, storage, API and the plugin manifest, lifecycle,
 deployment, reference packages and token enforcement. The browser suite starts real server and client processes and
 covers connection, environment switching, plugin-created nodes, execution after the client closes and server
 restart. `tests/browser_plugin_platform.py` exercises five reference plugins, lifecycle, resource deployment, two
@@ -86,20 +86,19 @@ servers and server-only execution in Chromium, Firefox and WebKit. See [Testing]
 
 ## Documentation
 
-The latest implementation and verification report is [Architectural refactoring](docs/audits/architecture-refactoring/REPORT.md).
-The preceding security cycle is recorded in [MVP finalization](docs/audits/mvp-finalization/REPORT.md).
-Read [Architecture](docs/architecture.md) first, then:
+The architecture cleanup and verification evidence are in [Final report](docs/architecture-finalization/FINAL-REPORT.md).
+Historical verification is retained under [docs/audits](docs/audits/README.md).
+Read [Architecture](docs/ARCHITECTURE.md) first, then:
 
-- [Audit](docs/audit.md) — what was wrong and what this cycle changed.
 - [Server](docs/server.md) — CLI, storage, runtime, API.
 - [Client](docs/client.md) — transport, UI state, environments.
 - [Environments](docs/environments.md) — connecting and switching servers.
 - [Plugins](docs/plugins.md) — client extension API and its limits.
 - [Security](docs/security.md) — auth, CORS, secrets, sandbox.
 - [Deployment](docs/deployment.md) — local, LAN, VPS, HTTPS, systemd.
-- [Migration](docs/migration.md) — moving from the old combined/server-plugin version.
+- [Compatibility](docs/migration.md) — intentional MVP contract changes and data preservation.
 - [Engine](docs/engine.md), [Runtime](docs/runtime.md), [Permissions](docs/permissions.md) — the graph engine.
 - [Testing](docs/testing.md) and [Future runtime](docs/future-runtime.md).
 
-`node server.js` is still available as the combined local test server (editor at `/editor/`, API at `/api`).
-The platform server is `bin/agentsys-server.js`; it never serves the GUI.
+Server protocol **2**, Plugin API **2** and package format **2** are the supported contracts.
+The graph/storage format remains `agentsys.text/1`. The server never serves the GUI.

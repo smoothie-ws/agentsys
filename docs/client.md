@@ -28,7 +28,7 @@ the initial environment for a fresh browser profile; the user can add or change 
 
 It does **not** load the graph mutation editor, schema validation, snapshot/document construction,
 execution-view builder or interpreter. Those six model implementations, `js/backend/**` and
-`js/storage/db.js` are refused by both static launchers. All graph changes go through the application API.
+`js/storage/db.js` are refused by the static Client launcher. All graph changes go through the application API.
 
 ## API transport
 
@@ -56,8 +56,7 @@ in a page or canvas module.
 | `agentsys-plugin-<id>@<env>:` | plugin-private JSON, scoped per plugin and server |
 | `sessionStorage: agentsys-token:<env>@<encoded-url>` | per-tab token; cleared when the tab closes |
 
-The old server-side `data/other/ui-state.json` is not used for new writes. Environments → *Import old interface
-state* reads it once through the authenticated API for a person who wants the previous layout.
+UI preferences are browser-local. The server does not read or write interface layout.
 
 ## Switching environments
 

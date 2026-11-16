@@ -1,8 +1,7 @@
 # Plugin manifest and package format
 
-A package is one JSON file. The current format is **2**; the original single-source format (1) is still accepted and
-is upgraded in the browser. Validation lives in `js/app/plugin-manifest.js` and is used by the client, the packaging
-tool and the tests.
+A package is one JSON file in format **2**, declaring Plugin API **2**. Validation lives in
+`js/app/plugin-manifest.js` and is shared by the Client and packaging tool.
 
 ## Format 2
 
@@ -101,15 +100,8 @@ version updates the plugin's own Library nodes in place. See [plugin-library.md]
 `run.start`, `notifications.read`, `notifications.write`, `settings.read`, `settings.write`, `secrets.use:<name>` and
 `net.fetch:<host>` (a `*` may appear in the host pattern). See [plugin-capabilities.md](plugin-capabilities.md).
 
-## Legacy format 1
-
-```json
-{"id": "hello", "title": "Hello", "version": "1.0.0", "api": 1, "capabilities": ["graph.read"],
- "source": "exports.activate = api => api.ui.toast('Hello');"}
-```
-
-It is read as a package with `main: "plugin.js"`, no modules and no contributions. The browser writes it back as
-format 2 on the next save or export. New packages should use format 2.
+Format 1 and Plugin API 1 are rejected with `incompatible_protocol`. Current stored formatVersion 2 records
+remain readable; plugin update hooks still migrate their own private data.
 
 ## Compatibility rules
 

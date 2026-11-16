@@ -116,8 +116,8 @@ The same capabilities are enforced by the **server**: the host exchanges its ses
 scoped to the package's capabilities (`POST /api/auth/plugin-session`), the plugin's calls carry it, and the
 server checks the required capability for the method, path and body before running anything. A token cannot
 mint another token, cannot read events, diagnostics or the contract, and is revoked when the plugin is disabled.
-The capability list is never `system.admin`. A server from before this feature answers 404 and the host keeps
-its own check; nothing else changes.
+The capability list is never `system.admin`. Unsupported or identity-unaware servers fail closed; no plugin
+request falls back to the owner session or root token.
 
 **Install plugins with the capabilities you are willing to grant.** An operator who edits the client or calls the
 API with the owner token is outside the plugin model: the token is the server's trust boundary, the scoped token
@@ -165,7 +165,7 @@ is the plugin's. See [plugins.md](plugins.md).
 ## Finalization findings and operational scope
 
 Scoped-token 401 answers never trigger owner-session renewal or an owner-authenticated retry. A token issuance
-failure fails closed (except an explicitly unsupported/404 endpoint). Credentials are owned per sandbox, not
+failure fails closed, including an unsupported/404 endpoint. Credentials are owned per sandbox, not
 shared by equal grants. The request lifecycle and revocation races are covered by `plugin-sandbox.test.js` and
 `environments.test.js`.
 

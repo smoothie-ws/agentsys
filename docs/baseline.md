@@ -1,3 +1,5 @@
+> Historical record from earlier engineering cycles; current behavior is documented in [Architecture](ARCHITECTURE.md).
+
 # Baseline measurements
 
 Taken before the first hardening change, on branch `hardening/12h` at commit

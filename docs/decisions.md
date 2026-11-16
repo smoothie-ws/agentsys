@@ -1,3 +1,5 @@
+> Historical record from earlier engineering cycles; current behavior is documented in [Architecture](ARCHITECTURE.md).
+
 # Design decisions
 
 1. A workflow is a live graph with one runtime and persistent JSON values. Run sends ordinary signals to enabled `on_run` Events.

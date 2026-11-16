@@ -1,3 +1,5 @@
+> Historical record from earlier engineering cycles; current behavior is documented in [Architecture](ARCHITECTURE.md).
+
 > Historical report. For the current implementation and verified results, see [MVP finalization](audits/mvp-finalization/REPORT.md).
 
 # Audit (platform cycle)

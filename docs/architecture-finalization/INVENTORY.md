@@ -21,7 +21,7 @@ The ordered classic-script manifests are dependencies; absence of a CommonJS imp
 | js/backend/builtin-nodes.js, graph-nodes.js | CORE | Generated Library definitions used by backend and export tools | Keep; builtin, flow/data nodes and graph-primitives tests |
 | headless.js, server/manifest.js | PLATFORM | Server owns fixed VM context and script order | Keep; no UI imports or plugin discovery |
 | server/credentials.js | PLATFORM | Server owns session and scoped-token maps, expiry and revocation | Keep; security, plugin-tokens and lifecycle tests |
-| root server.js | LEGACY | API wrapper, tests/server, security/storage tests, migration, browser_server and smoke/bench tools | Move API implementation to server/api-server.js; remove combined static hosting and raw storage after migrating consumers |
+| root server.js | LEGACY | API implementation, tests/server, security/storage tests, migration, browser_server and smoke/bench tools | Move API implementation to server/api-server.js; remove combined static hosting and raw storage after migrating consumers |
 | server/api-server.js (baseline wrapper) | REDUNDANT | Canonical CLI and most integration suites; delegates to root server | Replace wrapper with sole implementation; do not create another HTTP engine |
 | server/static-assets.js | PLATFORM | Static client CLI; public-file and symlink boundary | Keep; migrate combined-server security assertions to static client |
 | bin/agentsys-server.js, agentsys-client.js | PLATFORM | Independent CLI processes own sockets and shutdown handlers | Keep; deployment, TLS and browser suites |
@@ -37,7 +37,7 @@ The ordered classic-script manifests are dependencies; absence of a CommonJS imp
 | css/*, index.html | PLATFORM | Static browser assets; dynamic classes and data attributes | Keep; selectors cannot be classified dead from imports alone |
 | client-plugins/reference/*, integration-studio, graph-developer-tools, examples/hello-plugin | OPTIONAL | Manifest/tool loaded public-SDK packages; browser owns frames, server owns deployed resources | Keep and run certification; no server execution of plugin modules |
 | tests/browser_smoke.py, browser_plugins.py | LEGACY | Excluded from default browser suite; target removed browser-only/server-plugin modes | Remove after confirming no CI references |
-| tools/simplify-request.js | LEGACY | One-off mutation through /__data; no package script, test or launcher consumer | Remove; current Library API replaces raw edits |
+| tools/simplify-request.js | LEGACY | One-off mutation through /__data; request-node tests import its migration functions and Script constants | Remove transformer-only tests; retain checked Script HTTP regression as independent program fixture |
 | tools/* other benchmarks, backup, soak, stress, export | OPTIONAL | Explicit developer CLIs and tests; disposable data except explicit backup/export targets | Retain and migrate canonical launchers |
 | docs/audits/*, root certification reports | OPTIONAL | Historical evidence, referenced by current reports | Retain with explicit historical labeling; do not erase unique security evidence |
 

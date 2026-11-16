@@ -193,7 +193,7 @@ of them.
 2. Stop the service: `systemctl stop agentsys-server`.
 3. Replace the checkout (`git fetch && git checkout <tag>`); there is no build step and no `npm install`.
 4. Start it and check `GET /api/meta` reports the expected version and protocol.
-5. Run `node bin/agentsys-server.js migrate --data <folder> --dry-run` if the update crosses the platform split.
+5. Use the matching protocol 2 Client; retired migration commands are not shipped. Current graph files remain readable.
 6. Clients that report "Incompatible version" need the new client; the protocol number is bumped only when a
    client of the previous version can no longer work.
 

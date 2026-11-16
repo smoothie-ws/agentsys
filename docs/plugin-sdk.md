@@ -129,7 +129,6 @@ the application.
 
 ## Compatibility
 
-`api.api` is the plugin API version. This client implements **2**; format 1 packages (`api: 1`) keep the API they
-had, and all members above remain additive. A package declares the AgentSys version it needs with
+`api.api` is **2**, the supported plugin API. Packages use format **2**. A package declares the AgentSys version it needs with
 `manifest.engines.agentsys`. A package whose API or engine range is incompatible is refused at install with a readable
 message; it is not started speculatively.

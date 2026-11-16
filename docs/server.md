@@ -10,7 +10,6 @@ Node 20 compatibility remains tested, but it is end-of-life. There are no third-
 node bin/agentsys-server.js start --port 8080 --data ./data
 node bin/agentsys-server.js status --url http://127.0.0.1:8080
 node bin/agentsys-server.js version
-node bin/agentsys-server.js migrate --data ./data --dry-run
 ```
 
 `npm run server` runs the start command with the defaults. `--help` lists every option.
@@ -47,7 +46,7 @@ stack trace. `status --json` answers `{online:false,error}` with exit code 1 whe
 3. An interrupted `.transaction.json` is replayed once, then the files are scanned.
 4. The backend loads from the fixed `server/manifest.js`; the API is available immediately.
 5. The file watcher announces external changes to connected clients.
-6. On `SIGINT`/`SIGTERM` (and `SIGBREAK` on Windows): active workflows are stopped, event streams close, the lock
+6. Terminal shutdown stops request admission, rejects queued commits and drains writers/hooks before releasing the folder lock. Repeated close calls share one Promise. On `SIGINT`/`SIGTERM` (and `SIGBREAK` on Windows): active workflows are stopped, event streams close, the lock
    is released, and the process exits. A failed redo record is set aside as `.transaction.json.invalid` rather than
    preventing later starts.
 
@@ -69,9 +68,6 @@ data/
   library/types.json
   other/                  application keys (policies, notifications, collections, …)
   secrets/<name>.json     secret values (never returned by GET)
-  backups/                migration snapshots
-  plugins/                legacy server-plugin files (never executed; preserved)
-  plugins-migrated/       preserved plugin sources/data from the migration
 ```
 
 Writes are atomic: a temporary file is renamed into place, a transaction record makes multi-key commits
@@ -83,8 +79,7 @@ recoverable, and a stale write is detected with the workflow cursor / `If-Match`
 - Public discovery: `GET /api/meta`.
 - Events: `GET /api/events` (authenticated SSE; `change` and `hook` envelopes).
 - Diagnostics: `GET /api/diagnostics`.
-- No `/__data` endpoint on the platform server. The combined legacy `server.js` keeps it for the old local
-  browser store and its regression tests only.
+- Protocol 2 has no raw browser storage, UI-state migration or combined-server routes.
 
 Errors are JSON:
 

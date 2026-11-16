@@ -23,13 +23,11 @@
 - `server/manifest.js`: the fixed server script list. `index.html` is not a server manifest.
 - `server/api-server.js`, `bin/agentsys-server.js`: API-only server and CLI.
 - `bin/agentsys-client.js`, `bin/agentsys-local.js`: static client server and local two-process launcher.
-- `server/migrate.js`: conservative migration from the server-plugin era.
 - `server/file-store.js`: canonical file mapping, sidecars, redo recovery and external-change detection.
 - `server/credentials.js`: per-server session/plugin credential ownership and expiry.
-- `server/static-assets.js`: one public-file boundary and header policy for both static launchers.
+- `server/static-assets.js`: public-file boundary and header policy for the static Client.
 - `js/app/plugin-content.js`: passive HTML, command attributes and resource-free CSS validation.
-- `legacy/README.md`: migration reference; executable old hosts/routes live only in git history.
-- `server.js`, `headless.js`: the combined local/test server and the Node backend loader.
+- `headless.js`: the Node backend loader. `server/api-server.js` contains the sole HTTP API implementation.
 
 Client scripts are plain globals listed in `index.html`. Server scripts are plain globals listed in
 `server/manifest.js` and loaded by `headless.js`. A file belongs to one side; adding it to a browser page never
