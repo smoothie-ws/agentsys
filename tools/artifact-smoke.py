@@ -72,7 +72,7 @@ def call(base, method, route, body=None, extra=None):
     return response.status, json.loads(data) if data else None, response.headers
 
 try:
-    server = install('server', '0.4.0')
+    server = install('server', '0.4.1')
     client = install('client', '0.7.0')
     check('server package contains no browser application', not (server / 'index.html').exists() and not (server / 'js/app').exists())
     check('client package contains no backend or interpreter', not (client / 'server').exists() and not (client / 'runtime').exists())

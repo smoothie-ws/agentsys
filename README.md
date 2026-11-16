@@ -12,7 +12,7 @@ remains intact; the extraction baseline is `5f916bf24bea3a10a0566c68992f1eacb79a
 Build/download each product's npm artifact, then run:
 
 ```sh
-python tools/local.py --server-artifact ../agentsys-server/agentsys-server-0.4.0.tgz --client-artifact ../agentsys-client/agentsys-client-0.7.0.tgz
+python tools/local.py --server-artifact ../agentsys-server/agentsys-server-0.4.1.tgz --client-artifact ../agentsys-client/agentsys-client-0.7.0.tgz
 ```
 
 The launcher installs them into separate prefixes and starts two processes.

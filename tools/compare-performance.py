@@ -11,7 +11,7 @@ archive=work/'baseline.tar'
 with archive.open('wb') as output:subprocess.run(['git','archive','5f916bf24bea3a10a0566c68992f1eacb79a999a'],cwd=root,stdout=output,check=True)
 with tarfile.open(archive) as bundle:bundle.extractall(baseline,filter='data')
 products={}
-for product,version in [('server','0.4.0'),('client','0.7.0')]:
+for product,version in [('server','0.4.1'),('client','0.7.0')]:
     target=work/product;target.mkdir()
     with tarfile.open(root.parent/('agentsys-'+product)/f'agentsys-{product}-{version}.tgz') as bundle:bundle.extractall(target,filter='data')
     products[product]=target/'package'

@@ -10,7 +10,7 @@ python tools/artifact-smoke.py
 
 Requires Node.js, Python 3.12, Playwright 1.57.0 and installed browser engines.
 Set AGENTSYS_BROWSER to chromium, firefox or webkit. The current runner reads
-agentsys-server-0.4.0.tgz and agentsys-client-0.7.0.tgz from sibling product
+agentsys-server-0.4.1.tgz and agentsys-client-0.7.0.tgz from sibling product
 repositories. Only the tarballs are consumed; no source dependency is introduced.
 The runner prints the retained evidence directory and records individual checks.
 
@@ -25,7 +25,7 @@ shutdown, and restart persistence. JSON results are in integration-results/.
 One-command local use of prebuilt independent artifacts:
 
 ```sh
-python tools/local.py --server-artifact ../agentsys-server/agentsys-server-0.4.0.tgz --client-artifact ../agentsys-client/agentsys-client-0.7.0.tgz
+python tools/local.py --server-artifact ../agentsys-server/agentsys-server-0.4.1.tgz --client-artifact ../agentsys-client/agentsys-client-0.7.0.tgz
 ```
 
 This creates separate local installations under .local/packages and starts two

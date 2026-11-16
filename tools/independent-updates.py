@@ -20,8 +20,8 @@ def variant(product,original,version,major=None):
     return work/f'agentsys-{product}-{version}.tgz'
 
 client=variant('client','0.7.0','0.7.1')
-server=variant('server','0.4.0','0.4.1')
-incompatible=variant('server','0.4.0','3.0.0',3)
+server=variant('server','0.4.1','0.4.2')
+incompatible=variant('server','0.4.1','3.0.0',3)
 report={'synthetic':True,'work':str(work),'runs':[]}
 for name,server_archive,client_archive in [('client-only',None,client),('server-only',server,None),('both',server,client)]:
     env=dict(os.environ,AGENTSYS_INCOMPATIBLE_SERVER_ARTIFACT=str(incompatible))

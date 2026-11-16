@@ -7,7 +7,7 @@ target=Path(os.environ.get('AGENTSYS_RELEASE_DIRECTORY') or tempfile.mkdtemp(pre
 target.mkdir(parents=True,exist_ok=True)
 print('Verifying release downloads in '+str(target),flush=True)
 report={'download_directory':str(target),'products':{}}
-for product,version in [('server','0.4.0'),('client','0.7.0')]:
+for product,version in [('server','0.4.1'),('client','0.7.0')]:
     repo='smoothie-ws/agentsys-'+product
     request=urllib.request.Request('https://api.github.com/repos/'+repo+'/releases/tags/v'+version,headers={'Accept':'application/vnd.github+json','User-Agent':'AgentSys-release-audit'})
     with urllib.request.urlopen(request,timeout=30) as response:release=json.load(response)

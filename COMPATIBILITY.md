@@ -2,7 +2,7 @@
 
 | Server | Client | API | Verified transport |
 | --- | --- | --- | --- |
-| 0.4.0 | 0.7.0 | 2.0 | REST, Bearer/session, authenticated SSE, Chromium/Firefox/WebKit |
+| 0.4.1 | 0.7.0 | 2.0 | REST, Bearer/session, authenticated SSE, Chromium/Firefox/WebKit |
 
 Application versions are independent. API major 2 is the compatibility boundary;
 minor additions are compatible. Optional functions are discovered in GET /api/meta.

@@ -1,2 +1,2 @@
 @echo off
-python "%~dp0tools\local.py" --server-artifact "%~dp0..\agentsys-server\agentsys-server-0.4.0.tgz" --client-artifact "%~dp0..\agentsys-client\agentsys-client-0.7.0.tgz" %*
+python "%~dp0tools\local.py" --server-artifact "%~dp0..\agentsys-server\agentsys-server-0.4.1.tgz" --client-artifact "%~dp0..\agentsys-client\agentsys-client-0.7.0.tgz" %*

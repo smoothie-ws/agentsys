@@ -17,14 +17,14 @@ jobs:
     env:
       AGENTSYS_FULL_UI: '1'
       AGENTSYS_BROWSER: ${{ matrix.browser }}
-      AGENTSYS_SERVER_ARTIFACT: ${{ github.workspace }}/.products/server/agentsys-server-0.4.0.tgz
+      AGENTSYS_SERVER_ARTIFACT: ${{ github.workspace }}/.products/server/agentsys-server-0.4.1.tgz
       AGENTSYS_CLIENT_ARTIFACT: ${{ github.workspace }}/.products/client/agentsys-client-0.7.0.tgz
     steps:
       - uses: actions/checkout@v4
       - uses: actions/checkout@v4
         with:
           repository: smoothie-ws/agentsys-server
-          ref: ca8646691f5c9efd946d2e96aaad4d3e2bc58ae5
+          ref: 62789987a3e303f940c94ebf3ec8cb8275b3c86d
           path: .products/server
       - uses: actions/checkout@v4
         with:
