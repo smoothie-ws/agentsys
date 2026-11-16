@@ -1,0 +1,7 @@
+AgentSys Server 0.4.0 (protocol 2)
+Listening on http://127.0.0.1:50199
+Data folder: C:\Users\kibot\AppData\Local\Temp\agentsys-artifacts-bv9b0bqf\data
+API: http://127.0.0.1:50199/api (meta: http://127.0.0.1:50199/api/meta)
+Auth: bearer token or an HttpOnly session
+Server plugins: disabled by design.
+Press Ctrl+C to stop.

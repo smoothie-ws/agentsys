@@ -187,6 +187,14 @@ try:
     server_process, restarted = start(server, 'server', ['start', '--port', '0', '--data', str(WORK / 'data'), '--token', TOKEN, '--allowed-origin', origin])
     status, projects, _ = call(restarted, 'GET', 'projects')
     check('data survives independent server restart', status == 200 and project['id'] in json.dumps(projects))
+    if os.environ.get('AGENTSYS_FULL_UI') == '1':
+        test_env=dict(os.environ,AGENTSYS_SERVER_CLI=str(server/'bin/agentsys-server.js'),AGENTSYS_CLIENT_CLI=str(client/'bin/agentsys-client.js'),AGENTSYS_UI_ARTIFACTS=str(WORK/'ui-review'))
+        for scenario in ['browser_editor.py','browser_ux.py']:
+            command=[shutil.which('python'),str(ROOT/'tests'/scenario)]
+            if scenario=='browser_ux.py':command.append(os.environ.get('AGENTSYS_BROWSER','chromium'))
+            run=subprocess.run(command,env=test_env,cwd=ROOT,capture_output=True,text=True,timeout=180)
+            (WORK/(scenario+'.log')).write_text(run.stdout+run.stderr,encoding='utf-8')
+            check('original '+scenario+' passes against independently installed artifacts',run.returncode==0)
     results['status'] = 'passed'
 except Exception as error:
     results['status'] = 'failed'; results['error'] = str(error)
@@ -204,4 +212,6 @@ finally:
     for artifact in WORK.iterdir():
         if artifact.is_file() and artifact.suffix in ['.json','.png','.log']:
             shutil.copy2(artifact,evidence/artifact.name)
+    if (WORK/'ui-review').is_dir():
+        shutil.copytree(WORK/'ui-review',evidence/'ui-review',dirs_exist_ok=True)
     print('Evidence: ' + str(WORK), flush=True)
