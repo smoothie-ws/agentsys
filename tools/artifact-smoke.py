@@ -4,6 +4,7 @@ No product source imports. Output artifacts and logs are retained for review.
 """
 from pathlib import Path
 import json, os, re, shutil, subprocess, tempfile, threading, queue, time, urllib.request, urllib.error
+from concurrent.futures import ThreadPoolExecutor
 from playwright.sync_api import sync_playwright
 
 ROOT = Path(__file__).resolve().parents[1]
@@ -71,8 +72,21 @@ try:
     check('workflow readable without client code', status == 200 and isinstance(workflow['nodes'], list))
     _, _, headers = call(base, 'OPTIONS', 'projects', extra={'Origin': origin, 'Access-Control-Request-Method': 'POST', 'Access-Control-Request-Headers': 'Authorization,Content-Type'})
     check('exact-origin authenticated CORS preflight', headers.get('Access-Control-Allow-Origin') == origin and 'Authorization' in headers.get('Access-Control-Allow-Headers', ''))
+    status, _, headers = call(base, 'OPTIONS', 'projects', extra={'Origin': 'https://untrusted.invalid', 'Access-Control-Request-Method': 'POST'})
+    check('unlisted origins are not granted CORS access', headers.get('Access-Control-Allow-Origin') is None)
+    call(base, 'PUT', 'collections/races', {'schema': {'type': 'object', 'properties': {'value': {'type': 'integer'}}}})
+    status, record, _ = call(base, 'POST', 'collections/races/records', {'data': {'value': 0}})
+    check('collection created for concurrent writers', status == 200)
+    def write(value):
+        return call(base, 'PUT', 'collections/races/records/' + record['id'], {'data': {'value': value}}, {'If-Match': str(record['version'])})[0]
+    with ThreadPoolExecutor(max_workers=2) as writers:
+        outcomes = list(writers.map(write, [1, 2]))
+    check('simultaneous conditional writes produce one success and one conflict', sorted(outcomes) == [200, 409])
+    second_process, second_base = start(server, 'server', ['start', '--port', '0', '--data', str(WORK / 'second-data'), '--token', 'second-artifact-token', '--allowed-origin', origin])
     with sync_playwright() as pw:
-        browser = pw.chromium.launch()
+        engine = os.environ.get('AGENTSYS_BROWSER', 'chromium')
+        results['browser'] = engine
+        browser = getattr(pw, engine).launch()
         page = browser.new_page()
         errors = []
         page.on('pageerror', lambda error: errors.append(str(error)))
@@ -88,9 +102,54 @@ try:
         check('first connection initializes the application UI', page.evaluate('app.booted') is True)
         projects = page.evaluate("async () => await Environment.request('GET', 'projects')")
         check('browser reads server-owned project over API', project['id'] in json.dumps(projects))
+        observer = browser.new_page()
+        observer.goto(origin)
+        observer.wait_for_function("typeof Environment !== 'undefined' && Environment.status().status === 'disconnected'")
+        observer.evaluate('''async ({url, token}) => {
+          const env = Environment.save({name: 'Second client', url, token});
+          await Environment.setActive(env.id);
+          globalThis.observedChanges = [];
+          Environment.subscribe(keys => observedChanges.push(...keys));
+        }''', {'url': base, 'token': TOKEN})
+        # Wait until the authenticated stream is open before producing a change.
+        observer.wait_for_timeout(300)
+        status, changed, _ = call(base, 'POST', 'projects', {'name': 'SSE broadcast'})
+        observer.wait_for_function("observedChanges.includes('projects')")
+        check('second client receives cross-origin authenticated SSE changes', status == 200)
+        check('tabs have independent transport identities', page.evaluate("sessionStorage.getItem('agentsys-client-id')") != observer.evaluate("sessionStorage.getItem('agentsys-client-id')"))
+        for slug, location, plugin_id in [
+            ('library-pack', 'reference/library-pack/reference-library-pack-1.0.0.agentsys-plugin.json', 'reference-library-pack'),
+            ('integration-studio', 'integration-studio/integration-studio-1.0.0.agentsys-plugin.json', 'integration-studio'),
+        ]:
+            page.evaluate('''async location => {
+              const packet = await (await fetch('/client-plugins/' + location)).json();
+              await Extensions.install(packet);
+            }''', location)
+            page.wait_for_function("id => Extensions.apiOf(id) !== null", arg=plugin_id)
+            deployed = page.evaluate('id => Extensions.deploy(id)', plugin_id)
+            check(slug + ' installs in sandbox and deploys Library resources through scoped API', deployed['ok'] and deployed['summary']['library'] > 0)
+        graph_ids = page.evaluate('''async () => {
+          const project = (await api('projects')).find(p => p.name === 'Reference pack');
+          const detail = await api('projects/' + project.id);
+          return {project: project.id, workflow: detail.workflows.find(w => w.name === 'Library Pack demo').id};
+        }''')
+        first_id = page.evaluate('Environment.active().id')
+        second_id = page.evaluate('''async url => {
+          const env = Environment.save({name: 'Independent second server', url, token: 'second-artifact-token'});
+          await Environment.setActive(env.id);
+          return env.id;
+        }''', second_base)
+        second_projects = page.evaluate("async () => await Environment.request('GET', 'projects')")
+        check('switching environments does not mix server projects', project['id'] not in json.dumps(second_projects))
+        check('each environment keeps its own bearer credential', page.evaluate('id => Environment.tokenOf(id)', first_id) == TOKEN and page.evaluate('id => Environment.tokenOf(id)', second_id) == 'second-artifact-token')
+        check('switching back reconnects to original server', page.evaluate('id => Environment.setActive(id)', first_id) is True)
         page.screenshot(path=str(WORK / 'connected.png'), full_page=True)
         check('browser has no uncaught JavaScript errors', not errors)
         browser.close()
+    # Published resources are ordinary server data. No browser or plugin host remains.
+    status, execution, _ = call(base, 'POST', 'projects/' + graph_ids['project'] + '/execution?workflow_id=' + graph_ids['workflow'], {'wait': True})
+    check('published Library workflow executes after all clients disconnect', status == 200 and execution['dispatch_status'] == 'completed')
+    check('headless execution produces saved Library-node output', 'Hello, world!' in ''.join((execution.get('displays') or {}).values()))
     # Persisted data must survive a process restart with no client connected.
     server_process.terminate(); server_process.wait(timeout=10)
     server_process, restarted = start(server, 'server', ['start', '--port', '0', '--data', str(WORK / 'data'), '--token', TOKEN, '--allowed-origin', origin])

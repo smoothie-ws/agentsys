@@ -53,3 +53,30 @@ and connected.png; isolated packages/logs retained at the path recorded in JSON.
 
 This smoke test does not yet prove execution, SSE delivery, plugins, simultaneous
 clients, multi-server switching or other browser engines. Those remain required.
+
+## Extended integration and regression update
+
+Artifact-only E2E now passes in Chromium, Firefox and WebKit. Evidence:
+integration-results/{chromium,firefox,webkit}-extended.json. It proves authenticated
+SSE to a second client, distinct tab IDs, simultaneous conditional-write conflict,
+CORS rejection of unlisted origins, Library Pack and Integration Studio sandbox
+installation/resource deployment, credential and data isolation across two servers,
+reconnection to the original server, headless execution after every browser closes,
+expected Library-node output, and persistence across server restart.
+
+Server main: 6822ab9; client main: 0f66185. Restored additional original regressions
+and split mixed tests into their owning product. Server full suite: 345 tests,
+344 pass, 1 skip, no failures. Client full suite: 104 pass. Local default Node is
+20.17.0; supported Node 22/24 and Linux CI still need execution/verification.
+New architecture tests inspect relative require paths, package dependencies,
+symlinks, manifest ownership and absence of the other product implementation.
+Both products have independently stored public graph/capability JSON conformance
+fixtures and tests. Root installation/architecture/API/plugin/security/deployment
+and build guides now exist. Server Dockerfile added; Docker has not been tested.
+
+Remaining: complete API entity schemas and stronger fixtures, independent-update
+E2E/incompatible API major, runtime config browser test, no-client execution A and
+Integration Studio workflow F in full, performance comparison, independent browser
+CI/release ZIP/SDK artifact validation, actual GitHub remotes/CI if available,
+local artifact launcher, integration-only tree conversion, complete final audit.
+Migration helper scripts are historical one-time records; do not rerun them.
