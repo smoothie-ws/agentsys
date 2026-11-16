@@ -11,6 +11,7 @@
     "test": "node --test",
     "plugin:pack": "node tools/plugin-pack.js",
     "plugin:check": "node tools/plugin-pack.js --check",
-    "plugin:validate": "node tools/plugin-pack.js --validate"
+    "plugin:validate": "node tools/plugin-pack.js --validate",
+    "build:client": "node client/build.js"
   }
 }

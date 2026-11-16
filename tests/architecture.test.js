@@ -187,10 +187,10 @@ test('the server never loads plugin code, and a client plugin reaches the platfo
   }
 });
 
-test('the client CLI imports only protocol and static serving from the server half', () => {
+test('the client CLI imports client static serving without server modules', () => {
   const source = read('bin/agentsys-client.js');
   const imports = requires(source).filter(request => request.startsWith('.')).sort();
-  assert.deepEqual(imports.sort(), ['../server/static-assets', '../shared/protocol']);
+  assert.deepEqual(imports.sort(), ['../client/static-assets', '../shared/protocol']);
   for (const file of ['js/app/environments.js', 'js/app/helpers.js']) {
     const client = read(file);
     assert.doesNotMatch(client, /graphRuntime|GRAPH_RUNTIMES|signalGraph|shutdownExecutions/, `${file} has no server runtime`);

@@ -10,7 +10,7 @@ const http = require('node:http');
 const fs = require('node:fs');
 const path = require('node:path');
 const Protocol = require('../shared/protocol');
-const {resolveAsset, TYPES, CLIENT_HEADERS} = require('../server/static-assets');
+const {resolveAsset, TYPES, CLIENT_HEADERS} = require('../client/static-assets');
 
 const ROOT = path.resolve(__dirname, '..');
 const HELP = `AgentSys Client ${Protocol.VERSION}
