@@ -8,8 +8,8 @@ def get(route):
     req=urllib.request.Request('https://api.github.com'+route,headers={'Authorization':'Bearer '+token,'Accept':'application/vnd.github+json','User-Agent':'AgentSys-CI-audit'})
     with urllib.request.urlopen(req,timeout=30) as response:return json.load(response)
 report={}
-for product in ['server','client']:
-    repo='smoothie-ws/agentsys-'+product
+for product in ['server','client','integration']:
+    repo='smoothie-ws/agentsys' if product=='integration' else 'smoothie-ws/agentsys-'+product
     runs=get('/repos/'+repo+'/actions/runs?per_page=3')['workflow_runs']
     report[product]=[]
     for run in runs:
