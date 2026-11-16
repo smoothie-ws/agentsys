@@ -57,6 +57,8 @@ test('five reference plugins build from source with valid manifests', () => {
     const record = Manifest.normalizePackage(readSource(path.join(ROOT, slug)));
     assert.equal(record.id, expectedIds[index], slug);
     assert.equal(record.api, 2);
+    const packet = JSON.parse(fs.readFileSync(path.join(ROOT, slug, `${record.id}-${record.version}.agentsys-plugin.json`), 'utf8'));
+    assert.deepEqual(packet, Manifest.exportPackage(record), `${slug} shipped package matches its source and metadata`);
     assert.match(record.version, /^\d+\.\d+\.\d+/);
     assert.ok(record.capabilities.length, `${slug} declares what it uses`);
     if (slug === 'ui-showcase') assert.match(record.assets.logo, /^data:image\/png;base64,/);

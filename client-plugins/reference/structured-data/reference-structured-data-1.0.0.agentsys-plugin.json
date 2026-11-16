@@ -5,7 +5,7 @@
     "name": "Reference: Structured Data",
     "version": "1.0.0",
     "description": "A custom collection with CRUD, validation, a schema migration and a conflict-aware update path, plus a resource view drawn by the plugin.",
-    "icon": "plug",
+    "icon": "database",
     "api": 2,
     "engines": {
       "agentsys": ">=0.3.0 <1.0.0"

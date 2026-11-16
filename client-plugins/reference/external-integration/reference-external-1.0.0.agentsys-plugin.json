@@ -5,7 +5,7 @@
     "name": "Reference: External Integration",
     "version": "1.0.0",
     "description": "Calls a local HTTP endpoint through the net capability with a server-side secret, and deploys a Library node that keeps calling it without this plugin.",
-    "icon": "plug",
+    "icon": "globe",
     "api": 2,
     "engines": {
       "agentsys": ">=0.3.0 <1.0.0"

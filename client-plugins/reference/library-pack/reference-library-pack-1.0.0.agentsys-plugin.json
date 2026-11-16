@@ -5,7 +5,7 @@
     "name": "Reference: Library Pack",
     "version": "1.0.0",
     "description": "Adds a Library section, three reusable Script nodes, a Generic Collection and a runnable workflow template. The deployed nodes keep working when the plugin is off.",
-    "icon": "plug",
+    "icon": "library",
     "api": 2,
     "engines": {
       "agentsys": ">=0.3.0 <1.0.0"
