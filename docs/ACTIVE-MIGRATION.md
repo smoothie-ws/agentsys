@@ -147,3 +147,11 @@ Integration branch has not yet been pushed or merged. No releases tagged yet.
 Remaining work: verify integration CI and newest product CI, release artifacts
 and SDK integrity, integration default branch transition without force/history
 loss, inspect all original requirements in a final audit, address any omissions.
+
+Integration checkout fix: actions/checkout treats abbreviated SHAs as branch names;
+client pin now uses its full commit SHA. Latest integration branch 8d41984 is pushed;
+new workflow must be verified. Product main commits d92a2a7 and 60682c3 both have
+successful independent CI (latest product results in ci-status.json). Original
+origin/main is an ancestor of integration HEAD, so a future verified transition
+can fast-forward without rewriting history. Do not update main until integration
+checks and final acceptance audit pass. Release tags still not created.
