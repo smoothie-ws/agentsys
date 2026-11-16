@@ -1,5 +1,10 @@
 name: Independent artifact integration
-on: [push, pull_request, workflow_dispatch]
+on:
+  push:
+    paths-ignore: ['**/*.md', 'integration-results/**']
+  pull_request:
+    paths-ignore: ['**/*.md', 'integration-results/**']
+  workflow_dispatch:
 permissions:
   contents: read
 jobs:

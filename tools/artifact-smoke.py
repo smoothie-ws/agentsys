@@ -3,7 +3,7 @@
 No product source imports. Output artifacts and logs are retained for review.
 """
 from pathlib import Path
-import json, os, re, shutil, subprocess, tempfile, threading, queue, time, urllib.request, urllib.error
+import hashlib, json, os, re, shutil, subprocess, tempfile, threading, queue, time, urllib.request, urllib.error
 from http.server import BaseHTTPRequestHandler, ThreadingHTTPServer
 from concurrent.futures import ThreadPoolExecutor
 from playwright.sync_api import sync_playwright
@@ -16,8 +16,12 @@ WORK = Path(tempfile.mkdtemp(prefix='agentsys-artifacts-'))
 TOKEN = 'artifact-test-token'
 processes = []
 results = {'work': str(WORK), 'checks': []}
+endpoint_entered=threading.Event()
+client_disconnected=threading.Event()
 class IntegrationEndpoint(BaseHTTPRequestHandler):
     def do_GET(self):
+        endpoint_entered.set()
+        client_disconnected.wait(10)  # Response cannot complete until the browser is closed.
         body=json.dumps({'ok':True,'path':'/artifact-integration'}).encode()
         self.send_response(200); self.send_header('Content-Type','application/json'); self.end_headers(); self.wfile.write(body)
     def log_message(self, *_): pass
@@ -33,6 +37,7 @@ def install(product, version):
     destination = WORK / product
     destination.mkdir()
     archive = Path(os.environ.get('AGENTSYS_' + product.upper() + '_ARTIFACT') or ROOT.parent / ('agentsys-' + product) / f'agentsys-{product}-{version}.tgz')
+    results.setdefault('artifacts',{})[product]={'path':str(archive.resolve()),'sha256':hashlib.sha256(archive.read_bytes()).hexdigest()}
     subprocess.run([NODE, str(NPM), 'install', '--prefix', str(destination), '--ignore-scripts', '--no-audit', '--no-fund', str(archive)], check=True, capture_output=True, text=True)
     package = destination / 'node_modules' / ('agentsys-' + product)
     check(product + ' installed independently', package.is_dir())
@@ -188,15 +193,33 @@ try:
             check('client recovers after refusing incompatible server',page.evaluate('id => Environment.setActive(id)',first_id) is True)
         page.screenshot(path=str(WORK / 'connected.png'), full_page=True)
         check('browser has no uncaught JavaScript errors', not errors)
+        started=page.evaluate("ids => api('projects/'+ids.project+'/execution', {method:'POST',body:{wait:false},query:{workflow_id:ids.workflow}})",studio_graph)
+        check('client dispatches a workflow before disconnecting',started['dispatch_status']=='running')
+        check('server execution is waiting on remote I/O before the client closes',endpoint_entered.wait(5))
         browser.close()
+        client_disconnected.set()
     # Published resources are ordinary server data. No browser or plugin host remains.
     status, execution, _ = call(base, 'POST', 'projects/' + graph_ids['project'] + '/execution?workflow_id=' + graph_ids['workflow'], {'wait': True})
     check('published Library workflow executes after all clients disconnect', status == 200 and execution['dispatch_status'] == 'completed')
     check('headless execution produces saved Library-node output', 'Hello, world!' in ''.join((execution.get('displays') or {}).values()))
-    status, studio_run, _ = call(base, 'POST', 'projects/' + studio_graph['project'] + '/execution?workflow_id=' + studio_graph['workflow'], {'wait':True})
-    check('Integration Studio workflow executes without a client or plugin host',status==200 and studio_run['dispatch_status']=='completed')
+    for _ in range(100):
+        status, studio_run, _ = call(base, 'GET', 'projects/' + studio_graph['project'] + '/execution?workflow_id=' + studio_graph['workflow'])
+        if studio_run.get('status')=='idle' and '/artifact-integration' in ''.join((studio_run.get('displays') or {}).values()):break
+        time.sleep(.1)
+    check('Integration Studio workflow executes without a client or plugin host',status==200 and studio_run['status']=='idle' and not studio_run.get('errors') and '/artifact-integration' in ''.join((studio_run.get('displays') or {}).values()))
     status, records, _ = call(base,'GET','collections/integration-results/records')
     check('autonomous workflow stores the expected HTTP transformation',status==200 and any(r['data']['result'].get('path')=='/artifact-integration' and r['data']['result'].get('ok') for r in records['records']))
+    with sync_playwright() as pw:
+        browser=getattr(pw,os.environ.get('AGENTSYS_BROWSER','chromium')).launch()
+        page=browser.new_page();page.goto(origin)
+        page.wait_for_function("typeof Environment !== 'undefined' && Environment.status().status === 'disconnected'")
+        saved=page.evaluate('''async ({url,token}) => {
+          const env=Environment.save({name:'Reconnected client',url,token});
+          await Environment.setActive(env.id);
+          return await api('collections/integration-results/records');
+        }''',{'url':base,'token':TOKEN})
+        check('a newly connected browser can retrieve the autonomous execution result',any(r['data']['result'].get('path')=='/artifact-integration' for r in saved['records']))
+        browser.close()
     # Persisted data must survive a process restart with no client connected.
     server_process.terminate(); server_process.wait(timeout=10)
     server_process, restarted = start(server, 'server', ['start', '--port', '0', '--data', str(WORK / 'data'), '--token', TOKEN, '--allowed-origin', origin])
@@ -204,10 +227,10 @@ try:
     check('data survives independent server restart', status == 200 and project['id'] in json.dumps(projects))
     if os.environ.get('AGENTSYS_FULL_UI') == '1':
         test_env=dict(os.environ,AGENTSYS_SERVER_CLI=str(server/'bin/agentsys-server.js'),AGENTSYS_CLIENT_CLI=str(client/'bin/agentsys-client.js'),AGENTSYS_UI_ARTIFACTS=str(WORK/'ui-review'))
-        for scenario in ['browser_editor.py','browser_ux.py','browser_plugin_security.py']:
+        for scenario in ['browser_editor.py','browser_ux.py','browser_plugin_security.py','browser_plugin_platform.py','browser_plugin_certification.py']:
             command=[shutil.which('python'),str(ROOT/'tests'/scenario)]
             if scenario=='browser_ux.py':command.append(os.environ.get('AGENTSYS_BROWSER','chromium'))
-            run=subprocess.run(command,env=test_env,cwd=ROOT,capture_output=True,text=True,timeout=180)
+            run=subprocess.run(command,env=test_env,cwd=ROOT,capture_output=True,text=True,timeout=300)
             (WORK/(scenario+'.log')).write_text(run.stdout+run.stderr,encoding='utf-8')
             check('original '+scenario+' passes against independently installed artifacts',run.returncode==0)
     results['status'] = 'passed'

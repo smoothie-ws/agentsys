@@ -25,6 +25,7 @@ incompatible=variant('server','0.4.0','3.0.0',3)
 report={'synthetic':True,'work':str(work),'runs':[]}
 for name,server_archive,client_archive in [('client-only',None,client),('server-only',server,None),('both',server,client)]:
     env=dict(os.environ,AGENTSYS_INCOMPATIBLE_SERVER_ARTIFACT=str(incompatible))
+    env['AGENTSYS_FULL_UI']='0'  # Version-only variants repeat transport/plugin deployment, not unchanged editor tests.
     if server_archive:env['AGENTSYS_SERVER_ARTIFACT']=str(server_archive)
     if client_archive:env['AGENTSYS_CLIENT_ARTIFACT']=str(client_archive)
     result=subprocess.run([shutil.which('python'),'tools/artifact-smoke.py'],cwd=root,env=env,capture_output=True,text=True)
