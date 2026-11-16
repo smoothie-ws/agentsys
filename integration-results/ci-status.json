@@ -1,95 +1,95 @@
 {
   "server": [
     {
-      "id": 43831094366,
-      "sha": "ca8646691f5c9efd946d2e96aaad4d3e2bc58ae5",
+      "id": 43839811016,
+      "sha": "62789987a3e303f940c94ebf3ec8cb8275b3c86d",
       "status": "completed",
       "conclusion": "success",
-      "url": "https://github.com/smoothie-ws/agentsys-server/actions/runs/43831094366",
-      "jobs": [
-        {
-          "name": "container",
-          "status": "completed",
-          "conclusion": "success",
-          "id": 133176349310
-        },
-        {
-          "name": "test (windows-latest, 24)",
-          "status": "completed",
-          "conclusion": "success",
-          "id": 133176349632
-        },
-        {
-          "name": "test (ubuntu-latest, 22)",
-          "status": "completed",
-          "conclusion": "success",
-          "id": 133176349719
-        },
-        {
-          "name": "test (ubuntu-latest, 24)",
-          "status": "completed",
-          "conclusion": "success",
-          "id": 133176349805
-        },
-        {
-          "name": "test (windows-latest, 22)",
-          "status": "completed",
-          "conclusion": "success",
-          "id": 133176349818
-        }
-      ]
-    },
-    {
-      "id": 43831094303,
-      "sha": "ca8646691f5c9efd946d2e96aaad4d3e2bc58ae5",
-      "status": "completed",
-      "conclusion": "success",
-      "url": "https://github.com/smoothie-ws/agentsys-server/actions/runs/43831094303",
+      "url": "https://github.com/smoothie-ws/agentsys-server/actions/runs/43839811016",
       "jobs": [
         {
           "name": "release",
           "status": "completed",
           "conclusion": "success",
-          "id": 133176348657
+          "id": 133205381452
         }
       ]
     },
     {
-      "id": 43830401016,
-      "sha": "ca8646691f5c9efd946d2e96aaad4d3e2bc58ae5",
+      "id": 43839810976,
+      "sha": "62789987a3e303f940c94ebf3ec8cb8275b3c86d",
       "status": "completed",
       "conclusion": "success",
-      "url": "https://github.com/smoothie-ws/agentsys-server/actions/runs/43830401016",
+      "url": "https://github.com/smoothie-ws/agentsys-server/actions/runs/43839810976",
       "jobs": [
         {
           "name": "container",
           "status": "completed",
           "conclusion": "success",
-          "id": 133174093306
-        },
-        {
-          "name": "test (windows-latest, 22)",
-          "status": "completed",
-          "conclusion": "success",
-          "id": 133174093620
-        },
-        {
-          "name": "test (ubuntu-latest, 22)",
-          "status": "completed",
-          "conclusion": "success",
-          "id": 133174093771
-        },
-        {
-          "name": "test (windows-latest, 24)",
-          "status": "completed",
-          "conclusion": "success",
-          "id": 133174094229
+          "id": 133205381188
         },
         {
           "name": "test (ubuntu-latest, 24)",
           "status": "completed",
           "conclusion": "success",
-          "id": 133174094292
+          "id": 133205381451
+        },
+        {
+          "name": "test (windows-latest, 24)",
+          "status": "completed",
+          "conclusion": "success",
+          "id": 133205381484
+        },
+        {
+          "name": "test (ubuntu-latest, 22)",
+          "status": "completed",
+          "conclusion": "success",
+          "id": 133205381496
+        },
+        {
+          "name": "test (windows-latest, 22)",
+          "status": "completed",
+          "conclusion": "success",
+          "id": 133205381919
+        }
+      ]
+    },
+    {
+      "id": 43839800869,
+      "sha": "62789987a3e303f940c94ebf3ec8cb8275b3c86d",
+      "status": "completed",
+      "conclusion": "success",
+      "url": "https://github.com/smoothie-ws/agentsys-server/actions/runs/43839800869",
+      "jobs": [
+        {
+          "name": "test (ubuntu-latest, 22)",
+          "status": "completed",
+          "conclusion": "success",
+          "id": 133205346114
+        },
+        {
+          "name": "test (ubuntu-latest, 24)",
+          "status": "completed",
+          "conclusion": "success",
+          "id": 133205346428
+        },
+        {
+          "name": "test (windows-latest, 24)",
+          "status": "completed",
+          "conclusion": "success",
+          "id": 133205346512
+        },
+        {
+          "name": "container",
+          "status": "completed",
+          "conclusion": "success",
+          "id": 133205346668
+        },
+        {
+          "name": "test (windows-latest, 22)",
+          "status": "completed",
+          "conclusion": "success",
+          "id": 133205346707
         }
       ]
     }
@@ -215,83 +215,83 @@
   ],
   "integration": [
     {
-      "id": 43830684381,
-      "sha": "9a108bc230b6925dfc4be97b5178ff83a5cbbf80",
+      "id": 43851420888,
+      "sha": "34bef6307a978e74775007f014105dbf920ca4d8",
       "status": "completed",
       "conclusion": "success",
-      "url": "https://github.com/smoothie-ws/agentsys/actions/runs/43830684381",
+      "url": "https://github.com/smoothie-ws/agentsys/actions/runs/43851420888",
       "jobs": [
-        {
-          "name": "artifacts (firefox)",
-          "status": "completed",
-          "conclusion": "success",
-          "id": 133175022919
-        },
         {
           "name": "artifacts (chromium)",
           "status": "completed",
           "conclusion": "success",
-          "id": 133175023392
+          "id": 133244651449
+        },
+        {
+          "name": "artifacts (firefox)",
+          "status": "completed",
+          "conclusion": "success",
+          "id": 133244651567
         },
         {
           "name": "artifacts (webkit)",
           "status": "completed",
           "conclusion": "success",
-          "id": 133175024505
+          "id": 133244651775
         }
       ]
     },
     {
-      "id": 43829731778,
-      "sha": "8d41984ea0fde9a8dfccddd0b6b24f3b404e13f9",
+      "id": 43839963769,
+      "sha": "f3b55625ae79f431e64fb3bae48bff329e3c0f69",
       "status": "completed",
       "conclusion": "success",
-      "url": "https://github.com/smoothie-ws/agentsys/actions/runs/43829731778",
+      "url": "https://github.com/smoothie-ws/agentsys/actions/runs/43839963769",
       "jobs": [
         {
           "name": "artifacts (webkit)",
           "status": "completed",
           "conclusion": "success",
-          "id": 133171900093
+          "id": 133205888230
         },
         {
           "name": "artifacts (chromium)",
           "status": "completed",
           "conclusion": "success",
-          "id": 133171900455
+          "id": 133205888861
         },
         {
           "name": "artifacts (firefox)",
           "status": "completed",
           "conclusion": "success",
-          "id": 133171900493
+          "id": 133205889085
         }
       ]
     },
     {
-      "id": 43829589017,
-      "sha": "c722ce7d25ec60c53622164248de06f6c679dd57",
+      "id": 43838297656,
+      "sha": "6408e0ddda901814bed499d55b2dac73987b3e42",
       "status": "completed",
-      "conclusion": "failure",
-      "url": "https://github.com/smoothie-ws/agentsys/actions/runs/43829589017",
+      "conclusion": "success",
+      "url": "https://github.com/smoothie-ws/agentsys/actions/runs/43838297656",
       "jobs": [
         {
-          "name": "artifacts (chromium)",
+          "name": "artifacts (webkit)",
           "status": "completed",
-          "conclusion": "failure",
-          "id": 133171426821
+          "conclusion": "success",
+          "id": 133200328368
         },
         {
           "name": "artifacts (firefox)",
           "status": "completed",
-          "conclusion": "failure",
-          "id": 133171427269
+          "conclusion": "success",
+          "id": 133200328705
         },
         {
-          "name": "artifacts (webkit)",
+          "name": "artifacts (chromium)",
           "status": "completed",
-          "conclusion": "failure",
-          "id": 133171427375
+          "conclusion": "success",
+          "id": 133200328760
         }
       ]
     }

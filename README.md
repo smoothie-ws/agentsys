@@ -1,4 +1,4 @@
-﻿# AgentSys integration workspace
+# AgentSys integration workspace
 
 AgentSys consists of two independently installed and released products:
 
@@ -26,3 +26,5 @@ See [compatibility](COMPATIBILITY.md), [integration tests](INTEGRATION-TESTS.md)
 and [migration evidence](docs/ACTIVE-MIGRATION.md). Measurements and E2E results
 are under integration-results/. Each product owns its installation, architecture,
 security/API or plugin documentation and release workflow.
+
+Final delivery details: [separation report](REPORT.md) and [acceptance audit](COMPLETION-AUDIT.md).

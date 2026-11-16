@@ -1,4 +1,6 @@
-﻿# Product separation progress
+> Historical phase-1 record. Final status: FULLY SEPARATED; see ../REPORT.md.
+
+# Product separation progress
 
 Status: **NOT SEPARATED**. This is an intermediate implementation, not acceptance of the complete migration.
 

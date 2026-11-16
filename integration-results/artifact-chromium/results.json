@@ -1,5 +1,5 @@
 {
-  "work": "C:\\Users\\kibot\\AppData\\Local\\Temp\\agentsys-artifacts-lbah5eal",
+  "work": "C:\\Users\\kibot\\AppData\\Local\\Temp\\agentsys-artifacts-41c86s4z",
   "checks": [
     "server installed independently",
     "client installed independently",
@@ -30,15 +30,30 @@
     "each environment keeps its own bearer credential",
     "switching back reconnects to original server",
     "browser has no uncaught JavaScript errors",
+    "client dispatches a workflow before disconnecting",
+    "server execution is waiting on remote I/O before the client closes",
     "published Library workflow executes after all clients disconnect",
     "headless execution produces saved Library-node output",
     "Integration Studio workflow executes without a client or plugin host",
     "autonomous workflow stores the expected HTTP transformation",
+    "a newly connected browser can retrieve the autonomous execution result",
     "data survives independent server restart",
     "original browser_editor.py passes against independently installed artifacts",
     "original browser_ux.py passes against independently installed artifacts",
-    "original browser_plugin_security.py passes against independently installed artifacts"
+    "original browser_plugin_security.py passes against independently installed artifacts",
+    "original browser_plugin_platform.py passes against independently installed artifacts",
+    "original browser_plugin_certification.py passes against independently installed artifacts"
   ],
+  "artifacts": {
+    "server": {
+      "path": "C:\\Users\\kibot\\AppData\\Local\\Temp\\agentsys-releases-041-1jcbvhh_\\agentsys-server-0.4.1.tgz",
+      "sha256": "5d91b08a46c673047927248da4b7136264c2c9f7762c023daf1f98188049da88"
+    },
+    "client": {
+      "path": "C:\\Users\\kibot\\AppData\\Local\\Temp\\agentsys-releases-041-1jcbvhh_\\agentsys-client-0.7.0.tgz",
+      "sha256": "2105a4cae351645dcf6093980006be268070563e8ae83d76b5c835fba2784b10"
+    }
+  },
   "browser": "chromium",
   "status": "passed"
 }

@@ -1,0 +1,9 @@
+{
+  "artifact_sha256": "7a3401bf23730a081b79339eb740bbde96588a60191afc933f8ae4d503e880fb",
+  "hosting": "ordinary Python static HTTP server; no AgentSys CLI/backend",
+  "browsers": {
+    "chromium": "passed",
+    "firefox": "passed",
+    "webkit": "passed"
+  }
+}

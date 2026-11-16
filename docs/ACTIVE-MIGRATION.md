@@ -1,6 +1,6 @@
-﻿# Active product migration
+# Active product migration
 
-Goal remains active; acceptance is not yet complete.
+Migration completed: **FULLY SEPARATED**. Final evidence is in ../REPORT.md and ../COMPLETION-AUDIT.md. The entries below are chronological work records.
 
 Local history-preserving repositories:
 - ../agentsys-server, main d35840eb2ebf562da0fa1c75b91b4fba450d3def
@@ -155,3 +155,17 @@ successful independent CI (latest product results in ci-status.json). Original
 origin/main is an ancestor of integration HEAD, so a future verified transition
 can fast-forward without rewriting history. Do not update main until integration
 checks and final acceptance audit pass. Release tags still not created.
+
+
+## Final verified state
+
+Server 0.4.1: 62789987a3e303f940c94ebf3ec8cb8275b3c86d.
+Client 0.7.0: 83835ea0d77b1e35fe3e972a1dd7205b97f730be.
+API 2.0; SDK 2.0.0. Both GitHub releases and all product CI/release workflows
+passed. Server patch 0.4.1 fixes the discovery limit to match its existing 20 MB
+enforcement. Main integration CI 43851420888 passed all three engines at 34bef63.
+Published archives were downloaded and hashed; E2E/measurement input hashes match
+them. Static ZIP hosting without an AgentSys CLI/backend passed all three engines.
+The original main branch is integration-only, advanced by normal fast-forward.
+All original user data remains untouched. Final acceptance audit passed; no
+required implementation or verification work remains.

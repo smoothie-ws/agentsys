@@ -1,0 +1,13 @@
+{
+  "status": "passed",
+  "product_commits": {
+    "server": "62789987a3e303f940c94ebf3ec8cb8275b3c86d",
+    "client": "83835ea0d77b1e35fe3e972a1dd7205b97f730be",
+    "integration": "34bef6307a978e74775007f014105dbf920ca4d8"
+  },
+  "integration_ci": "https://github.com/smoothie-ws/agentsys/actions/runs/43851420888",
+  "required_artifacts": "present",
+  "released_contract": "validated",
+  "ordinary_static_hosting": "passed",
+  "published_e2e": "passed"
+}
