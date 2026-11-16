@@ -69,6 +69,7 @@ DB.subscribe(keys => {
 });
 
 let queue = Promise.resolve();
+let backendClosing = false;
 const exclusive = work => {
   const run = queue.then(work, work);
   queue = run.catch(() => {});
@@ -499,6 +500,7 @@ const Backend = {
     call.scriptContext = scriptContext;
     // Stop aborts the signal of a Script: its API calls neither start nor save after that.
     const running = () => {
+      if (backendClosing) throw new ApiError('server_closing', 'The server is shutting down', 503);
       if (scriptContext?.signal?.aborted) throw bad('Execution stopped');
     };
     running();
@@ -572,6 +574,14 @@ const Backend = {
   },
   async shutdownExecutions() {
     await Promise.all([...GRAPH_RUNTIMES.keys()].map(stopGraph));
+  },
+  /** Terminal shutdown: prevent new/queued commits, drain writers and hooks, then finish runtime cleanup. */
+  async close() {
+    backendClosing = true;
+    await this.shutdownExecutions();
+    await queue;
+    await this.hooksIdle();
+    await this.shutdownExecutions();
   },
   get persistent() {
     return DB.persistent;

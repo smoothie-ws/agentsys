@@ -593,11 +593,13 @@ function createApiServer(options = {}) {
   const server = TLS
     ? https.createServer(TLS, handleRequest)
     : http.createServer(handleRequest);
+  let closeTask = null;
   function handleRequest(req, res) {
     // Security and protocol headers apply to every answer, including errors.
     res.setHeader('X-Content-Type-Options', 'nosniff');
     res.setHeader('Referrer-Policy', 'no-referrer');
     res.setHeader('X-Agentsys-Protocol', String(Protocol.PROTOCOL));
+    if (closing) return sendJSON(res, 503, {error: {code: 'server_closing', message: 'The server is shutting down'}});
     for (const [name, value] of Object.entries(corsHeaders(req))) res.setHeader(name, value);
     let run;
     try {
@@ -629,23 +631,30 @@ function createApiServer(options = {}) {
         });
       });
     },
-    async close() {
+    close() {
+      if (closeTask) return closeTask;
       closing = true;
       clearInterval(watcher);
       credentials.close();
-      await backend?.Backend.shutdownExecutions();
-      for (const res of eventClients.keys()) {
-        removeEventClient(res);
-        try { res.end(); } catch {}
-      }
-      if (!ALLOW_SHARED_DATA) {
-        try {
-          const holder = JSON.parse(fs.readFileSync(LOCK_FILE, 'utf8'));
-          if (Number(holder?.pid) === process.pid) fs.rmSync(LOCK_FILE, {force: true});
-        } catch {}
-      }
-      server.closeAllConnections?.();
-      return new Promise(resolve => server.close(() => resolve()));
+      const stopped = new Promise(resolve => server.close(() => resolve()));
+      closeTask = (async () => {
+        // Keep the folder locked until all admitted writers and hook continuations have settled.
+        await backend?.Backend.close();
+        for (const res of eventClients.keys()) {
+          removeEventClient(res);
+          try { res.end(); } catch {}
+        }
+
+        server.closeAllConnections?.();
+        await stopped;
+        if (!ALLOW_SHARED_DATA) {
+          try {
+            const holder = JSON.parse(fs.readFileSync(LOCK_FILE, 'utf8'));
+            if (Number(holder?.pid) === process.pid) fs.rmSync(LOCK_FILE, {force: true});
+          } catch {}
+        }
+      })();
+      return closeTask;
     },
     api: backend?.Backend ?? null,
     apiAvailable: !!backend && (loopbackBound || !!TOKEN),

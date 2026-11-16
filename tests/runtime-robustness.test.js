@@ -7,6 +7,28 @@ const {createApp, nodes} = require('./harness');
 
 const sleep = ms => new Promise(resolve => setTimeout(resolve, ms));
 
+test('terminal shutdown drains an admitted writer and rejects queued writes before they commit', async () => {
+  const app = createApp();
+  await app.api('GET', 'projects');
+  app.eval(`let closeProbeEntered = false, releaseCloseWrite;
+    route('POST', 'close-probe', 'Shutdown probe', async c => {
+      closeProbeEntered = true;
+      await new Promise(resolve => { releaseCloseWrite = resolve; });
+      c.ctx.set('close-probe', {written: true});
+      return {ok: true};
+    });`);
+  const writing = assert.rejects(app.Backend.request('POST', 'close-probe'), error => error.code === 'server_closing');
+  await until(() => app.eval('closeProbeEntered'), 'writer entered');
+  const queued = assert.rejects(app.Backend.request('POST', 'projects', {body: {name: 'After shutdown'}}),
+    error => error.code === 'server_closing');
+  const closing = app.Backend.close();
+  app.eval('releaseCloseWrite()');
+  await Promise.all([writing, queued, closing]);
+  assert.equal(await app.eval("DB.get('close-probe')"), undefined);
+  assert.equal(await app.eval("DB.get('projects').then(items => (items || []).length)"), 0);
+  await assert.rejects(app.Backend.request('GET', 'projects'), error => error.code === 'server_closing');
+});
+
 async function until(check, what, timeout = 5000) {
   const deadline = Date.now() + timeout;
   while (Date.now() < deadline) {

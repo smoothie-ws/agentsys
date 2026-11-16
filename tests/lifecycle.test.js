@@ -34,6 +34,29 @@ async function withServer(options, work) {
 }
 
 const diagnostics = async base => (await fetch(base + '/api/diagnostics', {headers: bearer})).json();
+
+test('concurrent close calls share shutdown and keep the data lock until backend cleanup ends', async () => {
+  const dir = fs.mkdtempSync(path.join(os.tmpdir(), 'agentsys-close-owner-'));
+  const app = createApiServer({dataDir: dir, token: TOKEN});
+  await app.listen(0);
+  const closeBackend = app.api.close.bind(app.api);
+  let release;
+  const gate = new Promise(resolve => { release = resolve; });
+  app.api.close = async () => { await gate; await closeBackend(); };
+  try {
+    const first = app.close();
+    assert.equal(app.close(), first, 'there is one shutdown owner');
+    assert.equal(fs.existsSync(path.join(dir, '.server.lock')), true);
+    assert.throws(() => createApiServer({dataDir: dir, token: TOKEN}), /in use by another AgentSys server/);
+    release();
+    await first;
+    assert.equal(fs.existsSync(path.join(dir, '.server.lock')), false);
+  } finally {
+    release();
+    await app.close();
+    fs.rmSync(dir, {recursive: true, force: true});
+  }
+});
 const stream = async base => {
   const controller = new AbortController();
   const response = await fetch(base + '/api/events', {headers: bearer, signal: controller.signal});
