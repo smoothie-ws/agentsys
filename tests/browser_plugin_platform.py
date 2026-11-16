@@ -391,12 +391,12 @@ async def main():
             broken = {
                 'id': 'reference-recovery', 'title': 'Recovery', 'version': '1.0.0', 'api': 2,
                 'capabilities': ['graph.read'],
-                'source': 'exports.activate = () => { throw new Error("this version cannot start"); };',
+                'formatVersion': 2, 'source': 'exports.activate = () => { throw new Error("this version cannot start"); };',
             }
             fixed = {
                 'id': 'reference-recovery', 'title': 'Recovery', 'version': '1.0.1', 'api': 2,
                 'capabilities': ['graph.read', 'graph.write'],
-                'source': 'exports.activate = api => { api.commands.register("ok", () => "ok", {title: "OK"}); };'
+                'formatVersion': 2, 'source': 'exports.activate = api => { api.commands.register("ok", () => "ok", {title: "OK"}); };'
                           'exports.migrate = async (api, context) => { await api.storage.set("migrated", context); return 2; };'
                           'exports.onUninstall = async api => { await api.request("POST", "projects", {name: "uninstall hook ran"}); };',
             }
@@ -419,12 +419,12 @@ async def main():
             migration_base = {
                 'id': 'reference-migrate', 'title': 'Migrate', 'version': '1.0.0', 'api': 2,
                 'capabilities': ['graph.read'],
-                'source': 'exports.activate = api => { api.commands.register("ok", () => "ok", {title: "OK"}); };',
+                'formatVersion': 2, 'source': 'exports.activate = api => { api.commands.register("ok", () => "ok", {title: "OK"}); };',
             }
             migration_next = {
                 'id': 'reference-migrate', 'title': 'Migrate', 'version': '1.0.1', 'api': 2,
                 'capabilities': ['graph.read'],
-                'source': 'exports.activate = api => { api.commands.register("ok", () => "ok", {title: "OK"}); };'
+                'formatVersion': 2, 'source': 'exports.activate = api => { api.commands.register("ok", () => "ok", {title: "OK"}); };'
                           'exports.migrate = async (api, context) => { await api.storage.set("migrated", context); return 3; };',
             }
             await page.evaluate('pkg => Extensions.install(pkg)', migration_base)
@@ -439,7 +439,7 @@ async def main():
             hang = {
                 'id': 'reference-hang', 'title': 'Hang', 'version': '1.0.0', 'api': 2,
                 'capabilities': ['graph.read'],
-                'source': 'exports.activate = api => { api.commands.register("hang", () => new Promise(() => {}), {title: "Hang"}); };',
+                'formatVersion': 2, 'source': 'exports.activate = api => { api.commands.register("hang", () => new Promise(() => {}), {title: "Hang"}); };',
             }
             await page.evaluate('pkg => Extensions.install(pkg)', hang)
             answer = await page.evaluate(
@@ -465,12 +465,12 @@ async def main():
             core = {
                 'id': 'reference-dep-core', 'title': 'Dependency core', 'version': '1.0.0', 'api': 2,
                 'capabilities': ['graph.read'],
-                'source': 'exports.activate = api => { api.commands.register("ping", () => "pong", {title: "Ping"}); };',
+                'formatVersion': 2, 'source': 'exports.activate = api => { api.commands.register("ping", () => "pong", {title: "Ping"}); };',
             }
             child = {
                 'id': 'reference-dep-child', 'title': 'Dependency child', 'version': '1.0.0', 'api': 2,
                 'capabilities': ['graph.read'], 'dependencies': {'reference-dep-core': '^1.0.0'},
-                'source': 'exports.activate = api => { api.commands.register("ready", () => "ready", {title: "Ready"}); };',
+                'formatVersion': 2, 'source': 'exports.activate = api => { api.commands.register("ready", () => "ready", {title: "Ready"}); };',
             }
             await page.evaluate('pkg => Extensions.install(pkg)', core)
             await page.evaluate('pkg => Extensions.install(pkg)', child)

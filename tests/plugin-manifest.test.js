@@ -5,6 +5,7 @@ const test = require('node:test'),
 const Manifest = require('../js/app/plugin-manifest');
 
 const base = {
+    formatVersion: 2,
   id: 'demo',
   name: 'Demo plugin',
   version: '1.2.3',
@@ -77,18 +78,21 @@ test('a format 2 package is normalized: modules, assets, contributions and metad
   assert.equal(record.capabilities.length, 3);
 });
 
-test('the original single-source package still reads and writes as format 2', () => {
-  const record = Manifest.normalizePackage({...base, api: 1, capabilities: ['graph.read']});
-  assert.equal(record.formatVersion, 1);
-  assert.equal(record.api, 1);
-  assert.equal(record.main, 'plugin.js');
-  assert.deepEqual(record.capabilities, ['graph.read']);
+test('legacy and unknown package formats and API versions are rejected', () => {
+  for (const value of [
+    {id: 'old', title: 'Old', api: 1, source: base.source},
+    {...base, formatVersion: 1},
+    {...base, formatVersion: 2, api: 1},
+    {format: 1, manifest: base, files: {'main.js': base.source}},
+    {format: 99, manifest: base, files: {'main.js': base.source}},
+    {manifest: base, files: {'main.js': base.source}},
+  ]) assert.throws(() => Manifest.normalizePackage(value), error => error.code === 'incompatible_protocol');
+});
+
+test('current format export round-trips code, version and capabilities', () => {
+  const record = Manifest.normalizePackage({...base, capabilities: ['graph.read']});
   const packet = Manifest.exportPackage(record);
   assert.equal(packet.format, 2);
-  assert.equal(packet.main, 'plugin.js');
-  assert.equal(packet.files['plugin.js'], base.source);
-  assert.match(packet.checksum, /^fnv1a-/);
-  // The exported package installs back to the same code, version and capabilities.
   const again = Manifest.normalizePackage(packet);
   assert.equal(again.source, base.source);
   assert.equal(again.version, base.version);
@@ -101,7 +105,7 @@ test('compatibility is enforced: API, engine range and semantic version', () => 
     error => error.code === 'incompatible_protocol'
   );
   assert.throws(
-    () => Manifest.normalizePackage({...base, manifest: {...base, engines: {agentsys: '>=9.0.0'}}}),
+    () => Manifest.normalizePackage({...base, engines: {agentsys: '>=9.0.0'}}),
     error => error.code === 'incompatible_protocol'
   );
   assert.throws(() => Manifest.normalizePackage({...base, version: 'latest'}), /semantic/);

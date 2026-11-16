@@ -1,5 +1,5 @@
 'use strict';
-// One public-file boundary for both launchers. Never classify an unchecked Windows spelling or symlink.
+// Public-file boundary for the static Client. Never classify an unchecked Windows spelling or symlink.
 const fs = require('node:fs/promises');
 const path = require('node:path');
 const {SERVER_ONLY} = require('./manifest');

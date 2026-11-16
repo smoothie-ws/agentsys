@@ -18,7 +18,6 @@ const HELP = `AgentSys Server ${Protocol.VERSION} (protocol ${Protocol.PROTOCOL}
 Usage:
   agentsys-server start [options]
   agentsys-server status [options]
-  agentsys-server migrate --data <folder> [--dry-run] [--json]
   agentsys-server version
   agentsys-server help
 
@@ -78,7 +77,6 @@ function parse(argv) {
     name: process.env.AGENTSYS_NAME || '',
     quiet: false,
     json: false,
-    dryRun: false,
     url: '',
     tlsCert: '',
     tlsKey: '',
@@ -89,7 +87,7 @@ function parse(argv) {
   const args = [...argv];
   if (args[0] && !args[0].startsWith('-')) {
     result.command = args.shift();
-    if (!['start', 'status', 'migrate', 'version', 'help', '--help', '-h', '--version'].includes(result.command))
+    if (!['start', 'status', 'version', 'help', '--help', '-h', '--version'].includes(result.command))
       usageError(`Unknown command: ${result.command}`);
     if (['--help', '-h'].includes(result.command)) result.command = 'help';
     if (result.command === '--version') result.command = 'version';
@@ -115,7 +113,6 @@ function parse(argv) {
     else if (flag === '--session-hours') result.sessionHours = Number(read());
     else if (flag === '--url') result.url = read();
     else if (flag === '--json') result.json = true;
-    else if (flag === '--dry-run') result.dryRun = true;
     else if (flag === '--trust-proxy') result.trustProxy = true;
     else if (flag === '--deny-private-net') result.denyPrivateNet = true;
     else if (flag === '--quiet' || flag === '-q') result.quiet = true;
@@ -264,23 +261,7 @@ async function main() {
   if (options.command === 'version') return console.log(`${Protocol.VERSION} (protocol ${Protocol.PROTOCOL})`);
   if (options.command === 'status') process.exitCode = await status(options);
   else if (options.command === 'start') await start(options);
-  else if (options.command === 'migrate') {
-    const {migrateData} = require('../server/migrate');
-    const report = await migrateData({
-      dataDir: options.data,
-      dryRun: options.dryRun,
-      log: message => (options.quiet ? undefined : console.log(message)),
-    });
-    if (options.json) console.log(JSON.stringify(report, null, 2));
-    else {
-      console.log(`Migration ${report.dry_run ? 'preview' : 'complete'} for ${report.data_dir}`);
-      console.log(`  Plugins preserved: ${report.plugins.length}`);
-      console.log(`  Provider records migrated: ${report.migrated.records}`);
-      console.log(`  Secrets created: ${report.migrated.secrets.length}`);
-      if (report.backup) console.log(`  Backup: ${report.backup}`);
-      for (const warning of report.warnings) console.log(`  ! ${warning}`);
-    }
-  }
+
 }
 
 main().catch(error => {

@@ -10,8 +10,7 @@
   'use strict';
 
   const API_VERSION = 2; // the plugin API this client implements
-  const MIN_API = 1;
-  const FORMAT_VERSION = 2; // the package format this client reads (1 = the original single-source package)
+  const FORMAT_VERSION = 2; // the only supported package format
   const ID = /^[A-Za-z0-9][A-Za-z0-9._-]{0,79}$/;
   const VERSION = /^(\d+)\.(\d+)\.(\d+)(?:-([0-9A-Za-z.-]+))?(?:\+([0-9A-Za-z.-]+))?$/;
   const ICON = /^[a-z][a-z0-9-]{0,39}$/;
@@ -246,17 +245,15 @@
   }
 
   /**
-   * Reads a package (format 1 or 2) into the record PluginStore keeps. Throws an actionable error on bad input.
+   * Reads a format 2 package or its normalized internal record into the record PluginStore keeps. Throws an actionable error on bad input.
    * `hostVersion` is the AgentSys version; `apiVersion` is the plugin API this client implements.
    */
   function normalizePackage(value, {hostVersion = '0.3.0', apiVersion = API_VERSION, allowSource = true} = {}) {
     if (!isObject(value)) throw fail('A plugin package must be a JSON object.');
-    const v2 =
-      isObject(value.manifest) ||
-      value.format === 2 ||
-      value.formatVersion === FORMAT_VERSION ||
-      (isObject(value.files) && !value.source);
-    const manifest = v2 ? value.manifest || {} : value;
+    const packet = value.format === FORMAT_VERSION;
+    if ((value.format !== undefined && !packet) || (!packet && value.formatVersion !== FORMAT_VERSION))
+      throw fail('Only plugin package format 2 is supported.', 'incompatible_protocol');
+    const manifest = packet ? value.manifest : value;
     if (!isObject(manifest)) throw fail('manifest must be an object');
     const id = String(manifest.id ?? value.id ?? '');
     if (!ID.test(id)) throw fail('Plugin id must be letters, digits, ".", "_" or "-" (at most 80).');
@@ -264,8 +261,8 @@
     if (!title || title.length > 120) throw fail('A plugin needs a name of 1 to 120 characters.');
     const version = String(manifest.version ?? value.version ?? '0.0.0');
     if (!parseVersion(version)) throw fail('A plugin version must be semantic, such as 1.2.0 (' + version.slice(0, 40) + ').');
-    const api = Number(manifest.api ?? value.api ?? (v2 ? API_VERSION : MIN_API));
-    if (!Number.isInteger(api) || api < MIN_API || api > apiVersion)
+    const api = Number(manifest.api ?? value.api);
+    if (api !== API_VERSION || api !== apiVersion)
       throw fail(`This client runs client plugin API ${apiVersion}, not ${api}.`, 'incompatible_protocol');
     const engines = normalizeEngines(manifest.engines ?? value.engines);
     if (!satisfies(String(hostVersion), engines.agentsys))
@@ -276,31 +273,26 @@
     const dependencies = normalizeDependencies(manifest.dependencies ?? value.dependencies);
     if (Object.hasOwn(dependencies, id)) throw fail('A plugin cannot depend on itself');
 
-    const main = v2 ? safePath(value.main || 'main.js') : 'plugin.js';
+    const main = safePath(value.main || 'main.js');
     const files = {};
-    if (v2) {
-      if (value.files !== undefined && !isObject(value.files)) throw fail('files must be an object of path to text');
-      const entries = Object.entries(value.files || {});
-      if (entries.length > MAX_FILES) throw fail(`A package has at most ${MAX_FILES} files`);
-      let total = 0;
-      for (const [path, text] of entries) {
-        const clean = safePath(path);
-        if (!/\.(?:js|json)$/i.test(clean)) throw fail('A package file must be JavaScript or JSON: ' + clean);
-        if (typeof text !== 'string') throw fail('A package file must be text: ' + clean);
-        if (text.length > MAX_FILE) throw fail('A package file is too large: ' + clean);
-        total += text.length;
-        if (total > MAX_TOTAL) throw fail('The plugin package is too large (900 KB maximum)');
-        if (RESERVED.has(clean)) throw fail('A package file name is reserved: ' + clean);
-        files[clean] = text;
-      }
+    if (value.files !== undefined && !isObject(value.files)) throw fail('files must be an object of path to text');
+    const entries = Object.entries(value.files || {});
+    if (entries.length > MAX_FILES) throw fail(`A package has at most ${MAX_FILES} files`);
+    let total = 0;
+    for (const [path, text] of entries) {
+      const clean = safePath(path);
+      if (!/\.(?:js|json)$/i.test(clean)) throw fail('A package file must be JavaScript or JSON: ' + clean);
+      if (typeof text !== 'string') throw fail('A package file must be text: ' + clean);
+      if (text.length > MAX_FILE) throw fail('A package file is too large: ' + clean);
+      total += text.length;
+      if (total > MAX_TOTAL) throw fail('The plugin package is too large (900 KB maximum)');
+      if (RESERVED.has(clean)) throw fail('A package file name is reserved: ' + clean);
+      files[clean] = text;
     }
-    let source = value.source;
-    if (v2) {
-      const fromFiles = files[main];
-      if (fromFiles !== undefined) source = fromFiles;
-      else if (typeof source !== 'string') throw fail('The package main file "' + main + '" is missing from files.');
-      delete files[main];
-    }
+    const sourceText = packet ? files[main] : value.source;
+    if (typeof sourceText !== 'string') throw fail('The package main file "' + main + '" is missing from files.');
+    let source = sourceText;
+    delete files[main];
     if (allowSource) {
       if (typeof source !== 'string' || !source.trim()) throw fail('A plugin needs JavaScript source.');
       if (source.length > MAX_FILE) throw fail('The plugin source is too large (400 KB maximum).');
@@ -311,7 +303,7 @@
     const icon = ICON.test(String(manifest.icon || '')) ? String(manifest.icon) : 'plug';
 
     return {
-      formatVersion: v2 ? FORMAT_VERSION : 1,
+      formatVersion: FORMAT_VERSION,
       id,
       title,
       name: title,
@@ -446,37 +438,16 @@
     };
   }
 
-  /** Reads a stored record from an older client, or a current one, into the current shape. */
-  function migrateRecord(value) {
-    if (!isObject(value)) throw fail('A stored plugin is not an object');
-    if (value.formatVersion === FORMAT_VERSION && value.source) {
-      const record = normalizePackage(exportPackage(value), {
-        hostVersion: '0.3.0',
-        apiVersion: Math.max(API_VERSION, Number(value.api) || API_VERSION),
-      });
-      return {
-        ...record,
-        enabled: value.enabled !== false,
-        builtin: !!value.builtin,
-        origin: value.origin || 'installed',
-        installedAt: Number(value.installedAt) || 0,
-        updatedAt: Number(value.updatedAt) || 0,
-        activatedVersion: value.activatedVersion || '',
-        dataVersion: Number(value.dataVersion) || 0,
-        checksum: value.checksum || fingerprint(record),
-      };
-    }
-    // Format 1: {id,title,source,api,capabilities,...}. It remains readable and is written back as format 2.
-    const record = normalizePackage(value, {
-      hostVersion: '0.3.0',
-      apiVersion: Math.max(API_VERSION, Number(value.api) || API_VERSION),
-    });
-    return {...record, checksum: fingerprint(record)};
+  /** Validates the current stored record; per-plugin data migrations belong to lifecycle hooks. */
+  function readRecord(value) {
+    if (!isObject(value) || value.formatVersion !== FORMAT_VERSION)
+      throw fail('Only stored plugin format 2 is supported.', 'incompatible_protocol');
+    const record = normalizePackage(value);
+    return {...record, checksum: value.checksum || fingerprint(record)};
   }
 
   return {
     API_VERSION,
-    MIN_API,
     FORMAT_VERSION,
     ID,
     VERSION,
@@ -500,6 +471,6 @@
     activationOrder,
     fingerprint,
     exportPackage,
-    migrateRecord,
+    readRecord,
   };
 });

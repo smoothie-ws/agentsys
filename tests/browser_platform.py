@@ -259,7 +259,7 @@ async def main():
             await page.evaluate(
                 """async source => {
                   PluginStore.install({
-                    id: 'platform-builder', title: 'Platform Builder', api: 1,
+                    id: 'platform-builder', title: 'Platform Builder', api: 2, formatVersion: 2,
                     capabilities: ['library.read', 'library.write'], source,
                   });
                   await Extensions.reload();

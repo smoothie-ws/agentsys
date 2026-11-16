@@ -39,6 +39,8 @@ function storeWith(seed = []) {
 }
 
 const pkg = (overrides = {}) => ({
+    api: 2,
+    formatVersion: 2,
   id: 'lifecycle',
   title: 'Lifecycle',
   version: '1.0.0',
@@ -139,22 +141,14 @@ test('a format 2 package keeps its modules and assets across export and reinstal
   assert.equal(store.record('modular').contributes.library[0].code, 'node.output.ok = true;');
 });
 
-test('a record written by the older client is read without losing its source or capabilities', () => {
-  const legacy = {
-    id: 'legacy',
-    title: 'Legacy',
-    version: '1.0.0',
-    api: 1,
-    capabilities: ['graph.read', 'library.write'],
-    source: 'exports.activate = api => api.ui.toast("old");',
-    enabled: false,
-  };
-  const {store} = storeWith([legacy]);
-  const found = store.get('legacy');
-  assert.equal(found.formatVersion, 1);
-  assert.equal(found.enabled, false);
-  assert.deepEqual([...found.capabilities].sort(), ['graph.read', 'library.write']);
-  assert.match(store.export('legacy').files['plugin.js'], /toast/);
+test('an unsupported stored record is not activated and its private data is preserved', () => {
+  const legacy = {id: 'legacy', title: 'Legacy', version: '1.0.0', api: 1,
+    source: 'exports.activate = () => {};', enabled: false};
+  const {store, data} = storeWith([legacy]);
+  data.set('agentsys-plugin-legacy@local:note', JSON.stringify({saved: true}));
+  assert.equal(store.get('legacy'), undefined);
+  assert.equal(data.has('agentsys-plugin-legacy@local:note'), true);
+  assert.equal(JSON.parse(data.get('agentsys-client-plugins')).length, 1, 'reading does not rewrite user data');
 });
 
 test('uninstall removes the package and every environment-scoped value', () => {

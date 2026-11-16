@@ -12,7 +12,7 @@ async def check(base):
         page = await browser.new_page(viewport={'width': 1600, 'height': 1000})
         errors = []
         page.on('pageerror', lambda error: errors.append(str(error)))
-        await page.goto(base + '/editor/')
+        await page.goto(base + '/#/')
         await page.wait_for_selector('.dashboard')
         project = await page.evaluate("api('projects',{method:'POST',body:{name:'Layout review'}})")
         routes = ['/', '/projects', '/p/' + project['id'], '/p/' + project['id'] + '/settings',

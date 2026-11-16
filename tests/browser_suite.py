@@ -24,9 +24,7 @@ class QuietHandler(http.server.SimpleHTTPRequestHandler):
 
 
 def main():
-    # `browser_platform` is the split client/server end-to-end test. The other selected scripts exercise the
-    # combined local server's editor UI (still supported for `node server.js`).
-    # browser_smoke.py targeted the removed browser-only mode; browser_plugins.py targeted server plugins.
+    # Supported scenarios use independent API and static Client processes.
     selected = sys.argv[1:] or ['platform', 'plugin_platform', 'plugin_certification', 'plugin_security', 'editor', 'ux', 'execution_ui', 'shell', 'design']
     logs = Path(tempfile.mkdtemp(prefix='agentsys-browser-suite-'))
     print(f'Logs: {logs}', flush=True)

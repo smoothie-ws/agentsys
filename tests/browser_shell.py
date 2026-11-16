@@ -12,7 +12,7 @@ async def check(base):
         page.set_default_timeout(10000)
         errors = []
         page.on('pageerror', lambda error: errors.append(str(error)))
-        await page.goto(base + '/editor/api')
+        await page.goto(base + '/#/api')
         await page.wait_for_selector('.api-call')
         assert await page.evaluate("document.querySelector('#topstrip').parentElement===document.body")
         assert await page.evaluate("document.querySelector('#topstrip').firstElementChild.id==='toggle-subnav' && document.querySelector('#sidebar .sidebar-top .sidebar-item:first-child > #brand') && !document.querySelector('#topstrip #brand') && !document.querySelector('#subnav-title') && !document.querySelector('#subnav-actions')")

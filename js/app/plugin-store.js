@@ -35,7 +35,7 @@ const PluginStore = (() => {
     for (const item of Array.isArray(list) ? list : []) {
       if (!item || !ID.test(item.id || '') || typeof item.source !== 'string') continue;
       try {
-        result.push(Manifest.migrateRecord(item));
+        result.push(Manifest.readRecord(item));
       } catch {
         // A record this client cannot read no longer runs; keeping it would only fail on every reload.
       }
@@ -56,16 +56,16 @@ const PluginStore = (() => {
     description: item.description || '',
     version: item.version || '0.0.0',
     icon: item.icon || 'plug',
-    api: item.api || 1,
+    api: item.api,
     enabled: item.enabled !== false,
     builtin: !!item.builtin,
     source: item.source,
-    main: item.main || 'plugin.js',
+    main: item.main,
     files: item.files ? {...item.files} : {},
     assets: item.assets ? {...item.assets} : {},
     capabilities: item.capabilities ? item.capabilities.slice() : Capabilities.READ_ONLY.slice(),
     origin: item.origin || 'installed',
-    formatVersion: item.formatVersion || 1,
+    formatVersion: item.formatVersion,
     author: item.author || '',
     license: item.license || '',
     homepage: item.homepage || '',

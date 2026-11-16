@@ -34,7 +34,7 @@ const FILES = [
   'js/backend/routes-builtin.js',
 ];
 
-/** Server-only files: the client server and the combined local server never send these to a browser. */
+/** Server-only files: the static Client must never send these to a browser, including retired paths. */
 const SERVER_ONLY =
   /^(?:server\.js$|js\/storage\/db\.js$|js\/model\/(?:executor|editor|snapshot|evaluate|schema|documents)\.js$|js\/backend\/|server\/|bin\/|legacy\/|headless\.js$)/;
 

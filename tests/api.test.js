@@ -547,19 +547,6 @@ test('deleting a project removes its stored permission policy', async () => {
   assert.equal(await app.eval(`DB.get('policy:${project.id}')`), undefined);
 });
 
-test('independent UI state updates merge without overwriting other clients', async () => {
-  const app = createApp();
-  await Promise.all([
-    app.api('PUT', 'ui-state', {values: {'agentsys-snap': true}}),
-    app.api('PUT', 'ui-state', {values: {'agentsys-hints': false}}),
-  ]);
-  const state = JSON.parse(JSON.stringify(await app.eval("DB.get('ui-state')")));
-  assert.deepEqual(state, {'agentsys-snap': true, 'agentsys-hints': false});
-  for (const values of [null, [], {'unrelated-key': true}, JSON.parse('{"__proto__":{}}')]) {
-    await assert.rejects(app.api('PUT', 'ui-state', {values}), e => e.code === 'invalid_request');
-  }
-});
-
 test('malformed imported types and inherited shortcut names return validation errors', async () => {
   const app = createApp();
   const TextGraph = require('../js/storage/format');

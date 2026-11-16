@@ -8,7 +8,7 @@
   const NAME = 'AgentSys';
   const PRODUCT = 'agentsys';
   // Bump when a client of the previous version can no longer work against this server.
-  const PROTOCOL = 1;
+  const PROTOCOL = 2;
   const VERSION = '0.3.0';
   const META_PATH = '/api/meta';
   const EVENTS_PATH = '/api/events';

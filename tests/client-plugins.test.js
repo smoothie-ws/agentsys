@@ -51,18 +51,20 @@ test('client plugin packages are validated: id, API version, source and size lim
   const plain = value => JSON.parse(JSON.stringify(value));
   assert.deepEqual(plain(store.list()), []);
   assert.throws(
-    () => store.install({id: '../evil', title: 'X', source: 'exports.activate = () => {};'}),
+    () => store.install({api: 2, formatVersion: 2, id: '../evil', title: 'X', source: 'exports.activate = () => {};'}),
     error => error.code === 'invalid_request'
   );
   assert.throws(
-    () => store.install({id: 'x', title: 'X', api: 99, source: 'exports.activate = () => {};'}),
+    () => store.install({formatVersion: 2, id: 'x', title: 'X', api: 99, source: 'exports.activate = () => {};'}),
     error => error.code === 'incompatible_protocol'
   );
   assert.throws(
-    () => store.install({id: 'x', title: 'X', source: 'console.log(1)'}),
+    () => store.install({api: 2, formatVersion: 2, id: 'x', title: 'X', source: 'console.log(1)'}),
     error => error.code === 'invalid_request'
   );
   const plugin = store.install({
+    api: 2,
+    formatVersion: 2,
     id: 'hello',
     title: 'Hello',
     version: '1.2.3',
@@ -74,11 +76,11 @@ test('client plugin packages are validated: id, API version, source and size lim
   // A package that declares no capabilities is read-only; writes must be named.
   assert.deepEqual([...plugin.capabilities].sort(), ['collections.read', 'graph.read', 'library.read', 'notifications.read', 'run.read', 'settings.read']);
   assert.deepEqual(
-    [...store.install({id: 'writer', title: 'Writer', capabilities: ['library.read', 'library.write'], source: 'exports.activate = () => {};'}).capabilities],
+    [...store.install({api: 2, formatVersion: 2, id: 'writer', title: 'Writer', capabilities: ['library.read', 'library.write'], source: 'exports.activate = () => {};'}).capabilities],
     ['library.read', 'library.write']
   );
   assert.throws(
-    () => store.install({id: 'writer2', title: 'Writer', capabilities: ['root'], source: 'exports.activate = () => {};'}),
+    () => store.install({api: 2, formatVersion: 2, id: 'writer2', title: 'Writer', capabilities: ['root'], source: 'exports.activate = () => {};'}),
     error => error.code === 'invalid_request' && /Unknown plugin capability/.test(error.message)
   );
   store.remove('writer');
@@ -97,7 +99,7 @@ test('the shipped catalog is valid and has no privileged server surface', () => 
   assert.ok(Array.isArray(catalog), 'the catalog is a JSON list');
   for (const plugin of catalog) {
     assert.match(plugin.id, /^[A-Za-z0-9][A-Za-z0-9._-]{0,79}$/);
-    assert.equal(plugin.api, 1);
+    assert.equal(plugin.api, 2);
     assert.ok(plugin.source.includes('exports.activate'));
     // Sandboxed client plugins use the normal API; they do not claim a server plugin route.
     assert.doesNotMatch(plugin.source, /\.route\s*\(/);

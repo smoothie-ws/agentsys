@@ -6,16 +6,9 @@
 // /plugins (the plugins as cards) and /plugins/{id} (one plugin),
 // /library (the Library: its sections as cards), /library/nodes[?folder=…] (the Nodes section: nodes and groups as cards)
 // and /library/nodes/{id} (one node).
-// Served by server.js the editor is at /editor/ and these are real paths (/editor/p/…). Opened any other way (a static server,
-// a file) there is no server to answer them, so they live in the URL hash (#/p/…). `urlOf` makes the address of a page for either.
-const PATH_BASE = '/editor';
-const pathMode = /^\/editor(\/|$)/.test(location.pathname);
-const urlOf = path => {
-  return pathMode ? PATH_BASE + (path === '/' ? '/' : path) : '#' + path;
-};
-/** The page now, as `path?query`. */
-const routeTarget = () =>
-  (pathMode ? location.pathname.slice(PATH_BASE.length) + location.search : location.hash.replace(/^#/, '')) || '/';
+// Hash routes work on every static host.
+const urlOf = path => '#' + path;
+const routeTarget = () => location.hash.replace(/^#/, '') || '/';
 const routePath = () => routeTarget().split('?')[0] || '/';
 const routeQuery = () => new URLSearchParams(routeTarget().split('?')[1] || '');
 const routeURL = () => urlOf(routeTarget());
@@ -170,11 +163,7 @@ const linkPath = link => {
   if (raw.startsWith('#/')) return (link.dataset.path = raw.slice(1));
   const url = new URL(raw, location.href);
   if (url.origin !== location.origin) return null;
-  const path =
-    url.pathname === PATH_BASE || url.pathname.startsWith(PATH_BASE + '/')
-      ? url.pathname.slice(PATH_BASE.length) || '/'
-      : url.pathname;
-  return (link.dataset.path = path + url.search);
+  return (link.dataset.path = url.pathname + url.search);
 };
 const addressed = event => {
   const link = event.target.closest?.('a[data-link]');

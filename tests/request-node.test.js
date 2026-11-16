@@ -2,54 +2,17 @@
 const test = require('node:test');
 const assert = require('node:assert/strict');
 const {createApp, fn, ref, TYPES} = require('./harness');
-const {HTTP_CODE, PROVIDER_CODE, simplifyGraph} = require('../tools/simplify-request');
-
-function legacyGraph(endpoint = 'net') {
-  return {
-    groups: [{id: 'request', name: 'Request', parent: null, members: ['script']}],
-    complex: [{id: 'request', source: {resource_id: 'http-resource', stamp: 1}, interface: {
-      inputs: [
-        {id: 'signal-in', name: 'in', type: 'signal', bound: [{node_id: 'script', port_id: 'in'}]},
-        {id: 'url-input', name: 'url'}, {id: 'method-input', name: 'method'},
-        {id: 'timeout-input', name: 'timeout'}, {id: 'options-input', name: 'request'},
-        {id: 'endpoint-input', name: 'endpoint', default: endpoint},
-      ],
-      outputs: [{id: 'status-output', name: 'status'}, {id: 'response-output', name: 'response'}],
-    }}],
-    records: [{id: 'script', payload: {config: {title: 'Script', inputs: [
-      {id: 'script', default: "await agentsys('POST', node.input.endpoint || 'net', node.input.request);"},
-    ]}}}],
-    port_edges: [{id: 'keep', source: 'complex:request', source_port: 'response-output', target: 'other', target_port: 'in'}],
-  };
-}
-
-test('HTTP Request drops internal routing and preserves existing ports, links and complete-options support', () => {
-  const graph = legacyGraph();
-  assert.equal(simplifyGraph(graph), true);
-  assert.deepEqual(graph.complex[0].interface.inputs.map(port => port.name), ['in', 'url', 'method', 'timeout', 'request', 'headers', 'body']);
-  assert.equal(graph.complex[0].interface.inputs.find(port => port.name === 'url').id, 'url-input');
-  assert.equal(graph.complex[0].source.resource_id, 'http-resource');
-  assert.equal(graph.port_edges[0].source_port, 'response-output');
-  assert.equal(graph.records[0].payload.config.inputs[0].default, HTTP_CODE);
-  assert.equal(simplifyGraph(graph), false, 'reapplying does not modify a migrated graph');
-});
-
-test('AI transport becomes a private Provider request and no longer follows the HTTP Library definition', async () => {
-  const graph = legacyGraph('plugins/ai/call/request');
-  simplifyGraph(graph);
-  assert.equal(graph.groups[0].name, 'Provider request');
-  assert.equal(graph.complex[0].source, undefined);
-  assert.deepEqual(graph.complex[0].interface.inputs.map(port => port.name), ['in', 'request']);
-  assert.equal(graph.port_edges[0].id, 'keep');
-  const run = new (Object.getPrototypeOf(async function () {}).constructor)('node', 'agentsys', PROVIDER_CODE);
-  const input = {request: {provider: 'local', url: 'https://model.test/chat', body: '{}'}};
-  const node = {input, output: {}};
-  await run(node, async (method, route, body) => {
-    assert.deepEqual([method, route, body], ['POST', 'plugins/ai/call/request', input.request]);
-    return {status: 200, text: 'model answer'};
-  });
-  assert.deepEqual(node.output, {status: 200, response: 'model answer'});
-});
+// A program fixture for the checked Script HTTP API; no dependency on a retired data-conversion tool.
+const HTTP_CODE = `const options = node.input.request ?? {
+  url: node.input.url,
+  method: node.input.method || 'GET',
+  headers: node.input.headers,
+  body: node.input.body || undefined,
+  timeout: node.input.timeout ?? 10000
+};
+const response = await agentsys('POST', 'net', options);
+node.output.status = response.status;
+node.output.response = response.text;`;
 
 test('generic Request executes through net with HTTP fields and needs no plugin permission', async () => {
   const app = createApp();

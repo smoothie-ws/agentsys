@@ -54,7 +54,7 @@ function inject(html, options) {
     () =>
       '<head><script>globalThis.AGENTSYS_CLIENT=true;globalThis.AGENTSYS_DEFAULT_SERVER=' +
       JSON.stringify(options.server).replace(/</g, '\\u003c') +
-      ';globalThis.AGENTSYS_UI_STORE={};</script>'
+      ';</script>'
   );
 }
 

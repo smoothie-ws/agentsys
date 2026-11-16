@@ -5,7 +5,7 @@
     "name": "Integration Studio",
     "version": "1.0.0",
     "description": "HTTP connections, server secrets, reusable Library stages and autonomous server workflows.",
-    "icon": "plug",
+    "icon": "globe",
     "api": 2,
     "engines": {
       "agentsys": ">=0.3.0 <1.0.0"

@@ -81,7 +81,7 @@ test('a generated certificate serves HTTPS with the protocol header and a Secure
       const meta = await request(base, 'meta');
       assert.equal(meta.status, 200);
       assert.equal(JSON.parse(meta.text).product, 'agentsys');
-      assert.equal(meta.headers['x-agentsys-protocol'], '1');
+      assert.equal(meta.headers['x-agentsys-protocol'], '2');
       const session = await request(base, 'auth/session', {
         method: 'POST',
         headers: {'Content-Type': 'application/json'},

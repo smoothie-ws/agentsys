@@ -27,7 +27,6 @@ test('an undeclared plugin is read-only and cannot write anything', () => {
     ['PUT', 'collections/providers'],
     ['POST', 'notifications'],
     ['PUT', 'settings'],
-    ['PUT', 'ui-state'],
   ]) {
     const decision = check(caps, method, route);
     assert.equal(decision.ok, false, `${method} ${route} is a write`);
@@ -50,8 +49,6 @@ test('a declared capability allows exactly its family of calls', () => {
   assert.equal(allowed(['notifications.write'], 'POST', 'notifications'), true);
   assert.equal(allowed(['notifications.read'], 'DELETE', 'notifications/n1'), false);
   assert.equal(allowed(['settings.write'], 'PUT', 'settings'), true);
-  assert.equal(allowed(['settings.write'], 'PUT', 'ui-state'), true);
-  assert.equal(allowed(['settings.read'], 'GET', 'migration/ui-state'), true);
   // A capability of one family never reaches another family.
   assert.equal(allowed(['library.write'], 'POST', 'projects'), false);
   assert.equal(allowed(['graph.write'], 'POST', 'library/script-nodes'), false);

@@ -157,7 +157,7 @@ async function scopedNeeds(method, path, body = {}) {
       refined.push(need);
       continue;
     }
-    if (/^(settings|ui-state)$/.test(path) || path === 'migration/ui-state') {
+    if (path === 'settings') {
       refined.push(method === 'GET' ? 'settings.read' : 'settings.write');
       continue;
     }

@@ -9,7 +9,7 @@ const PluginFrame = (() => {
       description: plugin.description,
       icon: plugin.icon,
       version: plugin.version,
-      api: plugin.api || 1,
+      api: plugin.api,
       capabilities: Array.isArray(plugin.capabilities) ? plugin.capabilities : [],
       main: plugin.main || 'plugin.js',
       source: plugin.source,

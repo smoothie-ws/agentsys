@@ -118,7 +118,7 @@ test('pagination is bounded and stable, and invalid numbers fall back to default
   });
 });
 
-test('an older client that sends no If-Match and no CSRF header with a bearer token still works', async () => {
+test('bearer calls do not require cookie CSRF headers or conditional edit headers', async () => {
   await withApi(async ({call, base}) => {
     const plain = {Authorization: 'Bearer ' + TOKEN, 'Content-Type': 'application/json'};
     const created = await fetch(base + '/api/projects', {
@@ -126,7 +126,7 @@ test('an older client that sends no If-Match and no CSRF header with a bearer to
       headers: plain,
       body: JSON.stringify({name: 'Old client'}),
     });
-    assert.equal(created.status, 200, 'protocol 1 clients wrote without X-AgentSys before the CSRF layer existed');
+    assert.equal(created.status, 200, 'bearer credentials are explicit and are not sent automatically by browsers');
     const madeId = (await created.json()).id;
     const updated = await fetch(base + '/api/projects/' + madeId, {
       method: 'PUT',

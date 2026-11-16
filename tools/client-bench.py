@@ -16,20 +16,15 @@ import time
 from playwright.async_api import async_playwright
 
 
+import sys
+sys.path.insert(0, str(Path(__file__).resolve().parents[1] / 'tests'))
+from browser_server import isolated_server
+
+
 @contextmanager
 def server(root):
-    with tempfile.TemporaryDirectory(prefix='agentsys-client-bench-') as data:
-        source = "const a=require('./server').createServer({dataDir:process.env.BENCH_DATA});a.listen(0).then(url=>console.log(JSON.stringify({url})));"
-        process = subprocess.Popen(['node', '-e', source], cwd=root, stdout=subprocess.PIPE, stderr=subprocess.PIPE,
-            text=True, env={**os.environ, 'BENCH_DATA': data}, creationflags=getattr(subprocess, 'CREATE_NO_WINDOW', 0))
-        try:
-            line = process.stdout.readline()
-            if not line:
-                raise RuntimeError(process.stderr.read())
-            yield json.loads(line)['url']
-        finally:
-            process.terminate()
-            process.wait(timeout=10)
+    with isolated_server(root) as (url, _):
+        yield url
 
 
 def summary(values):
@@ -47,7 +42,7 @@ async def measure(args, first, second):
             context = await browser.new_context(viewport={'width': 1440, 'height': 1000})
             page = await context.new_page()
             start = time.perf_counter()
-            await page.goto(first + '/editor/')
+            await page.goto(first + '/#/')
             await page.wait_for_selector('.dashboard')
             await page.wait_for_function('Environment.status().status === "connected"')
             startup.append((time.perf_counter() - start) * 1000)
@@ -57,7 +52,7 @@ async def measure(args, first, second):
         page = await context.new_page()
         errors = []
         page.on('pageerror', lambda error: errors.append(str(error)))
-        await page.goto(first + '/editor/')
+        await page.goto(first + '/#/')
         await page.wait_for_selector('.dashboard')
         await page.evaluate("""async count => {
           const project=await api('projects',{method:'POST',body:{name:'Client benchmark'}});
@@ -85,7 +80,7 @@ async def measure(args, first, second):
             }"""))
             plugins.append(await page.evaluate("""async () => {
               const start=performance.now();
-              await Extensions.install({id:'bench',title:'Bench',version:'1.0.0',source:'exports.activate = api => api.ui.addPage({id:"bench",render:()=>"<p>bench</p>"});'});
+              await Extensions.install({formatVersion:2,api:2,id:'bench',title:'Bench',version:'1.0.0',source:'exports.activate = api => api.ui.addPage({id:"bench",render:()=>"<p>bench</p>"});'});
               await Extensions.disable('bench');await Extensions.enable('bench');await Extensions.uninstall('bench');
               return performance.now()-start;
             }"""))

@@ -35,7 +35,7 @@ test('the server manifest contains no plugin host and the client loads no server
   const {FILES} = require('../server/manifest');
   assert.equal(FILES.some(file => file.includes('routes-plugins')), false);
   assert.equal(FILES.some(file => file.includes('plugin-host')), false);
-  const serverSource = fs.readFileSync(path.join(__dirname, '..', 'server.js'), 'utf8');
+  const serverSource = fs.readFileSync(path.join(__dirname, '..', 'server', 'api-server.js'), 'utf8');
   assert.doesNotMatch(serverSource, /createPluginHost|plugin-host/);
   const html = fs.readFileSync(path.join(__dirname, '..', 'index.html'), 'utf8');
   assert.doesNotMatch(html, /js\/backend\//);
@@ -48,12 +48,15 @@ test('an API-only server reports its protocol and serves no client or server plu
     const meta = await (await fetch(base + '/api/meta')).json();
     assert.equal(meta.agentsys, true);
     assert.equal(meta.product, 'agentsys');
-    assert.equal(meta.protocol, 1);
+    assert.equal(meta.protocol, 2);
     assert.equal(meta.features.server_plugins, false);
     assert.equal(meta.features.client_plugins, false);
     assert.equal((await fetch(base + '/')).status, 404);
     assert.equal((await fetch(base + '/js/app/helpers.js')).status, 404);
     assert.equal((await call(base, 'GET', 'plugins', undefined, token)).status, 404);
+    for (const route of ['/__data', '/__data/events', '/editor/api/projects', '/api/migration/ui-state'])
+      assert.equal((await fetch(base + route, {headers: token})).status, 404, route);
+    assert.equal((await call(base, 'PUT', 'ui-state', {values: {}}, token)).status, 404);
     assert.deepEqual((await call(base, 'GET', 'library/sections', undefined, token)).body, []);
     const diagnostics = await call(base, 'GET', 'diagnostics', undefined, token);
     assert.equal(diagnostics.status, 200);

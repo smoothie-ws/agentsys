@@ -1,24 +1,6 @@
 // Routes: session, settings, search, and the Library nodes.
 'use strict';
 
-// UI clients write only changed preferences; the writer queue merges edits from independent tabs.
-route('PUT', 'ui-state', 'Save changed interface state', async c => {
-  const values = c.body.values;
-  if (
-    !isObject(values) ||
-    Object.keys(values).some(key => !/^(?:agentsys-|fieldHeights:)[A-Za-z0-9:._/-]{1,200}$/.test(key))
-  )
-    throw bad('values must contain interface state keys');
-  const state = {...(await c.ctx.get('ui-state', {})), ...values};
-  c.ctx.set('ui-state', state);
-  return state;
-});
-
-// One-time export for a client moving from the old server-side UI state to browser-local preferences.
-route('GET', 'migration/ui-state', 'Read interface state saved by the old combined server', async c =>
-  c.ctx.get('ui-state', {})
-);
-
 // ----- application -----
 route('GET', 'session', 'Read the session', async c => ({
   preferences: await c.prefs(),

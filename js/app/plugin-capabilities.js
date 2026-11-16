@@ -82,7 +82,7 @@
       if (!/^[A-Za-z0-9_-]{1,100}$/.test(name)) return {denied: 'A secret name is required'};
       return {needs: ['secrets.use:' + name]};
     }
-    if (top === 'settings' || top === 'ui-state' || clean === 'migration/ui-state')
+    if (top === 'settings')
       return {needs: [read ? 'settings.read' : 'settings.write']};
     if (top === 'collections') return {needs: [read ? 'collections.read' : 'collections.write']};
     if (top === 'notifications') return {needs: [read ? 'notifications.read' : 'notifications.write']};

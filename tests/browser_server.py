@@ -1,5 +1,5 @@
-"""Disposable local server shared by browser integration checks."""
-from contextlib import contextmanager
+"""Disposable independent API and static Client processes shared by browser checks."""
+from contextlib import contextmanager, ExitStack
 import json
 import os
 import subprocess
@@ -15,21 +15,29 @@ async def expand_workflow_section(page, name):
 
 
 @contextmanager
-def isolated_server():
-    with tempfile.TemporaryDirectory(prefix='agentsys-browser-') as directory:
-        plugin_dir = Path(directory) / 'plugins' / 'ai'
-        plugin_dir.mkdir(parents=True)
-        for name in ['main.js', 'README.md']:
-            shutil.copyfile(Path(__file__).resolve().parents[1] / 'data' / 'plugins' / 'ai' / name, plugin_dir / name)
-        source = "const a=require('./server').createServer({dataDir:process.env.AGENTSYS_BROWSER_DATA});a.listen(0).then(url=>console.log(JSON.stringify({url}))).catch(e=>{console.error(e);process.exit(1)});"
-        process = subprocess.Popen(['node', '-e', source], stdout=subprocess.PIPE, stderr=subprocess.PIPE,
-            text=True, env={**os.environ, 'AGENTSYS_BROWSER_DATA': directory},
-            creationflags=getattr(subprocess, 'CREATE_NO_WINDOW', 0))
-        try:
-            line = process.stdout.readline()
+def isolated_server(root=None):
+    root = Path(root or Path(__file__).resolve().parents[1])
+    with tempfile.TemporaryDirectory(prefix='agentsys-browser-') as directory, ExitStack() as stack:
+        source = "const a=require('./server/api-server').createApiServer({dataDir:process.env.AGENTSYS_BROWSER_DATA});a.listen(0).then(url=>console.log(JSON.stringify({url}))).catch(e=>{console.error(e);process.exit(1)});"
+        def start(args):
+            process = subprocess.Popen(args, cwd=root, stdout=subprocess.PIPE, stderr=subprocess.PIPE,
+                text=True, env={**os.environ, 'AGENTSYS_BROWSER_DATA': directory},
+                creationflags=getattr(subprocess, 'CREATE_NO_WINDOW', 0))
+            def stop():
+                process.terminate()
+                process.wait(timeout=10)
+            stack.callback(stop)
+            return process
+        api = start(['node', '-e', source])
+        line = api.stdout.readline()
+        if not line:
+            raise RuntimeError(api.stderr.read())
+        api_url = json.loads(line)['url']
+        client = start(['node', 'bin/agentsys-client.js', '--port', '0', '--server', api_url])
+        while True:
+            line = client.stdout.readline()
             if not line:
-                raise RuntimeError(process.stderr.read())
-            yield json.loads(line)['url'], directory
-        finally:
-            process.terminate()
-            process.wait(timeout=10)
+                raise RuntimeError(client.stderr.read())
+            if line.startswith('Listening on '):
+                yield line.strip().removeprefix('Listening on '), directory
+                break

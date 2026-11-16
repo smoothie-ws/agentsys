@@ -10,13 +10,13 @@ const at = process.argv.indexOf('--ref');
 const ref = at < 0 ? null : process.argv[at + 1];
 if (at >= 0 && !ref) throw new Error('--ref needs a git revision');
 const git = args => execFileSync('git', args, {cwd: root, encoding: 'utf8'});
-const list = directory => fs.readdirSync(path.join(root, directory), {withFileTypes: true}).flatMap(entry => {
+const list = directory => !fs.existsSync(path.join(root, directory)) ? [] : fs.readdirSync(path.join(root, directory), {withFileTypes: true}).flatMap(entry => {
   const file = directory + '/' + entry.name;
   return entry.isDirectory() ? list(file) : [file];
 });
 const names = ref ? git(['ls-tree', '-r', '--name-only', ref]).trim().split('\n') : [
   ...['js', 'shared', 'server', 'bin', 'css', 'legacy'].flatMap(list), 'server.js', 'headless.js', 'index.html',
-];
+].filter(file => fs.existsSync(path.join(root, file)));
 const source = file => /^(?:(?:js|shared|server|bin|css|legacy)\/.*\.(?:js|css)|server\.js|headless\.js|index\.html)$/.test(file);
 const generated = file => file === 'js/backend/builtin-nodes.js';
 const rows = names.filter(source).map(file => {

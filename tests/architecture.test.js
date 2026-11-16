@@ -42,6 +42,19 @@ const resolveRequire = (from, request) => {
   return null;
 };
 
+test('retired executable mechanisms cannot reenter the source tree', () => {
+  for (const file of ['server.js', 'server/migrate.js', 'tools/simplify-request.js',
+    'tests/browser_smoke.py', 'tests/browser_plugins.py']) assert.equal(exists(file), false, file);
+  const server = read('server/api-server.js');
+  assert.doesNotMatch(server, /handleData|handleStatic|serveClient|legacyStorage|resolveAsset/);
+  assert.doesNotMatch(read('bin/agentsys-server.js'), /command === 'migrate'/);
+  assert.doesNotMatch(read('js/app/plugin-manifest.js'), /MIN_API|migrateRecord|formatVersion:.*\?.*: 1/);
+  assert.doesNotMatch(read('sdk/agentsys-plugin.d.ts'), /LegacyPluginPackage|api\??: 1/);
+  for (const file of list('server'))
+    if (file !== 'server/api-server.js') assert.doesNotMatch(read(file), /\bhttps?\.createServer\(/, file);
+  assert.doesNotMatch(read('js/app/router.js'), /PATH_BASE|pathMode/);
+});
+
 test('the server manifest is a fixed list of existing files, never client interface code', () => {
   assert.ok(FILES.length >= 20, 'the manifest lists the server runtime');
   for (const file of FILES) {
@@ -54,7 +67,7 @@ test('the server manifest is a fixed list of existing files, never client interf
   assert.deepEqual(backend.filter(file => !FILES.includes(file)), [], 'every js/backend file is part of the server runtime');
   assert.ok(FILES.includes('js/storage/db.js') && FILES.includes('js/model/executor.js'));
   // Server-only files are never sent to a browser; the shared model and the helpers are.
-  for (const file of [...backend, 'js/storage/db.js', ...['executor', 'editor', 'snapshot', 'evaluate', 'schema', 'documents'].map(name => `js/model/${name}.js`), 'server.js', 'headless.js', 'server/migrate.js', 'bin/agentsys-server.js', 'legacy/server-plugin-host.js'])
+  for (const file of [...backend, 'js/storage/db.js', ...['executor', 'editor', 'snapshot', 'evaluate', 'schema', 'documents'].map(name => `js/model/${name}.js`), 'headless.js', 'bin/agentsys-server.js', 'legacy/server-plugin-host.js'])
     assert.equal(SERVER_ONLY.test(file), true, `server-only: ${file}`);
   for (const file of [...list('js/app'), ...list('js/pages'), ...list('js/canvas'), ...list('js/inspector'), 'js/model/graph.js', 'js/model/types.js', 'shared/core.js', 'shared/protocol.js'])
     assert.equal(SERVER_ONLY.test(file), false, `a client file must be servable: ${file}`);
@@ -111,8 +124,8 @@ test('client code never reaches the server store, Node or a second request path'
 });
 
 test('Node modules import each other acyclically and never pull in the interface', () => {
-  const entry = ['server.js', 'headless.js', 'shared/protocol.js', 'shared/core.js', 'server/migrate.js'];
-  const queue = [...entry, ...list('server').filter(file => file !== 'server/migrate.js'), ...list('bin')];
+  const entry = ['headless.js', 'shared/protocol.js', 'shared/core.js', 'server/migrate.js'];
+  const queue = [...entry, ...list('server'), ...list('bin')];
   const seen = new Map();
   while (queue.length) {
     const file = queue.pop();
@@ -158,7 +171,6 @@ test('shared modules stay environment-neutral', () => {
 
 test('the server never loads plugin code, and a client plugin reaches the platform only through the API', () => {
   const serverFiles = [
-    'server.js',
     'headless.js',
     ...list('server'),
     ...list('bin'),

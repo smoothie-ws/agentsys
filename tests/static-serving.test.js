@@ -1,5 +1,5 @@
 'use strict';
-// The static half of the combined server and the client: only public files, never server code, and no path trick
+// The static Client: only public files, never server code, and no path trick
 // (traversal, encoding, Windows drive/stream suffixes) reaches something else.
 const test = require('node:test'),
   assert = require('node:assert/strict'),
@@ -8,7 +8,7 @@ const test = require('node:test'),
   os = require('node:os'),
   path = require('node:path'),
   {spawn} = require('node:child_process');
-const {createServer} = require('../server');
+const {withClient} = require('./client-harness');
 
 const raw = (base, pathname, method = 'GET') =>
   new Promise((resolve, reject) => {
@@ -28,41 +28,29 @@ const raw = (base, pathname, method = 'GET') =>
     request.end();
   });
 
-async function withStaticServer(work) {
-  const dir = fs.mkdtempSync(path.join(os.tmpdir(), 'agentsys-static-'));
-  const app = createServer({dataDir: dir, token: 'static-token'});
-  const base = await app.listen(0);
-  try {
-    await work({base, dir});
-  } finally {
-    await app.close();
-    fs.rmSync(dir, {recursive: true, force: true});
-  }
-}
-
-test('the combined server serves public files and none of its own code', async () => {
-  await withStaticServer(async ({base}) => {
+test('the client serves public files and none of its own code', async () => {
+  await withClient(async ({base}) => {
     for (const [pathname, type] of [
-      ['/editor/', 'text/html'],
+      ['/', 'text/html'],
       ['/index.html', 'text/html'],
-      ['/editor/js/app/helpers.js', 'text/javascript'],
+      ['/js/app/helpers.js', 'text/javascript'],
       ['/shared/core.js', 'text/javascript'],
       ['/js/model/graph.js', 'text/javascript'],
       ['/client-plugins/index.json', 'application/json'],
-      ['/docs/architecture.md', 'text/markdown'],
+      ['/docs/ARCHITECTURE.md', 'text/markdown'],
     ]) {
       const response = await raw(base, pathname);
       assert.equal(response.status, 200, pathname);
       assert.match(response.type, new RegExp(type.replace('/', '\\/')), pathname);
     }
-    // The root goes to the editor.
+    // Static root and SPA fallback stay in the client.
     const root = await raw(base, '/');
-    assert.equal(root.status, 301);
+    assert.equal(root.status, 200);
   });
 });
 
 test('server-only and non-public files are never served, whatever the path spelling', async () => {
-  await withStaticServer(async ({base}) => {
+  await withClient(async ({base}) => {
     const forbidden = [
       '/server.js',
       '/headless.js',
@@ -103,37 +91,6 @@ test('server-only and non-public files are never served, whatever the path spell
       assert.equal(response.body.includes('const DB ='), false, pathname);
     }
   });
-});
-
-test('the client static server has the same boundary', async () => {
-  const port = await new Promise(resolve => {
-    const probe = require('node:net').createServer();
-    probe.listen(0, '127.0.0.1', () => {
-      const chosen = probe.address().port;
-      probe.close(() => resolve(chosen));
-    });
-  });
-  const child = spawn(process.execPath, ['bin/agentsys-client.js', '--port', String(port), '--server', 'http://127.0.0.1:1'], {
-    cwd: path.join(__dirname, '..'),
-    stdio: 'ignore',
-  });
-  const base = `http://127.0.0.1:${port}`;
-  try {
-    for (let i = 0; i < 100; i++) {
-      try {
-        if ((await raw(base, '/')).status === 200) break;
-      } catch {}
-      await new Promise(resolve => setTimeout(resolve, 50));
-    }
-    assert.equal((await raw(base, '/js/app/helpers.js')).status, 200);
-    for (const pathname of ['/js/storage/db.js', '/js/model/executor.js', '/server.js', '/js/backend/routes-app.js', '/js/storage/db.js::$DATA', '/js/BACKEND/scripts.js', '/js/storage/DB.js', '/js/backend./scripts.js', '/js/backend%20/scripts.js']) {
-      const response = await raw(base, pathname);
-      assert.ok([400, 404].includes(response.status), `${pathname} -> ${response.status}`);
-      assert.equal(response.body.includes('const DB ='), false, pathname);
-    }
-  } finally {
-    child.kill();
-  }
 });
 
 test('a public-looking symlink cannot publish server files or files outside the client root', async () => {

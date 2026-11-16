@@ -12,7 +12,7 @@ async def audit(base):
         page.set_default_timeout(10000)
         errors = []
         page.on('pageerror', lambda error: errors.append(str(error)))
-        await page.goto(base + '/editor/')
+        await page.goto(base + '/#/')
         await page.wait_for_selector('.dashboard')
         ids = await page.evaluate("""async () => {
           await api('settings',{method:'PUT',body:{developer_mode:true}});

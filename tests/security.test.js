@@ -7,7 +7,6 @@ const test = require('node:test'),
   fs = require('node:fs'),
   os = require('node:os'),
   path = require('node:path');
-const {createServer} = require('../server');
 const {createApiServer} = require('../server/api-server');
 
 const TOKEN = 'test-token-0123456789';
@@ -197,7 +196,7 @@ test('the event stream refuses an anonymous caller and reports changes to an aut
       text += decoder.decode(value, {stream: true});
     }
     assert.match(text, /"type":"ready"/);
-    assert.match(text, /"protocol":1/);
+    assert.match(text, /"protocol":2/);
     controller.abort();
     await reader.cancel().catch(() => {});
   });
@@ -306,7 +305,7 @@ test('error messages are redacted before they are returned and logged', async ()
 
 test('one server refuses to expose the API on a non-loopback address without a token', async () => {
   const dir = fs.mkdtempSync(path.join(os.tmpdir(), 'agentsys-exposed-'));
-  const app = createServer({dataDir: dir, host: '0.0.0.0', token: '', serveClient: false});
+  const app = createApiServer({dataDir: dir, host: '0.0.0.0', token: ''});
   const base = await app.listen(0);
   try {
     const meta = await (await fetch(base + '/api/meta')).json();
@@ -325,7 +324,7 @@ test('the generated contract matches the routes and reports the running version'
   await withServer({}, async ({base}) => {
     const spec = await (await request(base, 'openapi.json', {headers: bearer})).json();
     assert.equal(spec.info.version, require('../shared/protocol').VERSION);
-    assert.equal(spec.info['x-protocol'], 1);
+    assert.equal(spec.info['x-protocol'], 2);
     for (const route of ['/api/projects', '/api/projects/{project_id}/workflow', '/api/collections/{name}/records', '/api/events', '/api/meta'])
       assert.ok(spec.paths[route], `the contract documents ${route}`);
     // Every documented operation has a summary and responses; no operation is a client-only route.
@@ -340,12 +339,9 @@ test('the generated contract matches the routes and reports the running version'
   });
 });
 
-test('the combined local server sends the same framing and content policy as the client', async () => {
-  const dir = fs.mkdtempSync(path.join(os.tmpdir(), 'agentsys-local-csp-'));
-  const app = createServer({dataDir: dir, token: ''});
-  const base = await app.listen(0);
-  try {
-    const page = await fetch(base + '/editor/');
+test('the static client sends framing and content policies', async () => {
+  await require('./client-harness').withClient(async ({base}) => {
+    const page = await fetch(base + '/');
     assert.equal(page.status, 200);
     assert.equal(page.headers.get('x-frame-options'), 'DENY');
     const csp = page.headers.get('content-security-policy');
@@ -354,10 +350,7 @@ test('the combined local server sends the same framing and content policy as the
     assert.match(csp, /object-src 'none'/);
     assert.equal(page.headers.get('x-content-type-options'), 'nosniff');
     assert.equal(page.headers.get('referrer-policy'), 'no-referrer');
-  } finally {
-    await app.close();
-    fs.rmSync(dir, {recursive: true, force: true});
-  }
+  });
 });
 
 test('sign-in attempts are limited per address, and a success clears the count', async () => {

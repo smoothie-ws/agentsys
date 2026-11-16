@@ -6,7 +6,7 @@
 //   node tools/smoke.js
 //   node tools/smoke.js --mobile --url http://127.0.0.1:8765 --chrome "C:\...\chrome.exe" --out shots
 //
-// Without --url it starts server.js on a free port with a temporary copy of data/, so the
+// Without --url it starts independent Server and Client with empty temporary data, so the
 // smoke never writes to the real data folder. Requires a Chrome or Edge executable.
 
 const fs = require('node:fs');
@@ -54,29 +54,25 @@ function freePort() {
   });
 }
 
-function copyData(target) {
-  const source = path.join(root, 'data');
-  if (fs.existsSync(source)) fs.cpSync(source, target, {recursive: true});
-  else fs.mkdirSync(target, {recursive: true});
-}
-
-function startServer() {
+async function startServer() {
   const dataDir = fs.mkdtempSync(path.join(os.tmpdir(), 'agentsys-smoke-data-'));
-  copyData(dataDir);
-  const child = spawn(process.execPath, [path.join(root, 'server.js'), '--port', '0'], {
+  const app = require('../server/api-server').createApiServer({dataDir});
+  const apiURL = await app.listen(0);
+  const child = spawn(process.execPath, ['bin/agentsys-client.js', '--port', '0', '--server', apiURL], {
     cwd: root,
     env: {...process.env, DATA_DIR: dataDir},
     stdio: ['ignore', 'pipe', 'pipe'],
+    windowsHide: true,
   });
   return new Promise((resolve, reject) => {
     let output = '';
     const timer = setTimeout(() => reject(Error('The server did not start: ' + output)), 15000);
     const read = chunk => {
       output += String(chunk);
-      const match = /AgentSys: (http:\/\/\S+)/.exec(output);
+      const match = /Listening on (http:\/\/\S+)/.exec(output);
       if (!match) return;
       clearTimeout(timer);
-      resolve({child, dataDir, url: match[1]});
+      resolve({child, dataDir, url: match[1], apiURL, app});
     };
     child.stdout.on('data', read);
     child.stderr.on('data', read);
@@ -84,6 +80,10 @@ function startServer() {
       clearTimeout(timer);
       reject(Error(`The server exited (${code}): ` + output));
     });
+  }).catch(async error => {
+    child.kill();
+    await app.close();
+    throw error;
   });
 }
 
@@ -236,7 +236,7 @@ async function main() {
   try {
     const url = args.url ? String(args.url) : (server = await startServer()).url;
     const api = async route => {
-      const response = await fetch(`${url}/api/${route}`, {headers: {'X-AgentSys': '1'}});
+      const response = await fetch(`${server?.apiURL || args.server || url}/api/${route}`, {headers: {'X-AgentSys': '1'}});
       if (!response.ok) throw Error(`${route}: ${response.status}`);
       return response.json();
     };
@@ -245,14 +245,14 @@ async function main() {
     const detail = project ? await api(`projects/${project.id}`) : null;
     const workflow = detail?.workflows?.[0]?.id;
     const pages = [
-      ['dashboard', '/editor/', 'home'],
-      ['projects', '/editor/projects', 'projects'],
-      ['library', '/editor/library', 'resources'],
-      ['settings', '/editor/settings', 'settings'],
-      ['plugins', '/editor/plugins', 'plugins'],
+      ['dashboard', '/#/', 'home'],
+      ['projects', '/#/projects', 'projects'],
+      ['library', '/#/library', 'resources'],
+      ['settings', '/#/settings', 'settings'],
+      ['plugins', '/#/plugins', 'plugins'],
     ];
-    if (project) pages.push(['project', `/editor/p/${project.id}`, 'project']);
-    if (workflow) pages.push(['workflow', `/editor/p/${project.id}/w/${workflow}`, 'workflow']);
+    if (project) pages.push(['project', `/#/p/${project.id}`, 'project']);
+    if (workflow) pages.push(['workflow', `/#/p/${project.id}/w/${workflow}`, 'workflow']);
 
     browser = await launchChrome(chrome, profile);
     const {call, exceptions} = browser;
@@ -302,6 +302,7 @@ async function main() {
     browser?.ws.close();
     browser?.child.kill();
     server?.child.kill();
+    await server?.app.close();
     await sleep(200);
     if (server) fs.rmSync(server.dataDir, {recursive: true, force: true});
     fs.rmSync(profile, {recursive: true, force: true});

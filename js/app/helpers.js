@@ -29,7 +29,7 @@ const when = seconds => {
 };
 /**
  * Interface state belongs to the client: panel sizes, tabs, camera and the clipboard are kept in this browser,
- * never on the server. Older versions kept them in the server's ui-state key; those values are imported once.
+ * never on the server.
  */
 const store = (() => {
   const KEY = 'agentsys-ui-store';
@@ -46,9 +46,6 @@ const store = (() => {
   } catch {}
   const legacy = [];
   try {
-    // The old server injected its ui-state into the page; copy it, then leave the server out of UI state.
-    for (const [key, value] of Object.entries(globalThis.AGENTSYS_UI_STORE || {}))
-      if (!Object.hasOwn(values, key)) values[key] = value;
     for (let i = 0; i < localStorage.length; i++) {
       const key = localStorage.key(i);
       if (RESERVED.has(key) || (!key.startsWith('agentsys-') && !key.startsWith('fieldHeights:'))) continue;
@@ -83,7 +80,7 @@ const store = (() => {
       }
       return ready;
     },
-    /** Exposed for tests and for the migration notice. */
+    /** The preference storage backend. */
     kind: 'localStorage',
   };
 })();
