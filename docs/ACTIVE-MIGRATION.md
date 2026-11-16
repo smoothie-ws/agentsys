@@ -33,3 +33,23 @@ Next required work:
 
 Migration helper scripts in tools are one-time migration records, not build-time
 or cross-product dependencies. Do not rerun extraction against existing targets.
+
+## Artifact validation update
+
+Client main now fa41869. It has public config.json, optional defaultServerURL,
+no forced localhost/same-origin environment, disconnected first boot and guarded
+server calls. CLI supports `serve`, imports package metadata rather than excluded
+source, and serves dist/client from installed npm package. Default rebuild is
+repeatable with checked fixed output path. First successful connection after an
+offline boot now initializes the full application.
+
+Client regression suite: 85/85. tools/artifact-smoke.py installs server/client
+tarballs via npm into separate temporary prefixes, starts their installed CLIs,
+checks HTTP discovery, creates and reads a project/workflow, checks CORS preflight,
+loads Chromium disconnected, connects across origins using bearer credentials,
+verifies initialized app and no page errors, then restarts server and verifies
+persistence. All 15 checks passed. Evidence is integration-results/artifact-smoke.json
+and connected.png; isolated packages/logs retained at the path recorded in JSON.
+
+This smoke test does not yet prove execution, SSE delivery, plugins, simultaneous
+clients, multi-server switching or other browser engines. Those remain required.
