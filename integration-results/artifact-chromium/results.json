@@ -1,5 +1,5 @@
 {
-  "work": "C:\\Users\\kibot\\AppData\\Local\\Temp\\agentsys-artifacts-bv9b0bqf",
+  "work": "C:\\Users\\kibot\\AppData\\Local\\Temp\\agentsys-artifacts-lbah5eal",
   "checks": [
     "server installed independently",
     "client installed independently",
@@ -19,9 +19,12 @@
     "browser reads server-owned project over API",
     "second client receives cross-origin authenticated SSE changes",
     "tabs have independent transport identities",
+    "tabs sharing one browser profile keep distinct transport identities",
+    "bearer tokens are not copied into another tab session",
     "library-pack installs in sandbox and deploys Library resources through scoped API",
     "integration-studio installs in sandbox and deploys Library resources through scoped API",
     "Integration Studio creates a persistent six-stage workflow through Host API",
+    "Graph Developer Tools visualizes the published server graph",
     "owner explicitly grants workflow execution policy",
     "switching environments does not mix server projects",
     "each environment keeps its own bearer credential",
@@ -33,7 +36,8 @@
     "autonomous workflow stores the expected HTTP transformation",
     "data survives independent server restart",
     "original browser_editor.py passes against independently installed artifacts",
-    "original browser_ux.py passes against independently installed artifacts"
+    "original browser_ux.py passes against independently installed artifacts",
+    "original browser_plugin_security.py passes against independently installed artifacts"
   ],
   "browser": "chromium",
   "status": "passed"

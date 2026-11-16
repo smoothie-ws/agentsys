@@ -97,7 +97,8 @@ try:
         engine = os.environ.get('AGENTSYS_BROWSER', 'chromium')
         results['browser'] = engine
         browser = getattr(pw, engine).launch()
-        page = browser.new_page()
+        context = browser.new_context()
+        page = context.new_page()
         errors = []
         page.on('pageerror', lambda error: errors.append(str(error)))
         page.goto(origin)
@@ -127,6 +128,12 @@ try:
         observer.wait_for_function("observedChanges.includes('projects')")
         check('second client receives cross-origin authenticated SSE changes', status == 200)
         check('tabs have independent transport identities', page.evaluate("sessionStorage.getItem('agentsys-client-id')") != observer.evaluate("sessionStorage.getItem('agentsys-client-id')"))
+        tab=page.context.new_page()
+        tab.goto(origin)
+        tab.wait_for_function("typeof Environment !== 'undefined' && Environment.status().status === 'connected'")
+        check('tabs sharing one browser profile keep distinct transport identities',page.evaluate("sessionStorage.getItem('agentsys-client-id')") != tab.evaluate("sessionStorage.getItem('agentsys-client-id')"))
+        check('bearer tokens are not copied into another tab session',tab.evaluate('Environment.tokenOf(Environment.active().id)') == '')
+        tab.close()
         for slug, location, plugin_id in [
             ('library-pack', 'reference/library-pack/reference-library-pack-1.0.0.agentsys-plugin.json', 'reference-library-pack'),
             ('integration-studio', 'integration-studio/integration-studio-1.0.0.agentsys-plugin.json', 'integration-studio'),
@@ -148,6 +155,14 @@ try:
         }''', 'http://127.0.0.1:' + str(endpoint.server_port))
         studio_graph = page.evaluate("Extensions.execute('integration-studio:build')")
         check('Integration Studio creates a persistent six-stage workflow through Host API', bool(studio_graph['project']) and bool(studio_graph['workflow']))
+        page.evaluate('''async () => {
+          const packet=await (await fetch('/client-plugins/graph-developer-tools/graph-developer-tools-1.0.0.agentsys-plugin.json')).json();
+          await Extensions.install(packet);
+        }''')
+        page.wait_for_function("Extensions.apiOf('graph-developer-tools') !== null")
+        page.evaluate("go('/ext/graph-developer-tools/graphs')")
+        page.wait_for_function("document.querySelector('#ext-page-body')?.innerText.includes('Fetch and store')")
+        check('Graph Developer Tools visualizes the published server graph', True)
         status, _, _ = call(base,'PUT','projects/'+studio_graph['project']+'/policy',{'allow':['graph.read','collections.read','collections.write','net.fetch:127.0.0.1:*','secrets.use:integration-demo']})
         check('owner explicitly grants workflow execution policy',status==200)
         first_id = page.evaluate('Environment.active().id')
@@ -189,7 +204,7 @@ try:
     check('data survives independent server restart', status == 200 and project['id'] in json.dumps(projects))
     if os.environ.get('AGENTSYS_FULL_UI') == '1':
         test_env=dict(os.environ,AGENTSYS_SERVER_CLI=str(server/'bin/agentsys-server.js'),AGENTSYS_CLIENT_CLI=str(client/'bin/agentsys-client.js'),AGENTSYS_UI_ARTIFACTS=str(WORK/'ui-review'))
-        for scenario in ['browser_editor.py','browser_ux.py']:
+        for scenario in ['browser_editor.py','browser_ux.py','browser_plugin_security.py']:
             command=[shutil.which('python'),str(ROOT/'tests'/scenario)]
             if scenario=='browser_ux.py':command.append(os.environ.get('AGENTSYS_BROWSER','chromium'))
             run=subprocess.run(command,env=test_env,cwd=ROOT,capture_output=True,text=True,timeout=180)
