@@ -64,3 +64,5 @@ SPA fallback. Browser E2E, remote CI and performance comparisons were not run.
 
 No new repositories, remote pushes, releases or independent product commits have
 been created. No FULLY SEPARATED claim is made.
+
+Final local regression run after changes: 447 tests, 446 passed, 1 skipped, 0 failed (37.2 seconds). Full TAP output: separation-test-results.txt. Intermediate commits: audit 85df8f7; static boundary 0a203a9.
