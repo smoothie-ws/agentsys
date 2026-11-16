@@ -21,7 +21,7 @@ Baseline is `6d9d623e6cd19db726be293ec03e0e5962183d3d`.
    unreadable installed records do not activate and reads do not delete private data. Modern fixtures replace
    old-format security fixtures so malicious behavior is still exercised. SDK declarations match the contract.
 7. Fix current-package export metadata: normalizing an already normalized format 2 record now preserves its
-   icon. Regenerate Integration Studio/Graph Developer Tools packages; source, behavior and checksums stay
+   icon. Regenerate Integration Studio/Graph Developer Tools, five reference packages and the hello example; source, behavior and checksums stay
    unchanged (the checksum does not include the icon). Reproducibility tests assert equality.
 8. Give terminal backend shutdown an explicit owner. It blocks new/queued request commits, drains the writer
    queue and hook tasks, stops runtime work, and keeps the data lock until server teardown finishes. Repeated
@@ -33,5 +33,11 @@ Baseline is `6d9d623e6cd19db726be293ec03e0e5962183d3d`.
     interpreter. Retain historical audits as evidence, labeled historical, with original commit provenance.
 11. Extend architecture guards for removed executables, sole API composition, supported plugin contracts and
     hash-only navigation. Include refactor branches in CI's push filter and keep the full OS/Node/browser matrix.
+
+Retained current-data transitions are deliberate: browser preference keys consolidate into the existing local
+UI store; id-only tab credentials/private plugin storage bind once to their original endpoint before its URL
+changes; unversioned current Collection records acquire version 1 for conditional writes; deployed Library
+resources without a content baseline refuse automatic overwrite. Removing these paths would lose current
+data or weaken endpoint/ownership safety. None reintroduces a legacy execution mode or package parser.
 
 No new product features, dependencies, database, UI framework, interpreter, or AI controller were introduced.
