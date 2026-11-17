@@ -21,7 +21,7 @@ from playwright.async_api import async_playwright
 ROOT = Path(__file__).resolve().parents[1]
 EXE = os.environ.get('PLAYWRIGHT_CHROMIUM_EXECUTABLE')
 BROWSER = os.environ.get('AGENTSYS_BROWSER', 'chromium')
-CLIENT_DIST = Path(os.environ['AGENTSYS_CLIENT_CLI']).resolve().parents[1] / 'dist/client'
+CLIENT_DIST = Path(os.environ['AGENTSYS_CLIENT_CLI']).resolve().parent / 'dist/client'
 REFERENCE = ROOT / 'tests/fixtures/plugins'
 PLUGIN_IDS = {'ui-showcase':'reference-ui-showcase', 'library-pack':'reference-library-pack', 'structured-data':'reference-structured-data', 'external-integration':'reference-external', 'security-test':'reference-security'}
 
@@ -61,7 +61,7 @@ def wait_http(url, timeout=20):
 
 
 def start(args):
-    product = 'SERVER' if args[0] == 'bin/agentsys-server.js' else 'CLIENT'
+    product = 'SERVER' if args[0] == 'server' else 'CLIENT'
     cli = os.environ.get('AGENTSYS_' + product + '_CLI')
     if not cli: raise RuntimeError('Independent installed artifact CLI paths required')
     args = [cli, *args[1:]]
@@ -103,15 +103,15 @@ async def main():
     one = two = client = None
     try:
         one = start([
-            'bin/agentsys-server.js', 'start', '--port', str(server_one_port), '--data', data_one,
+            'server', 'start', '--port', str(server_one_port), '--data', data_one,
             '--allowed-origin', f'http://127.0.0.1:{client_port}', '--quiet',
         ])
         two = start([
-            'bin/agentsys-server.js', 'start', '--port', str(server_two_port), '--data', data_two,
+            'server', 'start', '--port', str(server_two_port), '--data', data_two,
             '--allowed-origin', f'http://127.0.0.1:{client_port}', '--quiet',
         ])
         client = start([
-            'bin/agentsys-client.js', '--port', str(client_port), '--server', f'http://127.0.0.1:{server_one_port}',
+            'client', '--port', str(client_port), '--server', f'http://127.0.0.1:{server_one_port}',
         ])
         wait_http(f'http://127.0.0.1:{server_one_port}/api/meta')
         wait_http(f'http://127.0.0.1:{server_two_port}/api/meta')

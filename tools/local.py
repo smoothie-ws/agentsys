@@ -10,7 +10,7 @@ parser.add_argument('--server-port',type=int,default=8080)
 parser.add_argument('--client-port',type=int,default=8081)
 parser.add_argument('--data',type=Path,default=root/'.local/mvp-data')
 args=parser.parse_args()
-from integration_common import npm_cli
+from integration_common import npm_cli, cli_path
 node=shutil.which('node'); npm=npm_cli(node)
 children=[]
 try:
@@ -23,7 +23,7 @@ try:
     server_url=f'http://127.0.0.1:{args.server_port}'
     commands=[('server',['start','--port',str(args.server_port),'--data',str(args.data.resolve()),'--allowed-origin',client_url]),('client',['serve','--port',str(args.client_port),'--server',server_url])]
     for product,flags in commands:
-        cli=root/'.local/packages'/product/'node_modules'/('agentsys-'+product)/'bin'/('agentsys-'+product+'.js')
+        cli=cli_path(root/'.local/packages'/product/'node_modules'/('agentsys-'+product),product)
         children.append(subprocess.Popen([node,str(cli),*flags]))
     print('Client: '+client_url+' | Server: '+server_url,flush=True)
     while all(child.poll() is None for child in children):

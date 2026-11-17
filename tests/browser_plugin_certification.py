@@ -27,10 +27,10 @@ async def main():
     threading.Thread(target=endpoint.serve_forever, daemon=True).start()
     server = second_server = client = None
     try:
-        server = start(['bin/agentsys-server.js', 'start', '--port', str(server_port), '--data', directory,
+        server = start(['server', 'start', '--port', str(server_port), '--data', directory,
                         '--allowed-origin', f'http://127.0.0.1:{client_port}', '--quiet'])
-        client = start(['bin/agentsys-client.js', '--port', str(client_port), '--server', f'http://127.0.0.1:{server_port}'])
-        second_server = start(['bin/agentsys-server.js', 'start', '--port', str(second_port), '--data', second_directory,
+        client = start(['client', '--port', str(client_port), '--server', f'http://127.0.0.1:{server_port}'])
+        second_server = start(['server', 'start', '--port', str(second_port), '--data', second_directory,
                                '--allowed-origin', f'http://127.0.0.1:{client_port}', '--quiet'])
         base = f'http://127.0.0.1:{server_port}'
         client_url = f'http://127.0.0.1:{client_port}'

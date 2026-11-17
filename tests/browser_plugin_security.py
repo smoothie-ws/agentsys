@@ -146,7 +146,7 @@ def wait_http(url, timeout=20):
 
 
 def start(args):
-    product = 'SERVER' if args[0] == 'bin/agentsys-server.js' else 'CLIENT'
+    product = 'SERVER' if args[0] == 'server' else 'CLIENT'
     cli = os.environ.get('AGENTSYS_' + product + '_CLI')
     if not cli: raise RuntimeError('Independent artifact CLI paths are required')
     args = [cli, *args[1:]]
@@ -169,11 +169,11 @@ async def main():
     server = client = None
     try:
         server = start([
-            'bin/agentsys-server.js', 'start', '--port', str(server_port), '--data', data,
+            'server', 'start', '--port', str(server_port), '--data', data,
             '--allowed-origin', f'http://127.0.0.1:{client_port}', '--quiet',
         ])
         client = start([
-            'bin/agentsys-client.js', '--port', str(client_port), '--server', f'http://127.0.0.1:{server_port}',
+            'client', '--port', str(client_port), '--server', f'http://127.0.0.1:{server_port}',
         ])
         wait_http(f'http://127.0.0.1:{server_port}/api/meta')
         wait_http(f'http://127.0.0.1:{client_port}/')

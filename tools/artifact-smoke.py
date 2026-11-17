@@ -10,7 +10,7 @@ from playwright.sync_api import sync_playwright
 
 ROOT = Path(__file__).resolve().parents[1]
 NODE = os.environ.get('AGENTSYS_NODE') or shutil.which('node')
-from integration_common import npm_cli
+from integration_common import npm_cli, cli_path
 NPM = npm_cli(NODE)
 WORK = Path(tempfile.mkdtemp(prefix='agentsys-artifacts-'))
 TOKEN = 'artifact-test-token'
@@ -44,7 +44,7 @@ def install(product, version):
     return package
 
 def start(package, product, args):
-    proc = subprocess.Popen([NODE, str(package / 'bin' / f'agentsys-{product}.js'), *args], cwd=WORK, stdout=subprocess.PIPE, stderr=subprocess.STDOUT, text=True, encoding='utf-8')
+    proc = subprocess.Popen([NODE, str(cli_path(package, product)), *args], cwd=WORK, stdout=subprocess.PIPE, stderr=subprocess.STDOUT, text=True, encoding='utf-8')
     processes.append(proc)
     lines = queue.Queue()
     log = WORK / f'{product}-{len(processes)}.log'
@@ -156,6 +156,7 @@ try:
             }''', packet)
             page.wait_for_function("id => Extensions.apiOf(id) !== null", arg=plugin_id)
             deployed = page.evaluate('id => Extensions.deploy(id)', plugin_id)
+            if not deployed['ok']: print(json.dumps(deployed), flush=True)
             check(slug + ' installs in sandbox and deploys Library resources through scoped API', deployed['ok'] and deployed['summary']['library'] > 0)
         graph_ids = page.evaluate('''async () => {
           const project = (await api('projects')).find(p => p.name === 'Reference pack');
@@ -222,7 +223,7 @@ try:
     status, projects, _ = call(restarted, 'GET', 'projects')
     check('data survives independent server restart', status == 200 and project['id'] in json.dumps(projects))
     if os.environ.get('AGENTSYS_FULL_UI') == '1':
-        test_env=dict(os.environ,AGENTSYS_SERVER_CLI=str(server/'bin/agentsys-server.js'),AGENTSYS_CLIENT_CLI=str(client/'bin/agentsys-client.js'),AGENTSYS_UI_ARTIFACTS=str(WORK/'ui-review'))
+        test_env=dict(os.environ,AGENTSYS_SERVER_CLI=str(cli_path(server,'server')),AGENTSYS_CLIENT_CLI=str(cli_path(client,'client')),AGENTSYS_UI_ARTIFACTS=str(WORK/'ui-review'))
         for scenario in ['browser_editor.py','browser_ux.py','browser_plugin_security.py','browser_plugin_platform.py','browser_plugin_certification.py']:
             command=[shutil.which('python'),str(ROOT/'tests'/scenario)]
             if scenario=='browser_ux.py':command.append(os.environ.get('AGENTSYS_BROWSER','chromium'))

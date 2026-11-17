@@ -24,12 +24,12 @@ jobs:
       - uses: actions/checkout@v4
         with:
           repository: smoothie-ws/agentsys-server
-          ref: f944faca924ad00437a592d89aea0bbdec8d0faa
+          ref: 4c7021df84730d1d2509bfe68d64dd7a883a59ef
           path: .products/server
       - uses: actions/checkout@v4
         with:
           repository: smoothie-ws/agentsys-client
-          ref: 8cead2ead015671bf30206539892006abad5ccf3
+          ref: b413151a0d344d59098d37f2e32d68df84a00f53
           path: .products/client
       - uses: actions/setup-node@v4
         with:
