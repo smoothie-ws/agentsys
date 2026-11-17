@@ -1,5 +1,6 @@
 import json, os, subprocess, urllib.request
 from pathlib import Path
+from urllib.parse import quote
 env=dict(os.environ,GIT_TERMINAL_PROMPT='0',GCM_INTERACTIVE='never')
 result=subprocess.run(['git','credential','fill'],input='protocol=https\nhost=github.com\n\n',text=True,capture_output=True,env=env,timeout=20)
 token=dict(line.split('=',1) for line in result.stdout.splitlines() if '=' in line).get('password')
@@ -10,7 +11,9 @@ def get(route):
 report={}
 for product in ['server','client','integration']:
     repo='smoothie-ws/agentsys' if product=='integration' else 'smoothie-ws/agentsys-'+product
-    runs=get('/repos/'+repo+'/actions/runs?per_page=3')['workflow_runs']
+    ref=os.environ.get('AGENTSYS_CI_REF', 'main')
+    sha=get('/repos/'+repo+'/commits/'+quote(ref, safe=''))['sha']
+    runs=[run for run in get('/repos/'+repo+'/actions/runs?per_page=20')['workflow_runs'] if run['head_sha']==sha]
     report[product]=[]
     for run in runs:
         jobs=get('/repos/'+repo+'/actions/runs/'+str(run['id'])+'/jobs')['jobs']

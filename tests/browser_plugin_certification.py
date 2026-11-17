@@ -131,12 +131,12 @@ async def main():
             readable = await other_page.evaluate("ids => api(`projects/${ids.project}/workflow`, {query: {workflow_id: ids.workflow}})", graph)
             assert len(readable['complex']) == 6
             await other_page.evaluate('pkg => Extensions.install(pkg)', exported)
-            assert await other_page.evaluate("PluginStore.get('graph-developer-tools').version") == '1.0.0'
+            assert await other_page.evaluate("PluginStore.get('graph-developer-tools').version") == '0.1.0'
             update = dict(exported)
             update['manifest'] = {**exported['manifest'], 'version': '2.0.0', 'capabilities': ['graph.read', 'graph.write']}
             await other_page.evaluate("pkg => reviewPluginPackage(pkg, 'tools-update.json', () => Extensions.update('graph-developer-tools', pkg, {approveCapabilities: true}))", update)
             await other_page.click('#modal button[value=cancel]')
-            assert await other_page.evaluate("PluginStore.get('graph-developer-tools').version") == '1.0.0'
+            assert await other_page.evaluate("PluginStore.get('graph-developer-tools').version") == '0.1.0'
             await other.close()
             await page.evaluate("url => Environment.save({id: 'second', name: 'Second', url})", f'http://127.0.0.1:{second_port}')
             await page.evaluate("Environment.setActive('second')")
