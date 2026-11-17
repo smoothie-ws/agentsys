@@ -191,9 +191,9 @@ async def main():
               PluginStore.install(pkg);
               await Extensions.reload();
             }"""
-            victim = await page.evaluate(install, {'id': 'victim', 'title': 'Victim', 'api': 2, 'formatVersion': 2, 'source': VICTIM})
+            victim = await page.evaluate(install, {'id': 'victim', 'title': 'Victim', 'api': 1, 'formatVersion': 1, 'source': VICTIM})
             assert victim is None
-            await page.evaluate(install, {'id': 'attacker', 'title': 'Innocent helper', 'api': 2, 'formatVersion': 2, 'source': ATTACKER.replace('__LEAK__', leak_url)})
+            await page.evaluate(install, {'id': 'attacker', 'title': 'Innocent helper', 'api': 1, 'formatVersion': 1, 'source': ATTACKER.replace('__LEAK__', leak_url)})
             await page.wait_for_timeout(300)
 
             results = await page.evaluate("PluginStore.storage('attacker').get('attempts')")
@@ -228,8 +228,8 @@ async def main():
 
             # A package that declares the write capability is allowed exactly that write, and nothing more.
             await page.evaluate(install, {
-                'id': 'granted', 'title': 'Granted', 'api': 2,
-                'capabilities': ['graph.read', 'graph.write'], 'formatVersion': 2, 'source': GRANTED,
+                'id': 'granted', 'title': 'Granted', 'api': 1,
+                'capabilities': ['graph.read', 'graph.write'], 'formatVersion': 1, 'source': GRANTED,
             })
             await page.wait_for_timeout(300)
             granted = await page.evaluate("PluginStore.storage('granted').get('attempts')")
@@ -243,8 +243,8 @@ async def main():
             # A plugin that names notifications.write can post through the same checked path; the result is a real
             # notification and the host did not silently grant more.
             await page.evaluate(install, {
-                'id': 'notifier', 'title': 'Notifier', 'api': 2,
-                'capabilities': ['notifications.write'], 'formatVersion': 2, 'source': NOTIFIER,
+                'id': 'notifier', 'title': 'Notifier', 'api': 1,
+                'capabilities': ['notifications.write'], 'formatVersion': 1, 'source': NOTIFIER,
             })
             await page.wait_for_timeout(300)
             posted = await page.evaluate("PluginStore.storage('notifier').get('attempts')")
@@ -271,7 +271,7 @@ async def main():
             print('PASS disabling a plugin revokes its scoped token', flush=True)
 
             # A plugin that throws on activate is reported, and the rest of the client keeps working.
-            await page.evaluate(install, {'id': 'broken', 'title': 'Broken', 'api': 2, 'formatVersion': 2, 'source': BROKEN})
+            await page.evaluate(install, {'id': 'broken', 'title': 'Broken', 'api': 1, 'formatVersion': 1, 'source': BROKEN})
             await page.wait_for_timeout(400)
             failure = await page.evaluate("Extensions.errorOf('broken')")
             assert 'this plugin cannot start' in failure, failure

@@ -1,5 +1,5 @@
 {
-  "work": "C:\\Users\\kibot\\AppData\\Local\\Temp\\agentsys-artifacts-41c86s4z",
+  "work": "C:\\Users\\kibot\\AppData\\Local\\Temp\\agentsys-artifacts-c1_gledn",
   "checks": [
     "server installed independently",
     "client installed independently",
@@ -38,22 +38,21 @@
     "autonomous workflow stores the expected HTTP transformation",
     "a newly connected browser can retrieve the autonomous execution result",
     "data survives independent server restart",
-    "original browser_editor.py passes against independently installed artifacts",
-    "original browser_ux.py passes against independently installed artifacts",
-    "original browser_plugin_security.py passes against independently installed artifacts",
-    "original browser_plugin_platform.py passes against independently installed artifacts",
-    "original browser_plugin_certification.py passes against independently installed artifacts"
+    "browser_editor.py passes against independently installed artifacts",
+    "browser_ux.py passes against independently installed artifacts",
+    "browser_plugin_security.py passes against independently installed artifacts"
   ],
   "artifacts": {
     "server": {
-      "path": "C:\\Users\\kibot\\AppData\\Local\\Temp\\agentsys-releases-041-1jcbvhh_\\agentsys-server-0.4.1.tgz",
-      "sha256": "5d91b08a46c673047927248da4b7136264c2c9f7762c023daf1f98188049da88"
+      "path": "C:\\Users\\kibot\\Desktop\\Coding\\agentsys-server\\agentsys-server-0.1.0.tgz",
+      "sha256": "202150ad9b68f0dd468ce0ae9974a150537a4f57ec0941fc2144231117f92c36"
     },
     "client": {
-      "path": "C:\\Users\\kibot\\AppData\\Local\\Temp\\agentsys-releases-041-1jcbvhh_\\agentsys-client-0.7.0.tgz",
-      "sha256": "2105a4cae351645dcf6093980006be268070563e8ae83d76b5c835fba2784b10"
+      "path": "C:\\Users\\kibot\\Desktop\\Coding\\agentsys-client\\agentsys-client-0.1.0.tgz",
+      "sha256": "e01be02f167be30c9979e3b2825a2d13855dd23358baef6de14b9a4252533d9f"
     }
   },
   "browser": "chromium",
-  "status": "passed"
+  "status": "failed",
+  "error": "browser_plugin_platform.py passes against independently installed artifacts"
 }

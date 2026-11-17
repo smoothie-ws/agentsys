@@ -137,7 +137,7 @@ async def main():
             assert len(described['pages']) == 1, described
             for key, count in [('toolbar', 1), ('menu', 1), ('home', 1), ('settings', 1), ('inspector', 1), ('commands', 3)]:
                 assert len(described[key]) >= count, (key, described)
-            assert (await page.evaluate("PluginStore.storage('reference-ui-showcase').get('installed')"))['version'] == '1.0.0'
+            assert (await page.evaluate("PluginStore.storage('reference-ui-showcase').get('installed')"))['version'] == '0.1.0'
             assert await page.evaluate("document.querySelectorAll('[data-ext-command=\"reference-ui-showcase:hello\"]').length") >= 1
 
             await page.evaluate("go('/ext/reference-ui-showcase/showcase')")
@@ -188,13 +188,15 @@ async def main():
 
             # A package update keeps data and runs onUpdate.
             updated = json.loads(next((REFERENCE / 'ui-showcase').glob('*.agentsys-plugin.json')).read_text())
-            updated['manifest']['version'] = '1.1.0'
+            before_checksum = await page.evaluate("PluginStore.get('reference-ui-showcase').checksum")
+            updated['files']['main.js'] += '\n// replacement content'
+            updated.pop('checksum', None)
             await page.evaluate('async pkg => await Extensions.update("reference-ui-showcase", pkg)', updated)
-            assert await page.evaluate("PluginStore.get('reference-ui-showcase').version") == '1.1.0'
+            assert await page.evaluate("PluginStore.get('reference-ui-showcase').version") == '0.1.0'
             context_update = await page.evaluate("PluginStore.storage('reference-ui-showcase').get('updated')")
-            assert context_update and context_update['from'] == '1.0.0' and context_update['to'] == '1.1.0', context_update
+            assert context_update and context_update['previousChecksum'] == before_checksum and context_update['checksum'] != before_checksum, context_update
             assert (await page.evaluate("PluginStore.storage('reference-ui-showcase').get('last')"))['count'] == 2
-            print('PASS lifecycle: update migrates in place, keeps data and runs onUpdate', flush=True)
+            print('PASS lifecycle: content replacement updates in place, keeps data and runs onUpdate', flush=True)
 
             # ----- Plugin B: Library section, nodes, workflow template; server data without the plugin -----
             await install(page, 'library-pack')
@@ -259,7 +261,7 @@ async def main():
             assert back == first_ids, (back, first_ids)
             print('PASS environments: switching back restores the first server without mixing data', flush=True)
 
-            # ----- Plugin C: CRUD, validation, migration and a resource view -----
+            # ----- Plugin C: CRUD, validation, schema editing and a resource view -----
             await install(page, 'structured-data')
             await page.wait_for_function("Extensions.apiOf('reference-structured-data') !== null")
             c_deploy = await page.evaluate("Extensions.deploy('reference-structured-data')")
@@ -272,8 +274,8 @@ async def main():
             assert (await page.evaluate("api('collections/structured-notes/records')"))['total'] == 1, 'an invalid record is not stored'
             race = await page.evaluate("Extensions.execute('reference-structured-data:race')")
             assert race['conflict'] >= 1, race
-            migrated = await page.evaluate("Extensions.execute('reference-structured-data:migrate')")
-            assert migrated['schemaVersion'] == 2
+            changed = await page.evaluate("Extensions.execute('reference-structured-data:change-schema')")
+            assert changed['schemaExtended'] is True
             rejected = await page.evaluate(
                 """async () => {
                   try { await api('collections/structured-notes/records', {method: 'POST', body: {data: {title: 'x', priority: 9}}}); return 'accepted'; }
@@ -287,7 +289,7 @@ async def main():
             await page.reload()
             await page.wait_for_function("Environment && Environment.status().status === 'connected'")
             assert (await page.evaluate("api('collections/structured-notes/records')"))['total'] == 1
-            print('PASS Plugin C: CRUD, validation, concurrency, migration, resource view and persistence', flush=True)
+            print('PASS Plugin C: CRUD, validation, concurrency, schema editing, resource view and persistence', flush=True)
 
             # ----- Plugin D: an allowed network call with a server secret, executed by a Library node -----
             await page.evaluate(
@@ -394,15 +396,14 @@ async def main():
 
             # ----- Recovery after a failed activation, uninstall and reinstall -----
             broken = {
-                'id': 'reference-recovery', 'title': 'Recovery', 'version': '1.0.0', 'api': 2,
+                'id': 'reference-recovery', 'title': 'Recovery', 'version': '1.0.0', 'api': 1,
                 'capabilities': ['graph.read'],
-                'formatVersion': 2, 'source': 'exports.activate = () => { throw new Error("this version cannot start"); };',
+                'formatVersion': 1, 'source': 'exports.activate = () => { throw new Error("this version cannot start"); };',
             }
             fixed = {
-                'id': 'reference-recovery', 'title': 'Recovery', 'version': '1.0.1', 'api': 2,
+                'id': 'reference-recovery', 'title': 'Recovery', 'version': '1.0.1', 'api': 1,
                 'capabilities': ['graph.read', 'graph.write'],
-                'formatVersion': 2, 'source': 'exports.activate = api => { api.commands.register("ok", () => "ok", {title: "OK"}); };'
-                          'exports.migrate = async (api, context) => { await api.storage.set("migrated", context); return 2; };'
+                'formatVersion': 1, 'source': 'exports.activate = api => { api.commands.register("ok", () => "ok", {title: "OK"}); };'
                           'exports.onUninstall = async api => { await api.request("POST", "projects", {name: "uninstall hook ran"}); };',
             }
             await page.evaluate('pkg => { PluginStore.install(pkg); return Extensions.reload(); }', broken)
@@ -420,31 +421,27 @@ async def main():
             await page.evaluate("Extensions.uninstall('reference-recovery')")
             print('PASS lifecycle: failed activation recovers, uninstall and reinstall work', flush=True)
 
-            # A successful update runs migrate and stores the data version it returns.
-            migration_base = {
-                'id': 'reference-migrate', 'title': 'Migrate', 'version': '1.0.0', 'api': 2,
-                'capabilities': ['graph.read'],
-                'formatVersion': 2, 'source': 'exports.activate = api => { api.commands.register("ok", () => "ok", {title: "OK"}); };',
+            # A same-label replacement runs onUpdate with content identities.
+            first = {
+                'id': 'reference-content', 'title': 'Content', 'version': '0.1.0', 'api': 1,
+                'capabilities': ['graph.read'], 'formatVersion': 1,
+                'source': 'exports.activate = () => {};',
             }
-            migration_next = {
-                'id': 'reference-migrate', 'title': 'Migrate', 'version': '1.0.1', 'api': 2,
-                'capabilities': ['graph.read'],
-                'formatVersion': 2, 'source': 'exports.activate = api => { api.commands.register("ok", () => "ok", {title: "OK"}); };'
-                          'exports.migrate = async (api, context) => { await api.storage.set("migrated", context); return 3; };',
-            }
-            await page.evaluate('pkg => Extensions.install(pkg)', migration_base)
-            await page.evaluate('pkg => Extensions.update("reference-migrate", pkg)', migration_next)
-            assert await page.evaluate("PluginStore.get('reference-migrate').dataVersion") == 3
-            migration = await page.evaluate("PluginStore.storage('reference-migrate').get('migrated')")
-            assert migration['from'] == '1.0.0' and migration['to'] == '1.0.1' and migration['dataVersion'] == 0, migration
-            await page.evaluate("Extensions.uninstall('reference-migrate')")
-            print('PASS lifecycle: migrate runs on update and records its data version', flush=True)
+            await page.evaluate('pkg => Extensions.install(pkg)', first)
+            previous = await page.evaluate("PluginStore.get('reference-content').checksum")
+            replacement = {**first, 'source': 'exports.activate = () => {}; exports.onUpdate = (api, context) => api.storage.set("updated", context);'}
+            await page.evaluate('pkg => Extensions.update("reference-content", pkg)', replacement)
+            updated_context = await page.evaluate("PluginStore.storage('reference-content').get('updated')")
+            assert updated_context['previousChecksum'] == previous
+            assert updated_context['checksum'] != previous
+            await page.evaluate("Extensions.uninstall('reference-content')")
+            print('PASS lifecycle: same-label replacement runs onUpdate with checksums', flush=True)
 
             # A sandbox that stops answering (a crashed renderer or a hung frame) is stopped and can be started again.
             hang = {
-                'id': 'reference-hang', 'title': 'Hang', 'version': '1.0.0', 'api': 2,
+                'id': 'reference-hang', 'title': 'Hang', 'version': '1.0.0', 'api': 1,
                 'capabilities': ['graph.read'],
-                'formatVersion': 2, 'source': 'exports.activate = api => { api.commands.register("hang", () => new Promise(() => {}), {title: "Hang"}); };',
+                'formatVersion': 1, 'source': 'exports.activate = api => { api.commands.register("hang", () => new Promise(() => {}), {title: "Hang"}); };',
             }
             await page.evaluate('pkg => Extensions.install(pkg)', hang)
             answer = await page.evaluate(
@@ -468,14 +465,14 @@ async def main():
 
             # ----- Dependency enforcement at activation, not only at install -----
             core = {
-                'id': 'reference-dep-core', 'title': 'Dependency core', 'version': '1.0.0', 'api': 2,
+                'id': 'reference-dep-core', 'title': 'Dependency core', 'version': '1.0.0', 'api': 1,
                 'capabilities': ['graph.read'],
-                'formatVersion': 2, 'source': 'exports.activate = api => { api.commands.register("ping", () => "pong", {title: "Ping"}); };',
+                'formatVersion': 1, 'source': 'exports.activate = api => { api.commands.register("ping", () => "pong", {title: "Ping"}); };',
             }
             child = {
-                'id': 'reference-dep-child', 'title': 'Dependency child', 'version': '1.0.0', 'api': 2,
-                'capabilities': ['graph.read'], 'dependencies': {'reference-dep-core': '^1.0.0'},
-                'formatVersion': 2, 'source': 'exports.activate = api => { api.commands.register("ready", () => "ready", {title: "Ready"}); };',
+                'id': 'reference-dep-child', 'title': 'Dependency child', 'version': '1.0.0', 'api': 1,
+                'capabilities': ['graph.read'], 'dependencies': ['reference-dep-core'],
+                'formatVersion': 1, 'source': 'exports.activate = api => { api.commands.register("ready", () => "ready", {title: "Ready"}); };',
             }
             await page.evaluate('pkg => Extensions.install(pkg)', core)
             await page.evaluate('pkg => Extensions.install(pkg)', child)
@@ -507,11 +504,11 @@ async def main():
             assert await page_two.evaluate("document.querySelectorAll('#toolbar-slot [data-ext-command]').length") == 0
             await install(page_two, 'ui-showcase')
             await page_two.wait_for_function("Extensions.apiOf('reference-ui-showcase') !== null")
-            assert await page_two.evaluate("PluginStore.get('reference-ui-showcase').version") == '1.0.0'
-            assert await page.evaluate("PluginStore.get('reference-ui-showcase').version") == '1.1.0'
+            assert await page_two.evaluate("PluginStore.get('reference-ui-showcase').version") == '0.1.0'
+            assert await page.evaluate("PluginStore.get('reference-ui-showcase').version") == '0.1.0'
             assert await page_two.evaluate("Extensions.describe('reference-ui-showcase').pages.length") == 1
             await context_two.close()
-            print('PASS clients: two browsers with different package versions and different installed sets', flush=True)
+            print('PASS clients: two browsers with different package contents and different installed sets', flush=True)
 
             # ----- The browser is now closed; the server must still run the deployed graph -----
             b_ids = graph_info

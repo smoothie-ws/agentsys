@@ -1,6 +1,45 @@
 {
   "server": [
     {
+      "id": 43988557007,
+      "sha": "4dd2bc1aa3c21a850eb3c3634b9f694a65efb7c4",
+      "status": "in_progress",
+      "conclusion": null,
+      "url": "https://github.com/smoothie-ws/agentsys-server/actions/runs/43988557007",
+      "jobs": [
+        {
+          "name": "container",
+          "status": "in_progress",
+          "conclusion": null,
+          "id": 133722944341
+        },
+        {
+          "name": "test (ubuntu-latest, 24)",
+          "status": "in_progress",
+          "conclusion": null,
+          "id": 133722944687
+        },
+        {
+          "name": "test (ubuntu-latest, 22)",
+          "status": "in_progress",
+          "conclusion": null,
+          "id": 133722944716
+        },
+        {
+          "name": "test (windows-latest, 22)",
+          "status": "in_progress",
+          "conclusion": null,
+          "id": 133722944821
+        },
+        {
+          "name": "test (windows-latest, 24)",
+          "status": "in_progress",
+          "conclusion": null,
+          "id": 133722945031
+        }
+      ]
+    },
+    {
       "id": 43839811016,
       "sha": "62789987a3e303f940c94ebf3ec8cb8275b3c86d",
       "status": "completed",
@@ -53,48 +92,60 @@
           "id": 133205381919
         }
       ]
-    },
-    {
-      "id": 43839800869,
-      "sha": "62789987a3e303f940c94ebf3ec8cb8275b3c86d",
-      "status": "completed",
-      "conclusion": "success",
-      "url": "https://github.com/smoothie-ws/agentsys-server/actions/runs/43839800869",
-      "jobs": [
-        {
-          "name": "test (ubuntu-latest, 22)",
-          "status": "completed",
-          "conclusion": "success",
-          "id": 133205346114
-        },
-        {
-          "name": "test (ubuntu-latest, 24)",
-          "status": "completed",
-          "conclusion": "success",
-          "id": 133205346428
-        },
-        {
-          "name": "test (windows-latest, 24)",
-          "status": "completed",
-          "conclusion": "success",
-          "id": 133205346512
-        },
-        {
-          "name": "container",
-          "status": "completed",
-          "conclusion": "success",
-          "id": 133205346668
-        },
-        {
-          "name": "test (windows-latest, 22)",
-          "status": "completed",
-          "conclusion": "success",
-          "id": 133205346707
-        }
-      ]
     }
   ],
   "client": [
+    {
+      "id": 43988567033,
+      "sha": "59259a6a9047e90ec9616a10502344aba2f02acc",
+      "status": "queued",
+      "conclusion": null,
+      "url": "https://github.com/smoothie-ws/agentsys-client/actions/runs/43988567033",
+      "jobs": [
+        {
+          "name": "test (ubuntu-latest, 22)",
+          "status": "queued",
+          "conclusion": null,
+          "id": 133722977376
+        },
+        {
+          "name": "test (windows-latest, 22)",
+          "status": "in_progress",
+          "conclusion": null,
+          "id": 133722977585
+        },
+        {
+          "name": "browser (chromium)",
+          "status": "in_progress",
+          "conclusion": null,
+          "id": 133722977597
+        },
+        {
+          "name": "browser (webkit)",
+          "status": "in_progress",
+          "conclusion": null,
+          "id": 133722977644
+        },
+        {
+          "name": "test (windows-latest, 24)",
+          "status": "in_progress",
+          "conclusion": null,
+          "id": 133722977693
+        },
+        {
+          "name": "browser (firefox)",
+          "status": "queued",
+          "conclusion": null,
+          "id": 133722977707
+        },
+        {
+          "name": "test (ubuntu-latest, 24)",
+          "status": "in_progress",
+          "conclusion": null,
+          "id": 133722977724
+        }
+      ]
+    },
     {
       "id": 43831105744,
       "sha": "83835ea0d77b1e35fe3e972a1dd7205b97f730be",
@@ -158,57 +209,6 @@
           "status": "completed",
           "conclusion": "success",
           "id": 133176385231
-        }
-      ]
-    },
-    {
-      "id": 43831018502,
-      "sha": "83835ea0d77b1e35fe3e972a1dd7205b97f730be",
-      "status": "completed",
-      "conclusion": "success",
-      "url": "https://github.com/smoothie-ws/agentsys-client/actions/runs/43831018502",
-      "jobs": [
-        {
-          "name": "browser (webkit)",
-          "status": "completed",
-          "conclusion": "success",
-          "id": 133176109550
-        },
-        {
-          "name": "test (windows-latest, 22)",
-          "status": "completed",
-          "conclusion": "success",
-          "id": 133176109818
-        },
-        {
-          "name": "browser (firefox)",
-          "status": "completed",
-          "conclusion": "success",
-          "id": 133176109882
-        },
-        {
-          "name": "test (windows-latest, 24)",
-          "status": "completed",
-          "conclusion": "success",
-          "id": 133176109890
-        },
-        {
-          "name": "test (ubuntu-latest, 22)",
-          "status": "completed",
-          "conclusion": "success",
-          "id": 133176109928
-        },
-        {
-          "name": "test (ubuntu-latest, 24)",
-          "status": "completed",
-          "conclusion": "success",
-          "id": 133176110048
-        },
-        {
-          "name": "browser (chromium)",
-          "status": "completed",
-          "conclusion": "success",
-          "id": 133176110190
         }
       ]
     }

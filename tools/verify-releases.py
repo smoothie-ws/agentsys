@@ -7,7 +7,7 @@ target=Path(os.environ.get('AGENTSYS_RELEASE_DIRECTORY') or tempfile.mkdtemp(pre
 target.mkdir(parents=True,exist_ok=True)
 print('Verifying release downloads in '+str(target),flush=True)
 report={'download_directory':str(target),'products':{}}
-for product,version in [('server','0.4.1'),('client','0.7.0')]:
+for product,version in [('server','0.1.0'),('client','0.1.0')]:
     repo='smoothie-ws/agentsys-'+product
     request=urllib.request.Request('https://api.github.com/repos/'+repo+'/releases/tags/v'+version,headers={'Accept':'application/vnd.github+json','User-Agent':'AgentSys-release-audit'})
     with urllib.request.urlopen(request,timeout=30) as response:release=json.load(response)
@@ -58,13 +58,13 @@ for product,version in [('server','0.4.1'),('client','0.7.0')]:
                             assert not re.search(r'\bfetch\s*\(|\bXMLHttpRequest\b',archive.read(name).decode('utf-8')),name
                 else:
                     assert 'openapi.json' in names
-                    assert json.loads(archive.read('openapi.json'))['info']['version']=='2.0'
+                    assert json.loads(archive.read('openapi.json'))['info']['version']=='1.0'
         if destination.name.endswith('image.tar.gz'):
             with tarfile.open(destination) as archive:assert any(name in archive.getnames() for name in ['manifest.json','index.json'])
-    expected=({f'agentsys-server-{version}.tgz','agentsys-api-2.0.zip','agentsys-server-image.tar.gz'} if product=='server' else {f'agentsys-client-{version}.tgz','agentsys-client-static.zip','agentsys-plugin-sdk-2.0.0.tgz'})
+    expected=({f'agentsys-server-{version}.tgz','agentsys-api-1.0.zip','agentsys-server-image.tar.gz'} if product=='server' else {f'agentsys-client-{version}.tgz','agentsys-client-static.zip','agentsys-plugin-sdk-0.1.0.tgz'})
     assert {asset['name'] for asset in record['assets']}==expected
     if product=='server':
-        with zipfile.ZipFile(target/'agentsys-api-2.0.zip') as specification, tarfile.open(target/f'agentsys-server-{version}.tgz') as package:
+        with zipfile.ZipFile(target/'agentsys-api-1.0.zip') as specification, tarfile.open(target/f'agentsys-server-{version}.tgz') as package:
             assert json.loads(specification.read('openapi.json'))==json.load(package.extractfile('package/api/openapi.json'))
     else:
         with zipfile.ZipFile(target/'agentsys-client-static.zip') as distribution, tarfile.open(target/f'agentsys-client-{version}.tgz') as package:

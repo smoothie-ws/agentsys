@@ -64,7 +64,7 @@ async def main():
             await page.evaluate("pkg => reviewPluginPackage(pkg, 'integration-studio.json', () => Extensions.install(pkg, {approveCapabilities: true}))", package)
             await page.click('#modal button[value=ok]')
             await page.wait_for_function("Extensions.apiOf('integration-studio') !== null")
-            # Simulate an older server: not even an authenticated owner cookie authorizes a plugin downgrade.
+            # A missing token endpoint refuses plugin operations even with an authenticated owner cookie.
             await page.route('**/api/auth/plugin-session', lambda route: route.fulfill(
                 status=404, content_type='application/json', body='{"error":{"code":"not_found"}}',
                 headers={'Access-Control-Allow-Origin': client_url, 'Access-Control-Allow-Credentials': 'true'}))

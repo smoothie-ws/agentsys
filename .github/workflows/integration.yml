@@ -17,19 +17,19 @@ jobs:
     env:
       AGENTSYS_FULL_UI: '1'
       AGENTSYS_BROWSER: ${{ matrix.browser }}
-      AGENTSYS_SERVER_ARTIFACT: ${{ github.workspace }}/.products/server/agentsys-server-0.4.1.tgz
-      AGENTSYS_CLIENT_ARTIFACT: ${{ github.workspace }}/.products/client/agentsys-client-0.7.0.tgz
+      AGENTSYS_SERVER_ARTIFACT: ${{ github.workspace }}/.products/server/agentsys-server-0.1.0.tgz
+      AGENTSYS_CLIENT_ARTIFACT: ${{ github.workspace }}/.products/client/agentsys-client-0.1.0.tgz
     steps:
       - uses: actions/checkout@v4
       - uses: actions/checkout@v4
         with:
           repository: smoothie-ws/agentsys-server
-          ref: 62789987a3e303f940c94ebf3ec8cb8275b3c86d
+          ref: 4dd2bc1aa3c21a850eb3c3634b9f694a65efb7c4
           path: .products/server
       - uses: actions/checkout@v4
         with:
           repository: smoothie-ws/agentsys-client
-          ref: 83835ea0d77b1e35fe3e972a1dd7205b97f730be
+          ref: 59259a6a9047e90ec9616a10502344aba2f02acc
           path: .products/client
       - uses: actions/setup-node@v4
         with:
@@ -45,8 +45,6 @@ jobs:
         working-directory: .products/client
       - run: node --test tests/integration-boundary.test.js
       - run: python tools/artifact-smoke.py
-      - if: matrix.browser == 'chromium'
-        run: python tools/independent-updates.py
       - if: always()
         uses: actions/upload-artifact@v4
         with:

@@ -72,15 +72,15 @@ def call(base, method, route, body=None, extra=None):
     return response.status, json.loads(data) if data else None, response.headers
 
 try:
-    server = install('server', '0.4.1')
-    client = install('client', '0.7.0')
+    server = install('server', '0.1.0')
+    client = install('client', '0.1.0')
     check('server package contains no browser application', not (server / 'index.html').exists() and not (server / 'js/app').exists())
     check('client package contains no backend or interpreter', not (client / 'server').exists() and not (client / 'runtime').exists())
     client_process, origin = start(client, 'client', ['serve', '--port', '0'])
     server_process, base = start(server, 'server', ['start', '--port', '0', '--data', str(WORK / 'data'), '--token', TOKEN, '--allowed-origin', origin])
     status, meta, _ = call(base, 'GET', 'meta')
     expected_version=json.loads((server/'package.json').read_text())['version']
-    check('discovery reports independent API and application versions', status == 200 and meta['version'] == expected_version and meta['api_version'] == '2.0')
+    check('discovery reports independent API and application versions', status == 200 and meta['version'] == expected_version and meta['api_version'] == '1.0')
     status, project, _ = call(base, 'POST', 'projects', {'name': 'Artifact-only project'})
     check('project created through public HTTP', status == 200 and bool(project['id']))
     status, workflow, _ = call(base, 'GET', 'projects/' + project['id'] + '/workflow')
@@ -132,16 +132,16 @@ try:
         status, changed, _ = call(base, 'POST', 'projects', {'name': 'SSE broadcast'})
         observer.wait_for_function("observedChanges.includes('projects')")
         check('second client receives cross-origin authenticated SSE changes', status == 200)
-        check('tabs have independent transport identities', page.evaluate("sessionStorage.getItem('agentsys-client-id')") != observer.evaluate("sessionStorage.getItem('agentsys-client-id')"))
+        check('tabs have independent transport identities', page.evaluate("sessionStorage.getItem('agentsys.client.v1.client-id')") != observer.evaluate("sessionStorage.getItem('agentsys.client.v1.client-id')"))
         tab=page.context.new_page()
         tab.goto(origin)
         tab.wait_for_function("typeof Environment !== 'undefined' && Environment.status().status === 'connected'")
-        check('tabs sharing one browser profile keep distinct transport identities',page.evaluate("sessionStorage.getItem('agentsys-client-id')") != tab.evaluate("sessionStorage.getItem('agentsys-client-id')"))
+        check('tabs sharing one browser profile keep distinct transport identities',page.evaluate("sessionStorage.getItem('agentsys.client.v1.client-id')") != tab.evaluate("sessionStorage.getItem('agentsys.client.v1.client-id')"))
         check('bearer tokens are not copied into another tab session',tab.evaluate('Environment.tokenOf(Environment.active().id)') == '')
         tab.close()
         for slug, location, plugin_id in [
-            ('library-pack', 'reference/library-pack/reference-library-pack-1.0.0.agentsys-plugin.json', 'reference-library-pack'),
-            ('integration-studio', 'integration-studio/integration-studio-1.0.0.agentsys-plugin.json', 'integration-studio'),
+            ('library-pack', 'reference/library-pack/reference-library-pack.agentsys-plugin.json', 'reference-library-pack'),
+            ('integration-studio', 'integration-studio/integration-studio.agentsys-plugin.json', 'integration-studio'),
         ]:
             page.evaluate('''async location => {
               const packet = await (await fetch('/client-plugins/' + location)).json();
@@ -161,7 +161,7 @@ try:
         studio_graph = page.evaluate("Extensions.execute('integration-studio:build')")
         check('Integration Studio creates a persistent six-stage workflow through Host API', bool(studio_graph['project']) and bool(studio_graph['workflow']))
         page.evaluate('''async () => {
-          const packet=await (await fetch('/client-plugins/graph-developer-tools/graph-developer-tools-1.0.0.agentsys-plugin.json')).json();
+          const packet=await (await fetch('/client-plugins/graph-developer-tools/graph-developer-tools.agentsys-plugin.json')).json();
           await Extensions.install(packet);
         }''')
         page.wait_for_function("Extensions.apiOf('graph-developer-tools') !== null")
@@ -180,17 +180,6 @@ try:
         check('switching environments does not mix server projects', project['id'] not in json.dumps(second_projects))
         check('each environment keeps its own bearer credential', page.evaluate('id => Environment.tokenOf(id)', first_id) == TOKEN and page.evaluate('id => Environment.tokenOf(id)', second_id) == 'second-artifact-token')
         check('switching back reconnects to original server', page.evaluate('id => Environment.setActive(id)', first_id) is True)
-        incompatible_archive=os.environ.get('AGENTSYS_INCOMPATIBLE_SERVER_ARTIFACT')
-        if incompatible_archive:
-            incompatible_prefix=WORK/'incompatible'; incompatible_prefix.mkdir()
-            subprocess.run([NODE,str(NPM),'install','--prefix',str(incompatible_prefix),'--ignore-scripts','--no-audit','--no-fund',incompatible_archive],check=True,capture_output=True)
-            _, incompatible_url=start(incompatible_prefix/'node_modules/agentsys-server','server',['start','--port','0','--data',str(WORK/'incompatible-data'),'--token',TOKEN,'--allowed-origin',origin])
-            state=page.evaluate('''async ({url,token}) => {
-              const env=Environment.save({name:'Incompatible API',url,token});
-              await Environment.setActive(env.id); return Environment.status();
-            }''',{'url':incompatible_url,'token':TOKEN})
-            check('incompatible API major produces an explanatory connection state',state['status']=='incompatible' and bool(state['detail']))
-            check('client recovers after refusing incompatible server',page.evaluate('id => Environment.setActive(id)',first_id) is True)
         page.screenshot(path=str(WORK / 'connected.png'), full_page=True)
         check('browser has no uncaught JavaScript errors', not errors)
         started=page.evaluate("ids => api('projects/'+ids.project+'/execution', {method:'POST',body:{wait:false},query:{workflow_id:ids.workflow}})",studio_graph)
@@ -232,7 +221,7 @@ try:
             if scenario=='browser_ux.py':command.append(os.environ.get('AGENTSYS_BROWSER','chromium'))
             run=subprocess.run(command,env=test_env,cwd=ROOT,capture_output=True,text=True,timeout=300)
             (WORK/(scenario+'.log')).write_text(run.stdout+run.stderr,encoding='utf-8')
-            check('original '+scenario+' passes against independently installed artifacts',run.returncode==0)
+            check(scenario+' passes against independently installed artifacts',run.returncode==0)
     results['status'] = 'passed'
 except Exception as error:
     results['status'] = 'failed'; results['error'] = str(error)

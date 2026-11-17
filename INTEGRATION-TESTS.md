@@ -1,33 +1,18 @@
-# Artifact integration checks
+# Integration tests
 
-Build and pack each product in its own repository (`npm pack`; the client build
-is performed by prepack). The integration runner installs exact tarballs into
-separate temporary prefixes. It does not import product sources or use npm links.
+Build `agentsys-server-0.1.0.tgz` and `agentsys-client-0.1.0.tgz` with `npm pack` in their repositories. Install Python Playwright and the browser engines:
 
 ```sh
+pip install playwright==1.57.0
+python -m playwright install chromium firefox webkit
+node --test tests/integration-boundary.test.js
 python tools/artifact-smoke.py
 ```
 
-Requires Node.js, Python 3.12, Playwright 1.57.0 and installed browser engines.
-Set AGENTSYS_BROWSER to chromium, firefox or webkit. The current runner reads
-agentsys-server-0.4.1.tgz and agentsys-client-0.7.0.tgz from sibling product
-repositories. Only the tarballs are consumed; no source dependency is introduced.
-The runner prints the retained evidence directory and records individual checks.
+Set `AGENTSYS_BROWSER` to `chromium`, `firefox` or `webkit`. Set `AGENTSYS_FULL_UI=1` to run editor, UX, plugin sandbox, lifecycle and resource certification scenarios against installed artifacts. Override tarball paths with `AGENTSYS_SERVER_ARTIFACT` and `AGENTSYS_CLIENT_ARTIFACT`.
 
-Covered: clean independent installations, no wrong-product code in packages,
-CLI startup, discovery, REST project/workflow creation, exact-origin preflight,
-unlisted origins, conditional-write conflict, static disconnected boot, browser
-Bearer connection, SSE delivery to a second client, independent tab identities,
-Library Pack and Integration Studio installation/deployment, switching two
-servers with isolated credentials/data, headless Library execution after browser
-shutdown, and restart persistence. JSON results are in integration-results/.
+The suite checks authentication and CORS, independent installs/restarts, concurrent conditional writes, environment isolation, plugin permissions and lifecycle, collections, Library deployment, and workflow execution after the browser closes. Each run starts with empty temporary server and browser storage. Logs, screenshots and results are written to `integration-results/artifact-<browser>/`.
 
-One-command local use of prebuilt independent artifacts:
+Each product CI runs unit tests on Node.js 22 and 24, Linux and Windows. Client CI tests static hosting in all three browser engines. Integration CI builds each pinned product independently and uses public HTTP and installed browser assets.
 
-```sh
-python tools/local.py --server-artifact ../agentsys-server/agentsys-server-0.4.1.tgz --client-artifact ../agentsys-client/agentsys-client-0.7.0.tgz
-```
-
-This creates separate local installations under .local/packages and starts two
-processes. Ctrl+C stops both. Persistent server data is under .local/data; --data
-can select a different directory. The launcher never imports product modules.
+`python tools/verify-releases.py` validates published initial artifacts. `python tools/static-release-smoke.py` checks the static ZIP; `python tools/ci-status.py` records current CI results.

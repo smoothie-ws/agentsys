@@ -8,7 +8,7 @@ parser.add_argument('--server-artifact',type=Path,required=True)
 parser.add_argument('--client-artifact',type=Path,required=True)
 parser.add_argument('--server-port',type=int,default=8080)
 parser.add_argument('--client-port',type=int,default=8081)
-parser.add_argument('--data',type=Path,default=root/'.local/data')
+parser.add_argument('--data',type=Path,default=root/'.local/mvp-data')
 args=parser.parse_args()
 from integration_common import npm_cli
 node=shutil.which('node'); npm=npm_cli(node)
