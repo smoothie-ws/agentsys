@@ -1,8 +1,7 @@
 node_modules/
-data/*
+dist/
+data/
+.local/
 __pycache__/
 *.py[cod]
-
-dist/
-.local/
-integration-results/release-download.log
+*.tgz

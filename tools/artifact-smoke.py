@@ -139,14 +139,21 @@ try:
         check('tabs sharing one browser profile keep distinct transport identities',page.evaluate("sessionStorage.getItem('agentsys.client.v1.client-id')") != tab.evaluate("sessionStorage.getItem('agentsys.client.v1.client-id')"))
         check('bearer tokens are not copied into another tab session',tab.evaluate('Environment.tokenOf(Environment.active().id)') == '')
         tab.close()
-        for slug, location, plugin_id in [
-            ('library-pack', 'reference/library-pack/reference-library-pack.agentsys-plugin.json', 'reference-library-pack'),
-            ('integration-studio', 'integration-studio/integration-studio.agentsys-plugin.json', 'integration-studio'),
+        page.bring_to_front()
+        for slug, source, plugin_id in [
+            ('library-pack', ROOT / 'tests/fixtures/plugins/reference-library-pack.agentsys-plugin.json', 'reference-library-pack'),
+            ('integration-studio', client / 'dist/client/client-plugins/integration-studio/integration-studio.agentsys-plugin.json', 'integration-studio'),
         ]:
-            page.evaluate('''async location => {
-              const packet = await (await fetch('/client-plugins/' + location)).json();
-              await Extensions.install(packet);
-            }''', location)
+            packet = json.loads(source.read_text(encoding='utf-8'))
+            page.evaluate('''async pkg => {
+              let timer;
+              try {
+                return await Promise.race([
+                  Extensions.install(pkg),
+                  new Promise((_, reject) => { timer = setTimeout(() => reject(new Error('Plugin installation did not settle: ' + JSON.stringify(Extensions.diagnostics()))), 15000); })
+                ]);
+              } finally { clearTimeout(timer); }
+            }''', packet)
             page.wait_for_function("id => Extensions.apiOf(id) !== null", arg=plugin_id)
             deployed = page.evaluate('id => Extensions.deploy(id)', plugin_id)
             check(slug + ' installs in sandbox and deploys Library resources through scoped API', deployed['ok'] and deployed['summary']['library'] > 0)
@@ -234,7 +241,7 @@ finally:
             try: proc.wait(timeout=10)
             except subprocess.TimeoutExpired: proc.kill(); proc.wait()
     (WORK / 'results.json').write_text(json.dumps(results, indent=2), encoding='utf-8')
-    evidence=ROOT/'integration-results'/('artifact-'+os.environ.get('AGENTSYS_BROWSER','chromium'))
+    evidence=ROOT/'.local/test-results'/('artifact-'+os.environ.get('AGENTSYS_BROWSER','chromium'))
     evidence.mkdir(parents=True,exist_ok=True)
     for artifact in WORK.iterdir():
         if artifact.is_file() and artifact.suffix in ['.json','.png','.log']:

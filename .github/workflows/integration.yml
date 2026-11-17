@@ -1,9 +1,9 @@
 name: Independent artifact integration
 on:
   push:
-    paths-ignore: ['**/*.md', 'integration-results/**']
+    paths-ignore: ['**/*.md']
   pull_request:
-    paths-ignore: ['**/*.md', 'integration-results/**']
+    paths-ignore: ['**/*.md']
   workflow_dispatch:
 permissions:
   contents: read
@@ -24,12 +24,12 @@ jobs:
       - uses: actions/checkout@v4
         with:
           repository: smoothie-ws/agentsys-server
-          ref: 4dd2bc1aa3c21a850eb3c3634b9f694a65efb7c4
+          ref: f944faca924ad00437a592d89aea0bbdec8d0faa
           path: .products/server
       - uses: actions/checkout@v4
         with:
           repository: smoothie-ws/agentsys-client
-          ref: fe70ac150c41bcb0e6bf9fc6b2ebf0c4979cd3ee
+          ref: 8cead2ead015671bf30206539892006abad5ccf3
           path: .products/client
       - uses: actions/setup-node@v4
         with:
@@ -49,4 +49,5 @@ jobs:
         uses: actions/upload-artifact@v4
         with:
           name: integration-${{ matrix.browser }}
-          path: integration-results/
+          path: .local/test-results/
+          include-hidden-files: true

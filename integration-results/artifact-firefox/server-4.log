@@ -1,7 +1,0 @@
-AgentSys Server 0.1.0 (protocol 1)
-Listening on http://127.0.0.1:55143
-Data folder: C:\Users\kibot\AppData\Local\Temp\agentsys-artifacts-oobvozae\data
-API: http://127.0.0.1:55143/api (meta: http://127.0.0.1:55143/api/meta)
-Auth: bearer token or an HttpOnly session
-Server plugins: disabled by design.
-Press Ctrl+C to stop.

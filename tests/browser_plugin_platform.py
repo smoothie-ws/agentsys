@@ -22,7 +22,8 @@ ROOT = Path(__file__).resolve().parents[1]
 EXE = os.environ.get('PLAYWRIGHT_CHROMIUM_EXECUTABLE')
 BROWSER = os.environ.get('AGENTSYS_BROWSER', 'chromium')
 CLIENT_DIST = Path(os.environ['AGENTSYS_CLIENT_CLI']).resolve().parents[1] / 'dist/client'
-REFERENCE = CLIENT_DIST / 'client-plugins' / 'reference'
+REFERENCE = ROOT / 'tests/fixtures/plugins'
+PLUGIN_IDS = {'ui-showcase':'reference-ui-showcase', 'library-pack':'reference-library-pack', 'structured-data':'reference-structured-data', 'external-integration':'reference-external', 'security-test':'reference-security'}
 
 
 def free_port():
@@ -86,7 +87,7 @@ def http_json(base, method, path, body=None):
 
 
 async def install(page, slug):
-    packet = json.loads(next((REFERENCE / slug).glob('*.agentsys-plugin.json')).read_text())
+    packet = json.loads((REFERENCE / (PLUGIN_IDS[slug] + '.agentsys-plugin.json')).read_text(encoding='utf-8'))
     return await page.evaluate('async pkg => await Extensions.install(pkg)', packet)
 
 
@@ -187,7 +188,7 @@ async def main():
             print('PASS Plugin A: inspector extension renders for the selected node', flush=True)
 
             # A package update keeps data and runs onUpdate.
-            updated = json.loads(next((REFERENCE / 'ui-showcase').glob('*.agentsys-plugin.json')).read_text())
+            updated = json.loads((REFERENCE / 'reference-ui-showcase.agentsys-plugin.json').read_text(encoding='utf-8'))
             before_checksum = await page.evaluate("PluginStore.get('reference-ui-showcase').checksum")
             updated['files']['main.js'] += '\n// replacement content'
             updated.pop('checksum', None)
