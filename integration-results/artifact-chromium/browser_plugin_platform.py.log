@@ -2,19 +2,24 @@ PASS Plugin A: toolbar action, context menu and dashboard card are registered an
 PASS Plugin A: page, toolbar, context menu, command, notification, dashboard, settings and inspector
 PASS Plugin A: notification uses the declared notifications.write capability
 PASS Plugin A: inspector extension renders for the selected node
-Traceback (most recent call last):
-  File "C:\Users\kibot\Desktop\Coding\agentsys\tests\browser_plugin_platform.py", line 553, in <module>
-    asyncio.run(main())
-  File "C:\Python312\Lib\asyncio\runners.py", line 194, in run
-    return runner.run(main)
-           ^^^^^^^^^^^^^^^^
-  File "C:\Python312\Lib\asyncio\runners.py", line 118, in run
-    return self._loop.run_until_complete(task)
-           ^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^
-  File "C:\Python312\Lib\asyncio\base_events.py", line 687, in run_until_complete
-    return future.result()
-           ^^^^^^^^^^^^^^^
-  File "C:\Users\kibot\Desktop\Coding\agentsys\tests\browser_plugin_platform.py", line 197, in main
-    assert context_update and context_update['from'] == '0.1.0' and context_update['to'] == '0.1.0', context_update
-                              ~~~~~~~~~~~~~~^^^^^^^^
-KeyError: 'from'
+PASS lifecycle: content replacement updates in place, keeps data and runs onUpdate
+PASS Plugin B: Library section, three nodes and a runnable workflow template
+PASS Plugin B: deployed nodes run with the plugin switched off
+PASS environments: the same plugin deploys independent resources to two servers
+PASS environments: switching back restores the first server without mixing data
+PASS Plugin C: CRUD, validation, concurrency, schema editing, resource view and persistence
+PASS Plugin D: net.fetch and a server secret work through the plugin boundary
+PASS Plugin D: the deployed node runs on the server and uses the secret without receiving it
+PASS Plugin E: writes, secrets, auth, traversal, foreign commands and sandbox escapes are refused
+PASS lifecycle: disabling removes the iframe, registrations and queued work
+PASS stress: twenty enable/disable cycles leave one sandbox and no duplicate registrations
+PASS lifecycle: failed activation recovers, uninstall and reinstall work
+PASS lifecycle: same-label replacement runs onUpdate with checksums
+PASS lifecycle: an unresponsive plugin frame is stopped and recovers
+PASS security: passive HTML drops handlers, styles, remote images and SVG data
+PASS dependencies: a disabled dependency stops its dependant until recovery
+PASS security: postMessage from the page is ignored; only a plugin iframe is a source
+PASS clients: two browsers with different package contents and different installed sets
+PASS server-only: a saved plugin-created graph runs with the browser closed and the plugin removed
+PASS server-only: the external reference node runs with the browser closed
+PASS server-only: two servers keep independent resources

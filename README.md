@@ -17,4 +17,4 @@ The launcher starts separate processes and uses `.local/mvp-data`. Node.js 22+ a
 
 Use a new empty data directory. Server stores carry `.agentsys-store.json` with format `agentsys.store/1`; a nonempty unmarked or unsupported directory is refused before writes. Browser data uses the `agentsys.client.v1` namespace.
 
-See [integration tests](INTEGRATION-TESTS.md).
+See [integration tests](INTEGRATION-TESTS.md) and [verification](VERIFICATION.md).

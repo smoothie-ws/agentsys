@@ -1,0 +1,7 @@
+PASS a node is added from the Add menu
+PASS undo from the toolbar removes a node added through the menu
+PASS redo brings it back
+PASS a node is deleted with the keyboard and restored with undo
+PASS the edited graph is stored and comes back after a reload
+PASS Run from the toolbar executes the edited graph and shows the display
+PASS the workflow editor is usable at 390x844

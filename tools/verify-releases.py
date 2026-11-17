@@ -45,7 +45,13 @@ for product,version in [('server','0.1.0'),('client','0.1.0')]:
                     else:assert not any(name.startswith(('package/server/','package/runtime/','package/data/','package/tests/')) for name in names)
                 else:
                     assert metadata['name']=='@agentsys/plugin-sdk'
+                    assert metadata['version']=='0.1.0'
                     assert set(names)=={'package/package.json','package/README.md','package/agentsys-plugin.d.ts'}
+                    declarations=archive.extractfile('package/agentsys-plugin.d.ts').read().decode('utf-8')
+                    assert 'API version 1' in declarations
+                    assert 'dependencies?: string[]' in declarations
+                    assert 'previousChecksum: string | null' in declarations
+                    assert 'migrate?' not in declarations and 'SemverRange' not in declarations
         if destination.suffix=='.zip':
             with zipfile.ZipFile(destination) as archive:
                 names=archive.namelist()

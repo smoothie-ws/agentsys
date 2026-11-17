@@ -1,0 +1,59 @@
+{
+  "work": "C:\\Users\\kibot\\AppData\\Local\\Temp\\agentsys-artifacts-oobvozae",
+  "checks": [
+    "server installed independently",
+    "client installed independently",
+    "server package contains no browser application",
+    "client package contains no backend or interpreter",
+    "discovery reports independent API and application versions",
+    "project created through public HTTP",
+    "workflow readable without client code",
+    "exact-origin authenticated CORS preflight",
+    "unlisted origins are not granted CORS access",
+    "collection created for concurrent writers",
+    "simultaneous conditional writes produce one success and one conflict",
+    "static client loads disconnected without default server",
+    "disconnected interface renders",
+    "cross-origin browser connection with bearer credentials",
+    "first connection initializes the application UI",
+    "browser reads server-owned project over API",
+    "second client receives cross-origin authenticated SSE changes",
+    "tabs have independent transport identities",
+    "tabs sharing one browser profile keep distinct transport identities",
+    "bearer tokens are not copied into another tab session",
+    "library-pack installs in sandbox and deploys Library resources through scoped API",
+    "integration-studio installs in sandbox and deploys Library resources through scoped API",
+    "Integration Studio creates a persistent six-stage workflow through Host API",
+    "Graph Developer Tools visualizes the published server graph",
+    "owner explicitly grants workflow execution policy",
+    "switching environments does not mix server projects",
+    "each environment keeps its own bearer credential",
+    "switching back reconnects to original server",
+    "browser has no uncaught JavaScript errors",
+    "client dispatches a workflow before disconnecting",
+    "server execution is waiting on remote I/O before the client closes",
+    "published Library workflow executes after all clients disconnect",
+    "headless execution produces saved Library-node output",
+    "Integration Studio workflow executes without a client or plugin host",
+    "autonomous workflow stores the expected HTTP transformation",
+    "a newly connected browser can retrieve the autonomous execution result",
+    "data survives independent server restart",
+    "browser_editor.py passes against independently installed artifacts",
+    "browser_ux.py passes against independently installed artifacts",
+    "browser_plugin_security.py passes against independently installed artifacts",
+    "browser_plugin_platform.py passes against independently installed artifacts",
+    "browser_plugin_certification.py passes against independently installed artifacts"
+  ],
+  "artifacts": {
+    "server": {
+      "path": "C:\\Users\\kibot\\AppData\\Local\\Temp\\agentsys-releases-8ato8zzk\\agentsys-server-0.1.0.tgz",
+      "sha256": "93c6f8d41a299ef0eff97e5a52b56741d6268ece9fa2529ba9a52e912df4cefb"
+    },
+    "client": {
+      "path": "C:\\Users\\kibot\\AppData\\Local\\Temp\\agentsys-releases-8ato8zzk\\agentsys-client-0.1.0.tgz",
+      "sha256": "f477a5b41b8658f8692d297ee8c8011ac34fae9bc7ba542733b0e29cbaf20747"
+    }
+  },
+  "browser": "firefox",
+  "status": "passed"
+}

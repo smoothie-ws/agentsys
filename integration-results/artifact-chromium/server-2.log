@@ -1,7 +1,7 @@
 AgentSys Server 0.1.0 (protocol 1)
-Listening on http://127.0.0.1:55446
-Data folder: C:\Users\kibot\AppData\Local\Temp\agentsys-artifacts-c1_gledn\data
-API: http://127.0.0.1:55446/api (meta: http://127.0.0.1:55446/api/meta)
+Listening on http://127.0.0.1:61722
+Data folder: C:\Users\kibot\AppData\Local\Temp\agentsys-artifacts-d36gc2om\data
+API: http://127.0.0.1:61722/api (meta: http://127.0.0.1:61722/api/meta)
 Auth: bearer token or an HttpOnly session
 Server plugins: disabled by design.
 Press Ctrl+C to stop.
