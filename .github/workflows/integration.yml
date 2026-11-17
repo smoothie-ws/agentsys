@@ -29,7 +29,7 @@ jobs:
       - uses: actions/checkout@v4
         with:
           repository: smoothie-ws/agentsys-client
-          ref: 59259a6a9047e90ec9616a10502344aba2f02acc
+          ref: fe70ac150c41bcb0e6bf9fc6b2ebf0c4979cd3ee
           path: .products/client
       - uses: actions/setup-node@v4
         with:
